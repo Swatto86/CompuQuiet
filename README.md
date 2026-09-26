@@ -28,21 +28,23 @@ Your own "never touch" list sits on top of that.
 
 ## Using it
 
-1. Open CompuQuiet. The dashboard shows live CPU, memory and process figures.
-2. Open **Scan** to see where savings can be made right now: recognised
-   background software that is not yet a target, large programs with no
+1. Open CompuQuiet. Home shows live CPU, memory and process figures, and what
+   one press will do.
+2. Open **Scan** to see what is using resources right now: recognised
+   background software that is not yet on the park list, large programs with no
    window, stoppable services that are running, a non-performance power plan
    and a large file cache. Each row shows its cost, why it is safe and a risk
-   level; low-risk rows are pre-ticked. *Add selected & Go Quiet* does both.
-3. Review **Targets**: the built-in list of background hogs for your platform,
+   level. Low risk starts ticked; medium risk stays off until you tick it.
+   *Add and free up this PC* adds the ticked finds and parks them.
+3. Review **Park list**: the built-in list of background hogs for your platform,
    with a running/not-running indicator. Add any running program by name,
    choose Suspend or Close & relaunch, add services, and save.
-4. Press the big button. With *Scan before going quiet* on (the default),
-   the run also parks the low-risk finds without changing your saved targets.
-   The activity log shows every step and anything left alone (with the
-   reason). The tray icon turns amber while Quiet Mode is on.
-5. Press it again, or use the tray menu, to restore. Quitting while quiet
-   offers to restore first.
+4. Press the big button. With *Also park low-risk finds from a quick scan* on
+   (the default), the run also parks those finds without changing your saved
+   park list. The activity log shows every step and anything left alone (with
+   the reason). The tray icon turns amber while Quiet Mode is on.
+5. Press it again, or right-click the tray icon, to restore. Quitting while
+   quiet can put everything back first.
 
 ![The Scan tab](docs/scan.png)
 

@@ -32,6 +32,7 @@ auto-apply low-risk only when `auto_scan` is on.
 
 ## Recent Context & Decisions
 
+- 2026-09-26: Release 1.1.3. Tag `v1.1.3` publishes installers after `verify` is green on that commit.
 - 2026-09-26: Tray menu opens from the event loop (`show_menu`) so Windows
   accepts item clicks; Linux re-applies the menu after an icon change.
   Home screen states what one press will do; Scan and Settings copy is plainer.
