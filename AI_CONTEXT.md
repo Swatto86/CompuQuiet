@@ -17,11 +17,13 @@ from an undo journal. Tray-resident Tauri 2 desktop app; unelevated by default.
 ## Component Map
 
 - `src-tauri/src/tray.rs` — tray menu handled entirely in Rust (`dispatch_menu`);
-  Quit restores per settings then `app.exit(0)` (no webview dependency)
+  right-click opens the menu from the event loop (`show_menu`) so Windows
+  accepts the click; Quit restores per settings then `app.exit(0)` (no webview)
 - `src-tauri/src/commands.rs` — IPC; `simulate_tray_menu` (fake-platform only) for e2e
 - `crates/cq-core/src/store.rs` — data dir `CompuQuiet`; migrates legacy `ComputeQuiet`;
   env `COMPUQUIET_DATA_DIR` (legacy `COMPUTEQUIET_DATA_DIR`)
-- `ui/index.html` — Home / Find savings / What to park / Settings (About folded in)
+- `ui/index.html` — Home / Scan / Park list / Settings. Home states what the
+  button will do (`homePlan` in `ui/src/format.ts`) before the user leaves the page.
 
 ## Data Flow
 
@@ -30,6 +32,9 @@ auto-apply low-risk only when `auto_scan` is on.
 
 ## Recent Context & Decisions
 
+- 2026-09-26: Tray menu opens from the event loop (`show_menu`) so Windows
+  accepts item clicks; Linux re-applies the menu after an icon change.
+  Home screen states what one press will do; Scan and Settings copy is plainer.
 - 2026-09-26: Renamed product to CompuQuiet (crate `compuquiet`, id `co.swatto.compuquiet`).
 - 2026-09-26: Tray right-click menu fixed — all actions run in Rust; Quit no longer
   depends on a hidden webview receiving `confirm-quit`.

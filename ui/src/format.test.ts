@@ -5,8 +5,10 @@ import {
   formatBytes,
   formatPercent,
   formatSince,
+  homePlan,
   summaryLines,
 } from "./format.ts";
+import type { Profile } from "./bridge.ts";
 
 test("bytes scale with one decimal below 100 and none above", () => {
   assert.equal(formatBytes(0), "0 B");
@@ -64,4 +66,38 @@ test("summary lines only mention what happened", () => {
       "Cached memory purged",
     ],
   );
+});
+
+function profile(partial: Partial<Profile> = {}): Profile {
+  return {
+    processes: [],
+    services: [],
+    power: "leave",
+    purge_memory: false,
+    keep_alive: [],
+    ...partial,
+  };
+}
+
+test("the home plan counts only what the button will actually touch", () => {
+  assert.equal(
+    homePlan(false, profile()),
+    "Nothing is selected yet. Open Park list and tick what this button should touch.",
+  );
+  assert.equal(
+    homePlan(
+      false,
+      profile({
+        processes: [
+          { name: "OneDrive.exe", action: "suspend", enabled: true },
+          { name: "Dropbox.exe", action: "close", enabled: false },
+        ],
+        services: [{ name: "SysMain", enabled: true }],
+        power: "performance",
+        purge_memory: true,
+      }),
+    ),
+    "One press will park 1 program, stop 1 service, switch to the performance power plan, and purge cached memory. Press again to undo it.",
+  );
+  assert.match(homePlan(true, profile()), /undo them/);
 });

@@ -5,8 +5,15 @@
 //! Every tray menu action is handled here in Rust. Depending on the webview
 //! to receive an event (and show a dialog while the window may be hidden)
 //! made the whole right-click menu look dead on Windows.
+//!
+//! On Windows the icon's window procedure also cannot pop the menu itself:
+//! `SetForegroundWindow` fails from that procedure, so the menu appears and
+//! then ignores every click. The click is recorded and the menu is opened
+//! afterwards, on the event loop, where the shell accepts it.
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
@@ -22,8 +29,18 @@ const ID_TOGGLE: &str = "tray-toggle";
 const ID_SHOW: &str = "tray-show";
 const ID_QUIT: &str = "tray-quit";
 
+/// A click on the tray unfocuses the window before the click-up arrives.
+/// Treat a blur this recent as "the user was looking at the window".
+const BLUR_GRACE_MS: u64 = 400;
+
+static BLURRED_AT_MS: AtomicU64 = AtomicU64::new(0);
+
 pub struct TrayHandles {
     toggle: MenuItem<tauri::Wry>,
+    /// Kept so the GTK/Win32 menu is not destroyed out from under the icon.
+    menu: Menu<tauri::Wry>,
+    /// Whether the amber Quiet icon is the one currently shown.
+    icon_quiet: AtomicBool,
     /// Kept so the icon and its menu stay alive for the process lifetime.
     _tray: TrayIcon<tauri::Wry>,
 }
@@ -58,18 +75,31 @@ pub fn install(app: &AppHandle) -> tauri::Result<()> {
         })
         .on_tray_icon_event(|tray, event| {
             if let TrayIconEvent::Click {
-                button: MouseButton::Left,
-                button_state: MouseButtonState::Up,
+                button,
+                button_state,
                 ..
             } = event
             {
-                toggle_window(tray.app_handle());
+                if click_opens_menu(button, button_state) {
+                    // Runs on the event loop, after the icon's window procedure
+                    // has returned, so the popup can take the foreground.
+                    let _ = tray.with_inner_tray_icon(|inner| inner.show_menu());
+                } else if button == MouseButton::Left && button_state == MouseButtonState::Up {
+                    toggle_window(tray.app_handle());
+                }
             }
         })
         .build(app)?;
 
+    // The automatic right-click popup runs inside the icon window procedure,
+    // where Windows will not give it the foreground, so clicks do nothing.
+    // Linux has no click events; its indicator menu stays automatic.
+    let _ = tray.with_inner_tray_icon(|inner| inner.set_show_menu_on_right_click(false));
+
     app.manage(TrayHandles {
         toggle,
+        menu,
+        icon_quiet: AtomicBool::new(false),
         _tray: tray,
     });
     Ok(())
@@ -86,15 +116,45 @@ pub fn refresh(app: &AppHandle, state: &EngineState) {
     } else {
         (ICON_IDLE, "CompuQuiet — idle", "Free up this PC")
     };
+
+    let changed = {
+        let Some(handles) = app.try_state::<TrayHandles>() else {
+            return;
+        };
+        let _ = handles.toggle.set_text(label);
+        // Read so the field is used on every platform: owning `menu` here is
+        // what keeps the native menu from being destroyed.
+        let _keep_menu = &handles.menu;
+        handles.icon_quiet.swap(state.quiet, Ordering::Relaxed) != state.quiet
+    };
+    // libappindicator drops the menu when the icon file changes, so the menu
+    // is put back after the icon. Clone it before borrowing the tray.
+    #[cfg(target_os = "linux")]
+    let menu = changed
+        .then(|| {
+            app.try_state::<TrayHandles>()
+                .map(|handles| handles.menu.clone())
+        })
+        .flatten();
+
     if let Some(tray) = app.tray_by_id("main") {
-        if let Ok(image) = tauri::image::Image::from_bytes(bytes) {
-            let _ = tray.set_icon(Some(image));
+        if changed {
+            if let Ok(image) = tauri::image::Image::from_bytes(bytes) {
+                let _ = tray.set_icon(Some(image));
+            }
+            #[cfg(target_os = "linux")]
+            if let Some(menu) = menu {
+                let _ = tray.set_menu(Some(menu));
+            }
         }
         let _ = tray.set_tooltip(Some(tooltip));
     }
-    if let Some(handles) = app.try_state::<TrayHandles>() {
-        let _ = handles.toggle.set_text(label);
-    }
+}
+
+/// Record that the window just lost focus, so the tray click that caused it
+/// is not mistaken for "the window was already in the background".
+pub fn note_blur() {
+    BLURRED_AT_MS.store(now_ms(), Ordering::Relaxed);
 }
 
 fn toggle_from_tray(app: AppHandle) {
@@ -167,15 +227,43 @@ fn toggle_window(app: &AppHandle) {
     };
     let visible = window.is_visible().unwrap_or(false);
     let focused = window.is_focused().unwrap_or(false);
-    if visible && focused {
+    let blurred = blurred_recently(BLURRED_AT_MS.load(Ordering::Relaxed), now_ms());
+    if click_hides_window(visible, focused, blurred) {
         let _ = window.hide();
     } else {
         reveal(app);
     }
 }
 
+/// Right-click release opens the menu. The press is ignored so the menu is
+/// not shown twice, and left-click stays "show or hide the window".
+fn click_opens_menu(button: MouseButton, state: MouseButtonState) -> bool {
+    button == MouseButton::Right && state == MouseButtonState::Up
+}
+
+/// Hide when the window is up and the user was looking at it (or the click
+/// itself just blurred it). A visible window in the background is brought
+/// forward instead.
+fn click_hides_window(visible: bool, focused: bool, blurred_recently: bool) -> bool {
+    visible && (focused || blurred_recently)
+}
+
+fn blurred_recently(blurred_at_ms: u64, now_ms: u64) -> bool {
+    blurred_at_ms != 0 && now_ms >= blurred_at_ms && now_ms - blurred_at_ms < BLUR_GRACE_MS
+}
+
+fn now_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis() as u64)
+        .unwrap_or(0)
+}
+
 #[cfg(test)]
 mod tests {
+    use super::{BLUR_GRACE_MS, blurred_recently, click_hides_window, click_opens_menu};
+    use tauri::tray::{MouseButton, MouseButtonState};
+
     #[test]
     fn known_tray_menu_ids_are_stable() {
         // Mutation guard: if these strings change, Windows tray handlers that
@@ -183,5 +271,34 @@ mod tests {
         assert_eq!(super::ID_TOGGLE, "tray-toggle");
         assert_eq!(super::ID_SHOW, "tray-show");
         assert_eq!(super::ID_QUIT, "tray-quit");
+    }
+
+    #[test]
+    fn right_click_release_opens_the_menu() {
+        assert!(click_opens_menu(MouseButton::Right, MouseButtonState::Up));
+        assert!(!click_opens_menu(
+            MouseButton::Right,
+            MouseButtonState::Down
+        ));
+        assert!(!click_opens_menu(MouseButton::Left, MouseButtonState::Up));
+        assert!(!click_opens_menu(MouseButton::Middle, MouseButtonState::Up));
+    }
+
+    #[test]
+    fn tray_click_hides_only_the_window_the_user_was_looking_at() {
+        assert!(click_hides_window(true, true, false));
+        // The click itself blurs the window before the button comes up.
+        assert!(click_hides_window(true, false, true));
+        // Already in the background: bring it forward.
+        assert!(!click_hides_window(true, false, false));
+        assert!(!click_hides_window(false, false, true));
+    }
+
+    #[test]
+    fn a_blur_counts_only_for_a_short_moment() {
+        assert!(!blurred_recently(0, 1_000));
+        assert!(blurred_recently(1_000, 1_000 + BLUR_GRACE_MS - 1));
+        assert!(!blurred_recently(1_000, 1_000 + BLUR_GRACE_MS));
+        assert!(!blurred_recently(5_000, 1_000));
     }
 }

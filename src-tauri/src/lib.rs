@@ -82,17 +82,22 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                // `prevent_close` before anything fallible: the one real exit
-                // is the quit command, which knows whether to restore first.
-                api.prevent_close();
-                let engine = window.state::<Arc<Engine>>();
-                if engine.settings().close_to_tray {
-                    let _ = window.hide();
-                } else {
-                    use tauri::Emitter;
-                    let _ = window.emit("confirm-quit", ());
+            match event {
+                tauri::WindowEvent::CloseRequested { api, .. } => {
+                    // `prevent_close` before anything fallible: the one real exit
+                    // is the quit command, which knows whether to restore first.
+                    api.prevent_close();
+                    let engine = window.state::<Arc<Engine>>();
+                    if engine.settings().close_to_tray {
+                        let _ = window.hide();
+                    } else {
+                        use tauri::Emitter;
+                        let _ = window.emit("confirm-quit", ());
+                    }
                 }
+                // A tray click blurs the window before the click-up is delivered.
+                tauri::WindowEvent::Focused(false) => tray::note_blur(),
+                _ => {}
             }
         })
         .invoke_handler(tauri::generate_handler![

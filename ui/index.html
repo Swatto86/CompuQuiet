@@ -18,8 +18,8 @@
         <h1>CompuQuiet</h1>
         <nav class="tabs" role="tablist" aria-label="Sections">
           <button class="tab" role="tab" data-view="dashboard" aria-selected="true" id="tab-dashboard">Home</button>
-          <button class="tab" role="tab" data-view="scan" aria-selected="false" id="tab-scan">Find savings</button>
-          <button class="tab" role="tab" data-view="targets" aria-selected="false" id="tab-targets">What to park</button>
+          <button class="tab" role="tab" data-view="scan" aria-selected="false" id="tab-scan">Scan</button>
+          <button class="tab" role="tab" data-view="targets" aria-selected="false" id="tab-targets">Park list</button>
           <button class="tab" role="tab" data-view="settings" aria-selected="false" id="tab-settings">Settings</button>
         </nav>
         <span class="spacer"></span>
@@ -48,12 +48,15 @@
               <h2 id="hero-title">Ready for a game or local AI</h2>
               <p id="hero-sub">One press parks background apps and services. Press again to put everything back.</p>
               <p id="hero-since" class="muted" hidden></p>
-              <p class="hero-steps muted">
-                Optional: open <button type="button" class="linkish" data-jump="scan">Find savings</button>
-                to see what is eating CPU and memory right now, then come back here.
-              </p>
             </div>
           </div>
+          <p id="hero-plan" class="plan"></p>
+          <p class="tray-hint muted">
+            Closing this window leaves CompuQuiet in the tray. Right-click that icon for the same
+            button, to open this window, or to quit.
+            <button type="button" class="linkish" data-jump="scan">Scan this PC</button>
+            first if you want to see what else can be parked.
+          </p>
 
           <div class="stats" aria-label="Live resources">
             <div class="stat">
@@ -98,6 +101,7 @@
               <div>
                 <h3>What is using resources right now</h3>
                 <p class="muted" id="scan-summary">Scan to list background programs and services you can park safely.</p>
+                <p class="muted scan-legend">Low risk starts ticked. Medium risk (browsers, launchers, Office) stays off until you tick it. Already on your park list is shown greyed out.</p>
               </div>
               <button id="scan-run" type="button" class="primary">Scan now</button>
             </div>
@@ -109,8 +113,8 @@
             </div>
           </div>
           <div class="actions">
-            <button id="scan-apply" type="button">Remember selected</button>
-            <button id="scan-apply-quiet" type="button" class="primary">Remember &amp; free up this PC</button>
+            <button id="scan-apply" type="button">Add to park list</button>
+            <button id="scan-apply-quiet" type="button" class="primary">Add and free up this PC</button>
             <span id="scan-status" class="muted" aria-live="polite"></span>
           </div>
         </section>
@@ -120,7 +124,7 @@
             <div class="card card-wide">
               <div class="card-head">
                 <h3>Programs to park</h3>
-                <span class="muted">Suspend freezes a program in place; Close quits it and relaunches it when you restore.</span>
+                <span class="muted">Suspend freezes a program and keeps its state. Close quits it and opens it again when you restore. Changes stay unsaved until you press Save changes.</span>
               </div>
               <form id="process-add" class="row">
                 <label class="grow">
@@ -164,7 +168,7 @@
             </div>
           </div>
           <div class="actions">
-            <button id="targets-save" type="button" class="primary">Save list</button>
+            <button id="targets-save" type="button" class="primary">Save changes</button>
             <button id="targets-reset" type="button">Restore defaults</button>
             <span id="targets-status" class="muted" aria-live="polite"></span>
           </div>
@@ -173,13 +177,33 @@
         <section id="view-settings" class="view" role="tabpanel" aria-labelledby="tab-settings" hidden>
           <div class="cards">
             <div class="card card-wide">
-              <h3>Behaviour</h3>
-              <label class="check"><input type="checkbox" id="set-autostart" /> <span>Start with Windows / login</span> <span id="autostart-note" class="muted"></span></label>
-              <label class="check"><input type="checkbox" id="set-hidden" /> <span>Start hidden in the tray</span></label>
-              <label class="check"><input type="checkbox" id="set-close-tray" /> <span>Closing the window keeps CompuQuiet in the tray</span></label>
-              <label class="check"><input type="checkbox" id="set-notify" /> <span>Notify when Quiet Mode is toggled from the tray</span></label>
-              <label class="check"><input type="checkbox" id="set-restore-quit" /> <span>Restore everything automatically when quitting</span></label>
-              <label class="check"><input type="checkbox" id="set-auto-scan" /> <span>When freeing the PC, also park low-risk finds from a quick scan</span></label>
+              <h3>When CompuQuiet starts</h3>
+              <label class="choice"><input type="checkbox" id="set-autostart" />
+                <span>Start when I sign in <span id="autostart-note" class="muted"></span></span>
+                <span class="choice-help">Uses a login task. It is created with administrator rights only if this window is running as administrator.</span>
+              </label>
+              <label class="choice"><input type="checkbox" id="set-hidden" />
+                <span>Start hidden in the tray</span>
+                <span class="choice-help">Skip the window on launch. Open it later from the tray menu.</span>
+              </label>
+              <h3 class="group">When you close the window</h3>
+              <label class="choice"><input type="checkbox" id="set-close-tray" />
+                <span>Keep running in the tray</span>
+                <span class="choice-help">The window's close button hides CompuQuiet. Quit, in Settings or the tray menu, is the real exit.</span>
+              </label>
+              <label class="choice"><input type="checkbox" id="set-notify" />
+                <span>Notify when the tray toggles Quiet Mode</span>
+                <span class="choice-help">A notification only when the window is hidden, so a tray click is not silent.</span>
+              </label>
+              <label class="choice"><input type="checkbox" id="set-restore-quit" />
+                <span>Put everything back when quitting</span>
+                <span class="choice-help">The tray's Quit does this automatically. Quitting from this window still asks.</span>
+              </label>
+              <h3 class="group">When you free up this PC</h3>
+              <label class="choice"><input type="checkbox" id="set-auto-scan" />
+                <span>Also park low-risk finds from a quick scan</span>
+                <span class="choice-help">For that run only. Medium-risk programs are never parked unless you tick them on Scan, and the saved park list is not edited.</span>
+              </label>
               <label class="row-label"><span>Theme</span>
                 <select id="set-theme"><option value="system">Match system</option><option value="dark">Dark</option><option value="light">Light</option></select>
               </label>
@@ -192,7 +216,7 @@
             </div>
             <div class="card">
               <h3>Quit</h3>
-              <p class="muted">Closing this window only hides it. Use Quit (or the tray menu) to exit for good.</p>
+              <p class="muted">Closing this window only hides it when “Keep running in the tray” is on. Quit exits for good. The tray menu's Quit does the same without opening this window.</p>
               <button id="quit" type="button" class="danger">Quit CompuQuiet</button>
             </div>
             <div class="card card-wide about">

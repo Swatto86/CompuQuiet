@@ -308,10 +308,13 @@ main {
 }
 
 .power-label {
+  max-width: 9.5em;
   font-size: 13px;
   font-weight: 600;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
+  text-align: center;
+  line-height: 1.2;
 }
 
 .power:hover .power-ring {
@@ -579,11 +582,78 @@ table.targets select {
   color: var(--fg-muted);
 }
 
+h3.group {
+  margin-top: 18px;
+}
+
+.plan {
+  margin: 0 8px 8px;
+  padding: 12px 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius);
+  max-width: 720px;
+}
+
+.tray-hint {
+  margin: 0 8px 18px;
+  max-width: 720px;
+  font-size: 13px;
+}
+
+.choice {
+  display: grid;
+  grid-template-columns: 20px 1fr;
+  column-gap: 10px;
+  row-gap: 2px;
+  align-items: start;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.choice input {
+  grid-column: 1;
+  grid-row: 1 / span 2;
+  margin: 3px 0 0;
+  accent-color: var(--accent);
+  width: 16px;
+  height: 16px;
+}
+
+.choice-help {
+  grid-column: 2;
+  color: var(--fg-muted);
+  font-size: 13px;
+}
+
+.scan-legend {
+  margin: 6px 0 0;
+  max-width: 640px;
+}
+
 .actions {
   display: flex;
   align-items: center;
   gap: 10px;
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
   margin-top: 16px;
+  padding: 12px 0;
+  background: color-mix(in srgb, var(--bg) 92%, transparent);
+  border-top: 1px solid var(--border);
+}
+
+table.targets td,
+table.targets th {
+  padding: 8px 6px;
+}
+
+table.targets input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
 }
 
 code.path {

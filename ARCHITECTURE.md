@@ -79,9 +79,11 @@ suite. It is never a default feature; `scripts/verify.sh` asserts that.
 - Close hides to the tray when `close_to_tray` is set; otherwise it emits
   `confirm-quit` and the page decides. The `quit` command is the one exit and
   can restore first.
-- Tray: left click toggles the window, the menu toggles Quiet Mode, and the
-  icon/tooltip reflect state. Tray-driven toggles notify when the window is
-  hidden.
+- Tray: left click shows or hides the window (a blur caused by that click
+  still counts as "the window was in front"). Right click opens the menu on
+  the event loop, not inside the icon's window procedure, because Windows
+  ignores menu clicks opened from that procedure. Linux keeps the indicator
+  menu and puts it back after an icon change, which otherwise drops it.
 - Single instance: a second launch reveals the running window.
 - Autostart: `schtasks` logon task on Windows (elevated when created by an
   elevated process), `tauri-plugin-autostart` elsewhere, always guarded

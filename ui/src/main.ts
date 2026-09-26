@@ -12,6 +12,7 @@ import {
 } from "./bridge.ts";
 import { Dashboard } from "./dashboard.ts";
 import { showDialog, toast } from "./dialog.ts";
+import { homePlan } from "./format.ts";
 import { Scan } from "./scan.ts";
 import { SettingsView } from "./settings-view.ts";
 import { Targets } from "./targets.ts";
@@ -89,8 +90,13 @@ function renderAll(): void {
   dashboard.render(engine);
   targets.describe(engine.capabilities, engine.os);
   settingsView.render(settings, info);
+  renderPlan();
   renderAbout();
   renderBanner();
+}
+
+function renderPlan(): void {
+  byId("hero-plan").textContent = homePlan(engine.quiet, settings.profile);
 }
 
 function renderAbout(): void {
@@ -207,6 +213,7 @@ async function saveSettings(next: Settings): Promise<void> {
   await api.saveSettings(next);
   settings = next;
   renderBanner();
+  renderPlan();
 }
 
 async function pollStats(): Promise<void> {
