@@ -10,12 +10,15 @@ import {
   text,
 } from "./support.ts";
 
-describe("ComputeQuiet boots", () => {
-  it("shows the dashboard in normal mode", async () => {
+describe("CompuQuiet boots", () => {
+  it("shows the dashboard ready for Quiet Mode", async () => {
     await logWebviewDiagnostics();
     await $("#toggle").waitForExist({ timeout: 30_000 });
-    assert.equal(await $("#hero-title").getText(), "Normal mode");
-    assert.equal(await text("#status-pill"), "Idle");
+    assert.equal(
+      await $("#hero-title").getText(),
+      "Ready for a game or local AI",
+    );
+    assert.equal(await text("#status-pill"), "Ready");
     assert.equal(await $("#toggle").getAttribute("aria-pressed"), "false");
     assert.equal(
       await browser.execute(() =>
@@ -40,8 +43,8 @@ describe("ComputeQuiet boots", () => {
     await screenshot("dashboard");
   });
 
-  it("names the version and platform on the About tab", async () => {
-    await clickTab("about");
+  it("names the version and platform under Settings", async () => {
+    await clickTab("settings");
     const version = JSON.parse(
       fs.readFileSync(path.resolve(process.cwd(), "package.json"), "utf8"),
     ).version as string;

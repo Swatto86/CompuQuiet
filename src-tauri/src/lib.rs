@@ -44,7 +44,7 @@ pub(crate) fn platform_for_relaunch() -> Box<dyn Platform> {
 
 pub fn run() {
     let data_dir = cq_core::store::data_dir()
-        .unwrap_or_else(|error| panic!("ComputeQuiet has nowhere to keep its state: {error}"));
+        .unwrap_or_else(|error| panic!("CompuQuiet has nowhere to keep its state: {error}"));
     let engine = Arc::new(Engine::new(Arc::from(build_platform()), data_dir));
     let hidden_flag = std::env::args().skip(1).any(|arg| arg == "--hidden");
     let _ = START_HIDDEN.set(hidden_flag || engine.settings().start_hidden);
@@ -113,7 +113,9 @@ pub fn run() {
             commands::relaunch_elevated,
             commands::quit,
             commands::show_window,
+            #[cfg(feature = "fake-platform")]
+            commands::simulate_tray_menu,
         ])
         .run(tauri::generate_context!())
-        .unwrap_or_else(|error| panic!("ComputeQuiet could not start its window: {error}"));
+        .unwrap_or_else(|error| panic!("CompuQuiet could not start its window: {error}"));
 }

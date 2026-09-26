@@ -155,7 +155,7 @@ impl Engine {
             .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
             .is_err()
         {
-            return Err(AppError::new("busy", "ComputeQuiet is already working"));
+            return Err(AppError::new("busy", "CompuQuiet is already working"));
         }
         Ok(BusyGuard(&self.busy))
     }

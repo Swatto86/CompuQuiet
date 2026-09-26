@@ -1,9 +1,13 @@
 //! Where state lives and how it is written.
 //!
-//! One friendly `ComputeQuiet` directory under the platform's configuration
-//! root, or wherever `COMPUTEQUIET_DATA_DIR` points — that override is what
+//! One friendly `CompuQuiet` directory under the platform's configuration
+//! root, or wherever `COMPUQUIET_DATA_DIR` points — that override is what
 //! makes a portable copy self-contained and lets the acceptance suite run
 //! beside an installed app without touching its state.
+//!
+//! A leftover `ComputeQuiet` folder (the previous product name) is adopted
+//! when `CompuQuiet` does not yet exist, so an upgrade keeps settings and
+//! the undo journal.
 //!
 //! Writes go to a temporary file in the same directory and are renamed into
 //! place, so an interrupted save leaves the previous file intact rather than a
@@ -14,26 +18,45 @@ use std::path::{Path, PathBuf};
 
 use crate::CoreError;
 
-pub const DATA_DIR_ENV: &str = "COMPUTEQUIET_DATA_DIR";
+pub const DATA_DIR_ENV: &str = "COMPUQUIET_DATA_DIR";
+pub const LEGACY_DATA_DIR_ENV: &str = "COMPUTEQUIET_DATA_DIR";
+pub const APP_DIR_NAME: &str = "CompuQuiet";
+pub const LEGACY_APP_DIR_NAME: &str = "ComputeQuiet";
 
 /// The state directory for this process.
 pub fn data_dir() -> Result<PathBuf, CoreError> {
     resolve_data_dir(
         std::env::var_os(DATA_DIR_ENV).as_deref(),
+        std::env::var_os(LEGACY_DATA_DIR_ENV).as_deref(),
         dirs::config_dir(),
     )
 }
 
 fn resolve_data_dir(
     override_dir: Option<&OsStr>,
+    legacy_override: Option<&OsStr>,
     config_root: Option<PathBuf>,
 ) -> Result<PathBuf, CoreError> {
     if let Some(dir) = override_dir.filter(|value| !value.is_empty()) {
         return Ok(PathBuf::from(dir));
     }
-    config_root
-        .map(|root| root.join("ComputeQuiet"))
-        .ok_or(CoreError::NoDataDir)
+    if let Some(dir) = legacy_override.filter(|value| !value.is_empty()) {
+        return Ok(PathBuf::from(dir));
+    }
+    let root = config_root.ok_or(CoreError::NoDataDir)?;
+    let preferred = root.join(APP_DIR_NAME);
+    if preferred.exists() {
+        return Ok(preferred);
+    }
+    let legacy = root.join(LEGACY_APP_DIR_NAME);
+    if legacy.exists() {
+        // Move once so future launches and cleanup share one location.
+        match std::fs::rename(&legacy, &preferred) {
+            Ok(()) => return Ok(preferred),
+            Err(_) => return Ok(legacy),
+        }
+    }
+    Ok(preferred)
 }
 
 /// Replace `path` with `bytes` atomically.
@@ -130,16 +153,37 @@ mod tests {
     fn the_override_wins_and_an_empty_override_is_ignored() {
         let root = PathBuf::from("/cfg");
         assert_eq!(
-            resolve_data_dir(Some(OsStr::new("/portable")), Some(root.clone())).unwrap(),
+            resolve_data_dir(Some(OsStr::new("/portable")), None, Some(root.clone())).unwrap(),
             PathBuf::from("/portable")
         );
         assert_eq!(
-            resolve_data_dir(Some(OsStr::new("")), Some(root.clone())).unwrap(),
-            root.join("ComputeQuiet")
+            resolve_data_dir(
+                None,
+                Some(OsStr::new("/legacy-portable")),
+                Some(root.clone())
+            )
+            .unwrap(),
+            PathBuf::from("/legacy-portable")
+        );
+        assert_eq!(
+            resolve_data_dir(Some(OsStr::new("")), None, Some(root.clone())).unwrap(),
+            root.join(APP_DIR_NAME)
         );
         assert!(matches!(
-            resolve_data_dir(None, None),
+            resolve_data_dir(None, None, None),
             Err(CoreError::NoDataDir)
         ));
+    }
+
+    #[test]
+    fn legacy_folder_is_renamed_when_preferred_is_absent() {
+        let root = tempfile::tempdir().unwrap();
+        let legacy = root.path().join(LEGACY_APP_DIR_NAME);
+        std::fs::create_dir_all(&legacy).unwrap();
+        std::fs::write(legacy.join("settings.json"), b"{}").unwrap();
+        let resolved = resolve_data_dir(None, None, Some(root.path().to_path_buf())).unwrap();
+        assert_eq!(resolved, root.path().join(APP_DIR_NAME));
+        assert!(resolved.join("settings.json").is_file());
+        assert!(!legacy.exists());
     }
 }

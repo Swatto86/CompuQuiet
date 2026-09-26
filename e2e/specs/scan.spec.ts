@@ -127,7 +127,7 @@ describe("Scan", () => {
 
     await clickTab("dashboard");
     await $("#toggle").click();
-    await waitForPill("Idle");
+    await waitForPill("Ready");
   });
 
   it("auto-scan parks low-risk finds without changing the saved targets", async () => {
@@ -168,7 +168,7 @@ describe("Scan", () => {
     );
 
     await $("#toggle").click();
-    await waitForPill("Idle");
+    await waitForPill("Ready");
     await clickTab("settings");
     await $("#set-auto-scan").click();
     await browser.waitUntil(

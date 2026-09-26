@@ -78,9 +78,7 @@ export class SettingsView {
     try {
       await api.setAutostart(enabled);
       toast(
-        enabled
-          ? "ComputeQuiet will start with the system"
-          : "Autostart removed",
+        enabled ? "CompuQuiet will start with the system" : "Autostart removed",
       );
     } catch (error) {
       toast(errorMessage(error), true);

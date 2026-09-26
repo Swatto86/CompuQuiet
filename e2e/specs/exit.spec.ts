@@ -48,6 +48,30 @@ describe("quitting", () => {
     // A fresh session so the runner's teardown has something to close.
     await browser.reloadSession();
     await $("#toggle").waitForExist({ timeout: 30_000 });
-    assert.equal(await text("#status-pill"), "Idle");
+    assert.equal(await text("#status-pill"), "Ready");
+  });
+
+  it("exits when the tray Quit action runs while idle", async () => {
+    const pids = appPids(application);
+    assert.ok(pids.length > 0, "the app process was not found");
+
+    // Hidden on purpose (not a user control); WebDriver refuses .click() on it.
+    await browser.execute(() => {
+      document.getElementById("e2e-tray-quit")?.click();
+    });
+
+    const deadline = Date.now() + 30_000;
+    while (Date.now() < deadline && appPids(application).length > 0) {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    assert.deepEqual(
+      appPids(application),
+      [],
+      "tray Quit left the app running",
+    );
+
+    await browser.reloadSession();
+    await $("#toggle").waitForExist({ timeout: 30_000 });
+    assert.equal(await text("#status-pill"), "Ready");
   });
 });

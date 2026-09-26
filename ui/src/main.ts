@@ -16,6 +16,7 @@ import { Scan } from "./scan.ts";
 import { SettingsView } from "./settings-view.ts";
 import { Targets } from "./targets.ts";
 import { applyTheme } from "./theme.ts";
+import { invoke } from "@tauri-apps/api/core";
 
 function byId<T extends HTMLElement>(id: string): T {
   const element = document.getElementById(id);
@@ -65,6 +66,7 @@ async function boot(): Promise<void> {
   renderAll();
   wireTabs();
   wireBanner();
+  wireE2eHooks();
 
   await onProgress((line) => dashboard.appendLog(line));
   await onState((state) => {
@@ -145,6 +147,19 @@ function wireBanner(): void {
   });
 }
 
+/** Acceptance-suite only: same path as the tray Quit menu item. */
+function wireE2eHooks(): void {
+  const button = document.getElementById("e2e-tray-quit");
+  if (!button) return;
+  button.addEventListener("click", () => {
+    void invoke("simulate_tray_menu", { id: "tray-quit" }).catch(
+      (error: unknown) => {
+        toast(errorMessage(error), true);
+      },
+    );
+  });
+}
+
 async function relaunchElevated(): Promise<void> {
   try {
     await api.relaunchElevated();
@@ -170,8 +185,15 @@ function wireTabs(): void {
       show(tab.dataset["view"] ?? "dashboard"),
     );
   }
+  for (const jump of document.querySelectorAll<HTMLButtonElement>(
+    "[data-jump]",
+  )) {
+    jump.addEventListener("click", () =>
+      show(jump.dataset["jump"] ?? "dashboard"),
+    );
+  }
   document.addEventListener("keydown", (event) => {
-    if (!event.ctrlKey || event.key < "1" || event.key > "5") return;
+    if (!event.ctrlKey || event.key < "1" || event.key > "4") return;
     const tab = tabs[Number(event.key) - 1];
     if (tab) {
       event.preventDefault();
@@ -260,6 +282,6 @@ async function quitFlow(): Promise<void> {
 }
 
 void boot().catch((error: unknown) => {
-  toast(`ComputeQuiet could not start: ${errorMessage(error)}`, true);
+  toast(`CompuQuiet could not start: ${errorMessage(error)}`, true);
   void api.frontendReady();
 });

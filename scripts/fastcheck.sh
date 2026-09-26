@@ -13,10 +13,10 @@ cargo fmt --all -- --check
 
 if [ -n "$package" ]; then
   echo "== cargo check -p $package =="
-  cargo check --locked -p "$package" --all-targets --features computequiet/fake-platform
+  cargo check --locked -p "$package" --all-targets --features compuquiet/fake-platform
 else
   echo "== clippy (workspace) =="
-  cargo clippy --locked --workspace --all-targets --features computequiet/fake-platform -- -D warnings
+  cargo clippy --locked --workspace --all-targets --features compuquiet/fake-platform -- -D warnings
   echo "== frontend types =="
   npx --no-install tsc --noEmit
 fi

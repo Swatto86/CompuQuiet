@@ -70,7 +70,7 @@ impl Settings {
         };
         if settings.version > CURRENT_VERSION {
             return Err(CoreError::Invalid(format!(
-                "{} was written by a newer ComputeQuiet (version {})",
+                "{} was written by a newer CompuQuiet (version {})",
                 Self::path(dir).display(),
                 settings.version
             )));

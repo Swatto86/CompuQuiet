@@ -36,13 +36,13 @@ export class Dashboard {
     this.label.textContent = state.busy
       ? "Working…"
       : state.quiet
-        ? "Restore"
-        : "Go Quiet";
+        ? "Put everything back"
+        : "Free up this PC";
     this.pill.textContent = state.busy
       ? "Working"
       : state.quiet
         ? "Quiet"
-        : "Idle";
+        : "Ready";
     this.pill.className = `pill ${state.busy ? "pill-busy" : state.quiet ? "pill-quiet" : "pill-idle"}`;
 
     if (state.quiet) {
@@ -51,11 +51,11 @@ export class Dashboard {
         : "Quiet Mode is on";
       this.sub.textContent = state.recovered
         ? "A previous session left changes in place. Restore puts everything back."
-        : "Background work is parked. Restore when you are done.";
+        : "Background work is parked. Press again when you are done.";
     } else {
-      this.title.textContent = "Normal mode";
+      this.title.textContent = "Ready for a game or local AI";
       this.sub.textContent =
-        "Everything is running as usual. Switch on Quiet Mode before a game or a model run.";
+        "One press parks background apps and services. Press again to put everything back.";
     }
     this.tick();
 

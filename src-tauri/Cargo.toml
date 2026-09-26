@@ -1,12 +1,12 @@
 [package]
-name = "computequiet"
+name = "compuquiet"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 description = "Free the machine for games and local AI, then put everything back"
 
 [lib]
-name = "computequiet_lib"
+name = "compuquiet_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

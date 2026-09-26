@@ -171,7 +171,7 @@ pub fn spawn_detached(exe: &Path, args: &[String], cwd: Option<&Path>) -> Result
         .spawn()
         .map_err(|e| PlatformError::io(format!("starting {}", exe.display()), e))?;
     // Reap the child when it eventually exits. Dropping the handle would leave
-    // a zombie on Unix for as long as ComputeQuiet runs, and a later `close`
+    // a zombie on Unix for as long as CompuQuiet runs, and a later `close`
     // of that program would then wait on a corpse that never disappears.
     std::thread::Builder::new()
         .name(format!("reap {}", exe.display()))

@@ -1,4 +1,4 @@
-//! ComputeQuiet's domain, with no operating-system calls in it.
+//! CompuQuiet's domain, with no operating-system calls in it.
 //!
 //! Everything here is testable without a window or a real process: what a
 //! profile contains, which processes must never be touched, how a snapshot of

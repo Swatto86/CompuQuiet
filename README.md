@@ -1,4 +1,4 @@
-# ComputeQuiet
+# CompuQuiet
 
 Frees the machine for games and local AI, then puts everything back.
 
@@ -10,7 +10,7 @@ relaunches every program and returns the power plan, in reverse order. Each
 step is written to an undo journal before the next one runs, so a crash or a
 reboot cannot lose the list of what to put back.
 
-![ComputeQuiet in Quiet Mode](docs/quiet.png)
+![CompuQuiet in Quiet Mode](docs/quiet.png)
 
 ## What it does
 
@@ -23,12 +23,12 @@ reboot cannot lose the list of what to put back.
 | Purge cached memory | standby list (administrator) | `drop_caches` via polkit | not available |
 
 The desktop shell, compositor, input, audio, security software, terminals
-and ComputeQuiet itself are always protected and cannot be added as targets.
+and CompuQuiet itself are always protected and cannot be added as targets.
 Your own "never touch" list sits on top of that.
 
 ## Using it
 
-1. Open ComputeQuiet. The dashboard shows live CPU, memory and process figures.
+1. Open CompuQuiet. The dashboard shows live CPU, memory and process figures.
 2. Open **Scan** to see where savings can be made right now: recognised
    background software that is not yet a target, large programs with no
    window, stoppable services that are running, a non-performance power plan
@@ -47,10 +47,10 @@ Your own "never touch" list sits on top of that.
 ![The Scan tab](docs/scan.png)
 
 **Windows and administrator rights.** Stopping services and purging memory
-need an elevated process. ComputeQuiet starts unelevated so it can run at
+need an elevated process. CompuQuiet starts unelevated so it can run at
 logon without a prompt; when a target needs elevation the dashboard offers
 *Relaunch as administrator*. "Start with the system" registers a logon task,
-and when created from an elevated ComputeQuiet that task starts it elevated
+and when created from an elevated CompuQuiet that task starts it elevated
 without a prompt.
 
 **Start with the system** is available on all three platforms (logon task on
@@ -60,18 +60,18 @@ build directory.
 
 ## Install
 
-Download from the [GitHub Releases page](https://github.com/Swatto86/ComputeQuiet/releases).
+Download from the [GitHub Releases page](https://github.com/Swatto86/CompuQuiet/releases).
 Every release ships an installer and a portable build per platform, built by
 the `release` workflow from the tagged commit after the full gate passes:
 
 | Platform | Installer | Portable |
 | --- | --- | --- |
-| Windows 10/11 x64 | `ComputeQuiet_<version>_x64-setup.exe` (NSIS, per-user) | `ComputeQuiet-portable-windows-x64.exe` |
-| Linux x64 | `computequiet_<version>_amd64.deb` | `ComputeQuiet-portable-linux-x64` / `.AppImage` |
-| macOS (Apple silicon) | `ComputeQuiet_<version>_aarch64.dmg` | `ComputeQuiet-portable-macos-arm64.app.tar.gz` |
+| Windows 10/11 x64 | `CompuQuiet_<version>_x64-setup.exe` (NSIS, per-user) | `CompuQuiet-portable-windows-x64.exe` |
+| Linux x64 | `CompuQuiet_<version>_amd64.deb` | `CompuQuiet-portable-linux-x64` / `.AppImage` |
+| macOS (Apple silicon) | `CompuQuiet_<version>_aarch64.dmg` | `CompuQuiet-portable-macos-arm64.app.tar.gz` |
 
 Portable builds keep their settings and undo journal in the normal per-user
-configuration folder unless `COMPUTEQUIET_DATA_DIR` points somewhere else,
+configuration folder unless `COMPUQUIET_DATA_DIR` points somewhere else,
 for example a folder beside the executable on a USB stick.
 
 Required runtimes (shared platform components, not bundled):
@@ -80,8 +80,8 @@ Required runtimes (shared platform components, not bundled):
 - **Linux:** `libwebkit2gtk-4.1` and GTK 3 (the `.deb` declares them; the AppImage expects them installed). `powerprofilesctl` and `pkexec` are optional and enable the power and memory actions.
 - **macOS:** nothing beyond macOS 12 or later.
 
-State lives in `%APPDATA%\ComputeQuiet` (Windows), `~/.config/ComputeQuiet`
-(Linux) or `~/Library/Application Support/ComputeQuiet` (macOS):
+State lives in `%APPDATA%\CompuQuiet` (Windows), `~/.config/CompuQuiet`
+(Linux) or `~/Library/Application Support/CompuQuiet` (macOS):
 `settings.json` and, while Quiet Mode is on, `journal.json`.
 
 ## Building from source

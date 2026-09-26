@@ -180,6 +180,15 @@ pub async fn quit(
     Ok(())
 }
 
+/// Drive a tray menu action from the acceptance suite (fake platform only).
+/// The real tray cannot be clicked through WebDriver; this exercises the same
+/// Rust dispatch the right-click menu uses.
+#[cfg(feature = "fake-platform")]
+#[tauri::command]
+pub fn simulate_tray_menu(app: AppHandle, id: String) {
+    tray::dispatch_menu(&app, &id);
+}
+
 #[tauri::command]
 pub fn show_window(app: AppHandle) {
     tray::reveal(&app);

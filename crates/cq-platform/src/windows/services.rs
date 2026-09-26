@@ -126,7 +126,7 @@ mod tests {
         let eventlog = query("EventLog");
         assert_ne!(eventlog.state, ServiceState::NotInstalled);
         assert!(!eventlog.display_name.is_empty());
-        let missing = query("ComputeQuietNoSuchService");
+        let missing = query("CompuQuietNoSuchService");
         assert_eq!(missing.state, ServiceState::NotInstalled);
     }
 }

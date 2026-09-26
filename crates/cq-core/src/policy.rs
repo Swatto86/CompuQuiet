@@ -55,7 +55,13 @@ pub fn is_critical(process_name: &str, os: Os) -> bool {
         .any(|critical| normalize(critical) == name)
 }
 
-const COMMON_CRITICAL: &[&str] = &["computequiet", "computequiet-e2e"];
+const COMMON_CRITICAL: &[&str] = &[
+    "compuquiet",
+    "compuquiet-e2e",
+    // Previous product name — still refuse if an old binary is running.
+    "computequiet",
+    "computequiet-e2e",
+];
 
 const WINDOWS_CRITICAL: &[&str] = &[
     "Idle",
@@ -203,7 +209,7 @@ mod tests {
         assert!(is_critical("gnome-shell", Os::Linux));
         assert!(is_critical("WindowServer", Os::MacOs));
         for os in [Os::Windows, Os::Linux, Os::MacOs] {
-            assert!(is_critical("ComputeQuiet.exe", os));
+            assert!(is_critical("CompuQuiet.exe", os));
         }
         assert!(!is_critical("OneDrive", Os::Windows));
     }

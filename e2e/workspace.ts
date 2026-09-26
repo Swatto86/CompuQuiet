@@ -2,7 +2,7 @@
  * Isolated state for one acceptance run, and process lookups that never
  * match anything by executable name.
  *
- * The app reads `COMPUTEQUIET_DATA_DIR`; the driver launches it with this
+ * The app reads `COMPUQUIET_DATA_DIR`; the driver launches it with this
  * process's environment, so pointing that at a fresh temp directory keeps the
  * suite away from an installed copy's settings and journal.
  */
@@ -11,7 +11,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-export const DATA_DIR_ENV = "COMPUTEQUIET_DATA_DIR";
+export const DATA_DIR_ENV = "COMPUQUIET_DATA_DIR";
 
 /** The profile the specs assume; matches the fake machine's process table. */
 export const SEEDED_SETTINGS = {
@@ -44,7 +44,7 @@ export const SEEDED_SETTINGS = {
 
 export function prepareWorkspace(): string {
   const dir = fs.realpathSync.native(
-    fs.mkdtempSync(path.join(os.tmpdir(), "computequiet-e2e-")),
+    fs.mkdtempSync(path.join(os.tmpdir(), "compuquiet-e2e-")),
   );
   process.env[DATA_DIR_ENV] = dir;
   fs.writeFileSync(

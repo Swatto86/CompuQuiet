@@ -189,7 +189,7 @@ impl Platform for MacOs {
 
     fn relaunch_elevated(&self, _exe: &Path, _args: &[String]) -> Result<()> {
         Err(PlatformError::Unsupported(
-            "run ComputeQuiet with sudo for root-only actions".into(),
+            "run CompuQuiet with sudo for root-only actions".into(),
         ))
     }
 }

@@ -1,4 +1,4 @@
-# ComputeQuiet architecture
+# CompuQuiet architecture
 
 Tauri 2 desktop app: a Rust engine behind a vanilla TypeScript window. The
 page has no filesystem, shell or process permission; everything with an
@@ -89,7 +89,7 @@ suite. It is never a default feature; `scripts/verify.sh` asserts that.
 
 ## State
 
-`COMPUTEQUIET_DATA_DIR` overrides the platform config directory. Files are
+`COMPUQUIET_DATA_DIR` overrides the platform config directory. Files are
 `settings.json` (versioned; a newer version or corrupt file is an error, not
 a reset) and `journal.json` (versioned). Writes are temp-file + rename.
 

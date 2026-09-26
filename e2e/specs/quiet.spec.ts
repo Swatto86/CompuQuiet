@@ -70,14 +70,17 @@ describe("Quiet Mode", () => {
 
   it("restores everything in reverse and removes the journal", async () => {
     await $("#toggle").click();
-    await waitForPill("Idle");
+    await waitForPill("Ready");
 
     assert.equal(
       readJson("journal.json"),
       undefined,
       "journal.json should be gone",
     );
-    assert.equal(await $("#hero-title").getText(), "Normal mode");
+    assert.equal(
+      await $("#hero-title").getText(),
+      "Ready for a game or local AI",
+    );
     const lines = await $$("#log li").map((line) => line.getText());
     assert.deepEqual(lines, [
       "Resume Slack.exe (PID 103)",

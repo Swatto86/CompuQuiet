@@ -6,7 +6,7 @@ resolver = "3"
 version = "1.1.2"
 edition = "2024"
 license = "MIT"
-repository = "https://github.com/Swatto86/ComputeQuiet"
+repository = "https://github.com/Swatto86/CompuQuiet"
 
 [workspace.dependencies]
 cq-core = { path = "crates/cq-core" }

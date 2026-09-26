@@ -149,7 +149,7 @@ impl Journal {
         };
         if journal.version > CURRENT_VERSION {
             return Err(CoreError::Invalid(format!(
-                "{} was written by a newer ComputeQuiet (version {}); update the app before restoring",
+                "{} was written by a newer CompuQuiet (version {}); update the app before restoring",
                 Self::path(dir).display(),
                 journal.version
             )));

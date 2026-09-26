@@ -1,4 +1,4 @@
-//! The boundary between ComputeQuiet's domain and the operating system.
+//! The boundary between CompuQuiet's domain and the operating system.
 //!
 //! `Platform` is the one trait the engine drives. Each OS has an adapter;
 //! `fake` (behind a feature) is an in-memory one for the acceptance suite, so

@@ -22,7 +22,7 @@ export function readJson<T>(name: string): T | undefined {
 }
 
 export async function clickTab(
-  view: "dashboard" | "targets" | "settings" | "about",
+  view: "dashboard" | "targets" | "settings" | "scan",
 ): Promise<void> {
   await $(`#tab-${view}`).click();
   await browser.waitUntil(

@@ -97,7 +97,8 @@ mod platform {
 
     use crate::error::AppError;
 
-    const TASK: &str = "ComputeQuiet";
+    const TASK: &str = "CompuQuiet";
+    const LEGACY_TASK: &str = "ComputeQuiet";
 
     fn schtasks(args: &[&str]) -> Result<String, AppError> {
         use std::os::windows::process::CommandExt;
@@ -118,12 +119,20 @@ mod platform {
         }
     }
 
-    /// (registered, elevated). A missing task is simply "not registered".
-    pub fn query(_app: &AppHandle) -> Result<(bool, bool), AppError> {
-        match schtasks(&["/Query", "/TN", TASK, "/XML"]) {
+    fn query_task(name: &str) -> Result<(bool, bool), AppError> {
+        match schtasks(&["/Query", "/TN", name, "/XML"]) {
             Ok(xml) => Ok((true, xml.contains("<RunLevel>HighestAvailable</RunLevel>"))),
             Err(_) => Ok((false, false)),
         }
+    }
+
+    /// (registered, elevated). A missing task is simply "not registered".
+    pub fn query(_app: &AppHandle) -> Result<(bool, bool), AppError> {
+        let current = query_task(TASK)?;
+        if current.0 {
+            return Ok(current);
+        }
+        query_task(LEGACY_TASK)
     }
 
     pub fn enable(_app: &AppHandle, exe: &Path) -> Result<(), AppError> {
@@ -133,18 +142,24 @@ mod platform {
         schtasks(&[
             "/Create", "/F", "/TN", TASK, "/SC", "ONLOGON", "/RL", level, "/TR", &command,
         ])
-        .map(drop)
+        .map(drop)?;
+        let _ = schtasks(&["/Delete", "/F", "/TN", LEGACY_TASK]);
+        Ok(())
     }
 
     pub fn disable(_app: &AppHandle) -> Result<(), AppError> {
-        match schtasks(&["/Delete", "/F", "/TN", TASK]) {
-            Ok(_) => Ok(()),
-            Err(error) if !query(_app)?.0 => {
-                let _ = error;
-                Ok(())
+        let mut saw_error = None;
+        for name in [TASK, LEGACY_TASK] {
+            match schtasks(&["/Delete", "/F", "/TN", name]) {
+                Ok(_) => {}
+                Err(error) => saw_error = Some(error),
             }
-            Err(error) => Err(error),
         }
+        if query(_app)?.0 {
+            return Err(saw_error
+                .unwrap_or_else(|| AppError::new("autostart", "could not remove the logon task")));
+        }
+        Ok(())
     }
 }
 
@@ -180,12 +195,12 @@ mod tests {
 
     #[test]
     fn temporary_and_development_locations_are_refused() {
-        assert!(refusal(Path::new("C:/repo/target/debug/computequiet.exe")).is_some());
-        assert!(refusal(Path::new("/home/me/proj/target/release/computequiet")).is_some());
-        let temp = std::env::temp_dir().join("computequiet.exe");
+        assert!(refusal(Path::new("C:/repo/target/debug/compuquiet.exe")).is_some());
+        assert!(refusal(Path::new("/home/me/proj/target/release/compuquiet")).is_some());
+        let temp = std::env::temp_dir().join("compuquiet.exe");
         assert!(refusal(&temp).is_some());
         if let Some(downloads) = dirs::download_dir() {
-            assert!(refusal(&downloads.join("ComputeQuiet.exe")).is_some());
+            assert!(refusal(&downloads.join("CompuQuiet.exe")).is_some());
         }
     }
 
@@ -194,7 +209,7 @@ mod tests {
     fn an_installed_location_is_allowed() {
         assert_eq!(
             refusal(Path::new(
-                "C:/Users/me/AppData/Local/ComputeQuiet/ComputeQuiet.exe"
+                "C:/Users/me/AppData/Local/CompuQuiet/CompuQuiet.exe"
             )),
             None
         );

@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    computequiet_lib::run();
+    compuquiet_lib::run();
 }

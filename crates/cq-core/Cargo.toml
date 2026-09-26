@@ -3,7 +3,7 @@ name = "cq-core"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "ComputeQuiet domain: profiles, policy, planning, journal and settings"
+description = "CompuQuiet domain: profiles, policy, planning, journal and settings"
 
 [dependencies]
 dirs = { workspace = true }

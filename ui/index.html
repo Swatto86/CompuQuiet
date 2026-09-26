@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>ComputeQuiet</title>
+    <title>CompuQuiet</title>
     <link rel="stylesheet" href="/src/theme.css" />
     <link rel="stylesheet" href="/src/app.css" />
   </head>
@@ -15,16 +15,15 @@
           <rect x="404" y="392" width="84" height="240" rx="42" fill="var(--fg)" />
           <rect x="536" y="392" width="84" height="240" rx="42" fill="var(--fg)" />
         </svg>
-        <h1>ComputeQuiet</h1>
+        <h1>CompuQuiet</h1>
         <nav class="tabs" role="tablist" aria-label="Sections">
-          <button class="tab" role="tab" data-view="dashboard" aria-selected="true" id="tab-dashboard">Dashboard</button>
-          <button class="tab" role="tab" data-view="scan" aria-selected="false" id="tab-scan">Scan</button>
-          <button class="tab" role="tab" data-view="targets" aria-selected="false" id="tab-targets">Targets</button>
+          <button class="tab" role="tab" data-view="dashboard" aria-selected="true" id="tab-dashboard">Home</button>
+          <button class="tab" role="tab" data-view="scan" aria-selected="false" id="tab-scan">Find savings</button>
+          <button class="tab" role="tab" data-view="targets" aria-selected="false" id="tab-targets">What to park</button>
           <button class="tab" role="tab" data-view="settings" aria-selected="false" id="tab-settings">Settings</button>
-          <button class="tab" role="tab" data-view="about" aria-selected="false" id="tab-about">About</button>
         </nav>
         <span class="spacer"></span>
-        <span id="status-pill" class="pill pill-idle" aria-live="polite">Idle</span>
+        <span id="status-pill" class="pill pill-idle" aria-live="polite">Ready</span>
       </header>
 
       <div id="banner" class="banner" hidden>
@@ -43,12 +42,16 @@
                 <rect x="404" y="392" width="84" height="240" rx="42" fill="currentColor" />
                 <rect x="536" y="392" width="84" height="240" rx="42" fill="currentColor" />
               </svg>
-              <span class="power-label" id="power-label">Go Quiet</span>
+              <span class="power-label" id="power-label">Free up this PC</span>
             </button>
             <div class="hero-text">
-              <h2 id="hero-title">Normal mode</h2>
-              <p id="hero-sub">Everything is running as usual. Switch on Quiet Mode before a game or a model run.</p>
+              <h2 id="hero-title">Ready for a game or local AI</h2>
+              <p id="hero-sub">One press parks background apps and services. Press again to put everything back.</p>
               <p id="hero-since" class="muted" hidden></p>
+              <p class="hero-steps muted">
+                Optional: open <button type="button" class="linkish" data-jump="scan">Find savings</button>
+                to see what is eating CPU and memory right now, then come back here.
+              </p>
             </div>
           </div>
 
@@ -76,7 +79,7 @@
           <div class="cards">
             <div class="card">
               <h3>What Quiet Mode did</h3>
-              <ul id="summary" class="plain"><li class="muted">Nothing yet.</li></ul>
+              <ul id="summary" class="plain"><li class="muted">Nothing yet — press the button when you are ready.</li></ul>
             </div>
             <div class="card card-wide">
               <h3>Activity</h3>
@@ -93,8 +96,8 @@
           <div class="stack">
             <div class="card scan-head">
               <div>
-                <h3>Where savings can be made</h3>
-                <p class="muted" id="scan-summary">Press Scan to see what could be parked right now.</p>
+                <h3>What is using resources right now</h3>
+                <p class="muted" id="scan-summary">Scan to list background programs and services you can park safely.</p>
               </div>
               <button id="scan-run" type="button" class="primary">Scan now</button>
             </div>
@@ -106,8 +109,8 @@
             </div>
           </div>
           <div class="actions">
-            <button id="scan-apply" type="button">Add selected to targets</button>
-            <button id="scan-apply-quiet" type="button" class="primary">Add selected &amp; Go Quiet</button>
+            <button id="scan-apply" type="button">Remember selected</button>
+            <button id="scan-apply-quiet" type="button" class="primary">Remember &amp; free up this PC</button>
             <span id="scan-status" class="muted" aria-live="polite"></span>
           </div>
         </section>
@@ -116,8 +119,8 @@
           <div class="cards">
             <div class="card card-wide">
               <div class="card-head">
-                <h3>Processes to park</h3>
-                <span class="muted">Suspend keeps a program frozen in place; Close quits it and relaunches it on restore.</span>
+                <h3>Programs to park</h3>
+                <span class="muted">Suspend freezes a program in place; Close quits it and relaunches it when you restore.</span>
               </div>
               <form id="process-add" class="row">
                 <label class="grow">
@@ -161,7 +164,7 @@
             </div>
           </div>
           <div class="actions">
-            <button id="targets-save" type="button" class="primary">Save changes</button>
+            <button id="targets-save" type="button" class="primary">Save list</button>
             <button id="targets-reset" type="button">Restore defaults</button>
             <span id="targets-status" class="muted" aria-live="polite"></span>
           </div>
@@ -171,12 +174,12 @@
           <div class="cards">
             <div class="card card-wide">
               <h3>Behaviour</h3>
-              <label class="check"><input type="checkbox" id="set-autostart" /> <span>Start with the system</span> <span id="autostart-note" class="muted"></span></label>
+              <label class="check"><input type="checkbox" id="set-autostart" /> <span>Start with Windows / login</span> <span id="autostart-note" class="muted"></span></label>
               <label class="check"><input type="checkbox" id="set-hidden" /> <span>Start hidden in the tray</span></label>
-              <label class="check"><input type="checkbox" id="set-close-tray" /> <span>Closing the window keeps ComputeQuiet in the tray</span></label>
+              <label class="check"><input type="checkbox" id="set-close-tray" /> <span>Closing the window keeps CompuQuiet in the tray</span></label>
               <label class="check"><input type="checkbox" id="set-notify" /> <span>Notify when Quiet Mode is toggled from the tray</span></label>
               <label class="check"><input type="checkbox" id="set-restore-quit" /> <span>Restore everything automatically when quitting</span></label>
-              <label class="check"><input type="checkbox" id="set-auto-scan" /> <span>Scan before going quiet and park the low-risk finds too</span></label>
+              <label class="check"><input type="checkbox" id="set-auto-scan" /> <span>When freeing the PC, also park low-risk finds from a quick scan</span></label>
               <label class="row-label"><span>Theme</span>
                 <select id="set-theme"><option value="system">Match system</option><option value="dark">Dark</option><option value="light">Light</option></select>
               </label>
@@ -185,33 +188,32 @@
               <h3>Storage</h3>
               <p class="muted">Settings and the undo journal live in:</p>
               <code id="data-dir" class="path"></code>
-              <p class="muted">Set <code>COMPUTEQUIET_DATA_DIR</code> to keep them beside a portable copy.</p>
+              <p class="muted">Set <code>COMPUQUIET_DATA_DIR</code> to keep them beside a portable copy.</p>
             </div>
             <div class="card">
               <h3>Quit</h3>
-              <p class="muted">The window closes to the tray. This is the way out.</p>
-              <button id="quit" type="button" class="danger">Quit ComputeQuiet</button>
+              <p class="muted">Closing this window only hides it. Use Quit (or the tray menu) to exit for good.</p>
+              <button id="quit" type="button" class="danger">Quit CompuQuiet</button>
             </div>
-          </div>
-        </section>
-
-        <section id="view-about" class="view" role="tabpanel" aria-labelledby="tab-about" hidden>
-          <div class="card card-wide about">
-            <h3>ComputeQuiet <span id="about-version" class="muted"></span></h3>
-            <p>Frees the machine for games and local AI: stops background services, parks sync clients and updaters, switches to a performance power plan and purges cached memory. One click puts everything back, and an undo journal on disk means a crash or reboot cannot lose the list.</p>
-            <dl class="facts">
-              <dt>Platform</dt><dd id="about-os"></dd>
-              <dt>Build</dt><dd id="about-build"></dd>
-              <dt>Administrator</dt><dd id="about-admin"></dd>
-              <dt>Source</dt><dd>github.com/Swatto86/ComputeQuiet</dd>
-              <dt>Licence</dt><dd>MIT</dd>
-            </dl>
+            <div class="card card-wide about">
+              <h3>About <span id="about-version" class="muted"></span></h3>
+              <p>CompuQuiet frees the machine for games and local AI: parks background work, switches to a performance power plan and purges cached memory. One click puts everything back, and an undo journal means a crash cannot lose the list.</p>
+              <dl class="facts">
+                <dt>Platform</dt><dd id="about-os"></dd>
+                <dt>Build</dt><dd id="about-build"></dd>
+                <dt>Administrator</dt><dd id="about-admin"></dd>
+                <dt>Source</dt><dd>github.com/Swatto86/CompuQuiet</dd>
+                <dt>Licence</dt><dd>MIT</dd>
+              </dl>
+            </div>
           </div>
         </section>
       </main>
 
       <div id="dialog-root"></div>
       <div id="toast" class="toast" role="status" hidden></div>
+      <!-- Fake-platform / WebDriver only: drives the same Rust tray dispatch. -->
+      <button id="e2e-tray-quit" type="button" hidden>e2e tray quit</button>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>

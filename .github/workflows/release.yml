@@ -18,15 +18,15 @@ jobs:
       matrix:
         include:
           - os: windows-latest
-            portable: computequiet.exe
+            portable: compuquiet.exe
             suffix: windows-x64.exe
             bundles: nsis
           - os: ubuntu-latest
-            portable: computequiet
+            portable: compuquiet
             suffix: linux-x64
             bundles: appimage,deb
           - os: macos-latest
-            portable: computequiet
+            portable: compuquiet
             suffix: macos-arm64
             bundles: dmg,app
     runs-on: ${{ matrix.os }}
@@ -91,13 +91,13 @@ jobs:
           mkdir -p "$out"
           src="target/release/${{ matrix.portable }}"
           [ -f "$src" ] || { echo "expected executable missing: $src"; exit 1; }
-          cp "$src" "$out/ComputeQuiet-portable-${{ matrix.suffix }}"
+          cp "$src" "$out/CompuQuiet-portable-${{ matrix.suffix }}"
           bundles=$(find target/release/bundle -type f \
             \( -name '*.exe' -o -name '*.deb' -o -name '*.AppImage' -o -name '*.dmg' \) 2>/dev/null || true)
           if [ "${{ matrix.os }}" = "macos-latest" ]; then
             app=$(find target/release/bundle/macos -maxdepth 1 -name '*.app' | head -1)
             [ -n "$app" ] || { echo "no .app bundle was produced"; exit 1; }
-            tar -czf "$out/ComputeQuiet-portable-${{ matrix.suffix }}.app.tar.gz" -C "$(dirname "$app")" "$(basename "$app")"
+            tar -czf "$out/CompuQuiet-portable-${{ matrix.suffix }}.app.tar.gz" -C "$(dirname "$app")" "$(basename "$app")"
           fi
           [ -n "$bundles" ] || { echo "no installer was produced"; exit 1; }
           while IFS= read -r b; do cp "$b" "$out/"; done <<< "$bundles"

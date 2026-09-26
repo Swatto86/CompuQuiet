@@ -291,7 +291,7 @@ mod tests {
                 enabled: true,
             },
             ProcessTarget {
-                name: "ComputeQuiet".into(),
+                name: "CompuQuiet".into(),
                 action: ProcessAction::Suspend,
                 enabled: true,
             },
@@ -308,7 +308,7 @@ mod tests {
         let snapshot = Snapshot {
             processes: vec![
                 process(1, "explorer.exe"),
-                process(2, "ComputeQuiet.exe"),
+                process(2, "CompuQuiet.exe"),
                 process(3, "Spotify.exe"),
             ],
             ..Snapshot::default()

@@ -24,10 +24,10 @@ cargo fmt --all -- --check
 say "clippy"
 # The fake platform is compiled here so its code and the engine tests behind
 # it are linted too; the release build never enables it (checked below).
-cargo clippy --locked --workspace --all-targets --features computequiet/fake-platform -- -D warnings
+cargo clippy --locked --workspace --all-targets --features compuquiet/fake-platform -- -D warnings
 
 say "rust tests"
-cargo test --locked --workspace --all-targets --features computequiet/fake-platform
+cargo test --locked --workspace --all-targets --features compuquiet/fake-platform
 
 say "test-only code stays out of release builds"
 grep -qE '^default = \[\]$' src-tauri/Cargo.toml || { echo "src-tauri default features must be empty"; exit 1; }

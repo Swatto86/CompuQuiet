@@ -3,7 +3,7 @@ name = "cq-platform"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "ComputeQuiet OS adapters: processes, services, power plans, memory, elevation"
+description = "CompuQuiet OS adapters: processes, services, power plans, memory, elevation"
 
 [dependencies]
 cq-core = { workspace = true }

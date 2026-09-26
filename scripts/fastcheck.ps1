@@ -19,12 +19,12 @@ try {
 
     if ($Package) {
         Write-Host "== cargo check -p $Package ==" -ForegroundColor Cyan
-        cargo check --locked -p $Package --all-targets --features computequiet/fake-platform
+        cargo check --locked -p $Package --all-targets --features compuquiet/fake-platform
         if ($LASTEXITCODE -ne 0) { throw "cargo check failed for $Package" }
     }
     else {
         Write-Host '== clippy (workspace) ==' -ForegroundColor Cyan
-        cargo clippy --locked --workspace --all-targets --features computequiet/fake-platform -- -D warnings
+        cargo clippy --locked --workspace --all-targets --features compuquiet/fake-platform -- -D warnings
         if ($LASTEXITCODE -ne 0) { throw 'clippy failed' }
 
         Write-Host '== frontend types ==' -ForegroundColor Cyan

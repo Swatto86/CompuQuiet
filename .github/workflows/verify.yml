@@ -66,5 +66,5 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: desktop-failure-${{ matrix.os }}
-          path: ${{ runner.temp }}/computequiet-failure.*
+          path: ${{ runner.temp }}/compuquiet-failure.*
           retention-days: 3

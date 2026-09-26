@@ -10,10 +10,10 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "..");
 
 export const application =
-  process.env["COMPUTEQUIET_E2E_APPLICATION"] ??
+  process.env["COMPUQUIET_E2E_APPLICATION"] ??
   path.resolve(
     root,
-    `target/debug/computequiet${process.platform === "win32" ? ".exe" : ""}`,
+    `target/debug/compuquiet${process.platform === "win32" ? ".exe" : ""}`,
   );
 
 function assertFreshBuild(exe: string): void {
@@ -167,8 +167,8 @@ export const config: WebdriverIO.Config = {
   afterTest: async (_test, _context, { passed }) => {
     if (passed) return;
     const evidence = path.join(
-      process.env["RUNNER_TEMP"] ?? process.env["COMPUTEQUIET_DATA_DIR"]!,
-      "computequiet-failure",
+      process.env["RUNNER_TEMP"] ?? process.env["COMPUQUIET_DATA_DIR"]!,
+      "compuquiet-failure",
     );
     try {
       await browser.saveScreenshot(`${evidence}.png`);
@@ -182,6 +182,6 @@ export const config: WebdriverIO.Config = {
 
   onComplete: () => {
     stopDriver();
-    console.log(`E2E evidence: ${process.env["COMPUTEQUIET_DATA_DIR"]}`);
+    console.log(`E2E evidence: ${process.env["COMPUQUIET_DATA_DIR"]}`);
   },
 };

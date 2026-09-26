@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
   <!--
-    ComputeQuiet: a power ring around a pause mark. The ring is the machine
+    CompuQuiet: a power ring around a pause mark. The ring is the machine
     (amber, awake); the pause bars are what the app does to everything else.
   -->
   <defs>
