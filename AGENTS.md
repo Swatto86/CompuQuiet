@@ -30,9 +30,13 @@ the decisions and constraints that are not visible in the code.
   `Swatto86/CompuQuiet` on GitHub is the source of truth, runs the workflows
   and hosts the releases. Swatto mirrors it to Origin himself; this clone has
   no Origin remote. Push to GitHub (`origin`) only.
-- **No auto-updater yet.** Now possible because releases live on GitHub:
-  a `latest.json` from GitHub Releases, a minisign key, `createUpdaterArtifacts`,
-  and `tauri-plugin-updater` driven from Rust.
+- **2026-09-27: updates install themselves.** `tauri-plugin-updater` checks
+  `latest.json` on the GitHub release when the app is idle (not in Quiet
+  Mode, not mid-transition). The release workflow signs the NSIS installer,
+  the AppImage and the macOS `.app.tar.gz` with the minisign private key in
+  `TAURI_SIGNING_PRIVATE_KEY`; the public half is in `tauri.conf.json`.
+  Debug and fake-platform builds never check. The `.deb` and portable
+  binaries are not updated in place.
 - **2026-09-19 (1.1.0): the scanner acts on low risk only.** `auto_scan` is
   on by default and parks low-risk finds for that run without editing the
   saved targets; medium-risk finds (browsers, launchers, voice chat, Office)

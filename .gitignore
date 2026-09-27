@@ -13,6 +13,10 @@ tsconfig.tsbuildinfo
 # runtime. Fetched by scripts/setup-e2e.ps1 / scripts/setup-tauri-driver.sh.
 /.webdriver
 
+# Minisign private key for update signatures. The public half is in tauri.conf.json.
+compuquiet-updater.key
+compuquiet-updater.key.pub
+
 # Per-session agent permission grants; not project configuration.
 .claude/settings.json
 .claude/settings.local.json

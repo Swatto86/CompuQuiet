@@ -9,6 +9,7 @@ mod error;
 mod rows;
 mod scan;
 mod tray;
+mod update;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock};
@@ -53,7 +54,8 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             tray::reveal(app);
-        }));
+        }))
+        .plugin(tauri_plugin_updater::Builder::new().build());
 
     #[cfg(not(windows))]
     let builder = builder.plugin(tauri_plugin_autostart::init(
@@ -66,6 +68,7 @@ pub fn run() {
         .setup(move |app| {
             tray::install(app.handle())?;
             tray::refresh(app.handle(), &engine.state());
+            update::schedule(app.handle());
 
             // Safety net: the page reveals the window once it has painted, but
             // if it never boots the user must not be left with a process and

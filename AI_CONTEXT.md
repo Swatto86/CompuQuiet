@@ -16,6 +16,7 @@ from an undo journal. Tray-resident Tauri 2 desktop app; unelevated by default.
 
 ## Component Map
 
+- `src-tauri/src/update.rs` — `tauri-plugin-updater` checks GitHub `latest.json` when idle; `scripts/latest-json.mjs` builds that manifest from the signed release bundles
 - `src-tauri/src/tray.rs` — tray menu handled entirely in Rust (`dispatch_menu`);
   right-click opens the menu from the event loop (`show_menu`) so Windows
   accepts the click; Quit restores per settings then `app.exit(0)` (no webview)
@@ -32,6 +33,7 @@ auto-apply low-risk only when `auto_scan` is on.
 
 ## Recent Context & Decisions
 
+- 2026-09-27: Auto-update. Idle releases install from `releases/latest/download/latest.json`. Signing key is the `TAURI_SIGNING_PRIVATE_KEY` secret; public key is in `tauri.conf.json`.
 - 2026-09-26: Release 1.1.3. Tag `v1.1.3` publishes installers after `verify` is green on that commit.
 - 2026-09-26: Tray menu opens from the event loop (`show_menu`) so Windows
   accepts item clicks; Linux re-applies the menu after an icon change.
