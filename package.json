@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "test": "node --experimental-strip-types --test --test-reporter=spec ui/src/*.test.ts",
+    "test": "node --experimental-strip-types --test --test-reporter=spec ui/src/*.test.ts scripts/latest-json.test.mjs",
     "e2e": "npm run e2e:build && wdio run e2e/wdio.conf.ts",
     "e2e:build": "tauri build --debug --no-bundle --features fake-platform --config e2e/tauri.conf.json",
     "e2e:run": "wdio run e2e/wdio.conf.ts",

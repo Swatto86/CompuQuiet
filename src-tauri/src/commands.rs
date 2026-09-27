@@ -121,6 +121,9 @@ pub async fn run_transition(
     let state = engine.state();
     tray::refresh(&app, &state);
     let _ = app.emit(EVENT_STATE, &state);
+    if !state.quiet {
+        crate::update::nudge(&app);
+    }
     result.map(|()| state)
 }
 

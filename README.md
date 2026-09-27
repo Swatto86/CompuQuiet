@@ -76,6 +76,12 @@ Portable builds keep their settings and undo journal in the normal per-user
 configuration folder unless `COMPUQUIET_DATA_DIR` points somewhere else,
 for example a folder beside the executable on a USB stick.
 
+The Windows installer, the Linux AppImage and the macOS app check GitHub for
+a newer signed release when Quiet Mode is off, then download it and restart.
+The `.deb` and the portable copies do not update themselves. A copy built
+before this check existed has to be replaced by hand once; after that, later
+releases install on their own.
+
 Required runtimes (shared platform components, not bundled):
 
 - **Windows:** the [WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/), present on Windows 11 and updated Windows 10.

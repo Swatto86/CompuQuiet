@@ -75,6 +75,19 @@ jobs:
         shell: bash
         run: ./scripts/verify.sh
 
+      # The minisign private key signs the updater bundles. Without it the
+      # build still succeeds and simply omits the signatures, so the next
+      # release would look fine and then refuse to install.
+      - name: Require the update signing key
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            echo "Set the TAURI_SIGNING_PRIVATE_KEY repository secret to the minisign private key."
+            exit 1
+          fi
+
       # Default features only: the fake platform is test-only and verify.sh
       # asserts it is not a default feature.
       - name: Build the app
@@ -82,6 +95,7 @@ jobs:
         env:
           AGENT_RELEASE: "1"
           CARGO_PROFILE_RELEASE_DEBUG: "0"
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
 
       - name: Collect artifacts
         shell: bash
@@ -93,7 +107,8 @@ jobs:
           [ -f "$src" ] || { echo "expected executable missing: $src"; exit 1; }
           cp "$src" "$out/CompuQuiet-portable-${{ matrix.suffix }}"
           bundles=$(find target/release/bundle -type f \
-            \( -name '*.exe' -o -name '*.deb' -o -name '*.AppImage' -o -name '*.dmg' \) 2>/dev/null || true)
+            \( -name '*.exe' -o -name '*.deb' -o -name '*.AppImage' -o -name '*.dmg' \
+               -o -name '*.sig' -o -name '*.app.tar.gz' \) 2>/dev/null || true)
           if [ "${{ matrix.os }}" = "macos-latest" ]; then
             app=$(find target/release/bundle/macos -maxdepth 1 -name '*.app' | head -1)
             [ -n "$app" ] || { echo "no .app bundle was produced"; exit 1; }
@@ -118,6 +133,9 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Checkout the manifest script
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
       - name: Download release artifacts
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
@@ -128,6 +146,10 @@ jobs:
       - name: Verify checksums
         shell: bash
         run: cd release-artifacts && sha256sum -c SHA256SUMS-*.txt
+
+      - name: Updater manifest
+        shell: bash
+        run: node scripts/latest-json.mjs release-artifacts "${GITHUB_REF_NAME#v}" "$GITHUB_REF_NAME" > release-artifacts/latest.json
 
       - name: Publish
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
