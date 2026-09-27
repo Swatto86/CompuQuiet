@@ -33,6 +33,7 @@ auto-apply low-risk only when `auto_scan` is on.
 
 ## Recent Context & Decisions
 
+- 2026-09-27: Release 1.1.4. First release that publishes signed updater bundles and `latest.json`. The private key from the updater merge was not on this machine or in GitHub secrets, so a new minisign key was generated; the public half is in `tauri.conf.json` and the private half is `TAURI_SIGNING_PRIVATE_KEY` (`~/.tauri/compuquiet-updater.key`).
 - 2026-09-27: Auto-update. Idle releases install from `releases/latest/download/latest.json`. Signing key is the `TAURI_SIGNING_PRIVATE_KEY` secret; public key is in `tauri.conf.json`.
 - 2026-09-26: Release 1.1.3. Tag `v1.1.3` publishes installers after `verify` is green on that commit.
 - 2026-09-26: Tray menu opens from the event loop (`show_menu`) so Windows
