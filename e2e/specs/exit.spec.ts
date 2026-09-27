@@ -56,8 +56,10 @@ describe("quitting", () => {
     assert.ok(pids.length > 0, "the app process was not found");
 
     // Hidden on purpose (not a user control); WebDriver refuses .click() on it.
+    // Defer the click so this script can return. A synchronous click quits the
+    // process before WebDriver reads the result and the session looks invalid.
     await browser.execute(() => {
-      document.getElementById("e2e-tray-quit")?.click();
+      setTimeout(() => document.getElementById("e2e-tray-quit")?.click(), 0);
     });
 
     const deadline = Date.now() + 30_000;
