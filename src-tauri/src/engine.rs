@@ -148,6 +148,13 @@ impl Engine {
         Ok(fold_processes(snapshot.processes))
     }
 
+    /// Run `f` holding the engine, so no run is cut short by it or starts
+    /// during it. `None` means a run is in progress and `f` did not run.
+    pub fn while_idle<T>(&self, f: impl FnOnce() -> T) -> Option<T> {
+        let _guard = self.begin().ok()?;
+        Some(f())
+    }
+
     /// Claim the engine for one run. Two runs at once would race on the journal.
     fn begin(&self) -> Result<BusyGuard<'_>, AppError> {
         if self

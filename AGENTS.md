@@ -5,6 +5,12 @@ the decisions and constraints that are not visible in the code.
 
 ## Decisions
 
+- **2026-09-29: a window that never loaded restarts the app once.** The
+  elevated logon launch sometimes gets no WebView2; Tauri only logs that, so
+  the tray ran with no window behind it and every item looked dead. Tray
+  actions and a second launch now restart with `--reopen`, and warnings and
+  errors go to `compuquiet.log` in the data directory so the cause is kept.
+
 - **2026-09-26: renamed to CompuQuiet.** Product, crate (`compuquiet`),
   identifier (`co.swatto.compuquiet`), data dir and env vars follow the new
   name; a leftover `ComputeQuiet` settings folder / logon task / env override

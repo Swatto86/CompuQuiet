@@ -521,6 +521,7 @@ dependencies = [
  "cq-core",
  "cq-platform",
  "dirs 6.0.0",
+ "log",
  "serde",
  "serde_json",
  "tauri",
@@ -530,6 +531,7 @@ dependencies = [
  "tauri-plugin-single-instance",
  "tauri-plugin-updater",
  "tempfile",
+ "time",
  "tokio",
 ]
 

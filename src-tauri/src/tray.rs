@@ -214,18 +214,26 @@ fn quit_from_tray(app: AppHandle) {
 
 /// Show the window from wherever the request came from.
 pub fn reveal(app: &AppHandle) {
-    if let Some(window) = app.get_webview_window("main") {
-        let _ = window.show();
-        let _ = window.unminimize();
-        let _ = window.set_focus();
+    // A window whose webview never started still has a handle, but every
+    // query on it fails (see `reopen`).
+    match app.get_webview_window("main") {
+        Some(window) if window.is_visible().is_ok() => {
+            let _ = window.show();
+            let _ = window.unminimize();
+            let _ = window.set_focus();
+        }
+        _ => crate::reopen::reopen(app),
     }
 }
 
 fn toggle_window(app: &AppHandle) {
-    let Some(window) = app.get_webview_window("main") else {
+    let loaded = app
+        .get_webview_window("main")
+        .and_then(|window| window.is_visible().ok().map(|visible| (window, visible)));
+    let Some((window, visible)) = loaded else {
+        reveal(app);
         return;
     };
-    let visible = window.is_visible().unwrap_or(false);
     let focused = window.is_focused().unwrap_or(false);
     let blurred = blurred_recently(BLURRED_AT_MS.load(Ordering::Relaxed), now_ms());
     if click_hides_window(visible, focused, blurred) {

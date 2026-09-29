@@ -6,6 +6,8 @@ mod autostart;
 mod commands;
 mod engine;
 mod error;
+mod logfile;
+mod reopen;
 mod rows;
 mod scan;
 mod tray;
@@ -21,11 +23,27 @@ use crate::engine::Engine;
 
 pub(crate) static FRONTEND_READY: AtomicBool = AtomicBool::new(false);
 static START_HIDDEN: OnceLock<bool> = OnceLock::new();
+static REOPENED: OnceLock<bool> = OnceLock::new();
+
+/// Passed when CompuQuiet restarts itself because its window never loaded:
+/// show the window this time, and do not restart again if it fails.
+pub(crate) const REOPEN_ARG: &str = "--reopen";
 
 /// Launched to the tray: `--hidden` (what the autostart entry passes) or the
 /// "start hidden" preference.
 pub(crate) fn start_hidden() -> bool {
     *START_HIDDEN.get_or_init(|| false)
+}
+
+/// This process is the restart that was asked to bring the window back.
+pub(crate) fn reopened() -> bool {
+    *REOPENED.get_or_init(|| false)
+}
+
+/// A reopen was asked for by someone who wants to see the window, so it wins
+/// over both ways of starting hidden.
+fn starts_hidden(hidden_arg: bool, reopen_arg: bool, start_hidden_setting: bool) -> bool {
+    !reopen_arg && (hidden_arg || start_hidden_setting)
 }
 
 fn build_platform() -> Box<dyn Platform> {
@@ -46,9 +64,16 @@ pub(crate) fn platform_for_relaunch() -> Box<dyn Platform> {
 pub fn run() {
     let data_dir = cq_core::store::data_dir()
         .unwrap_or_else(|error| panic!("CompuQuiet has nowhere to keep its state: {error}"));
+    logfile::install(&data_dir);
     let engine = Arc::new(Engine::new(Arc::from(build_platform()), data_dir));
-    let hidden_flag = std::env::args().skip(1).any(|arg| arg == "--hidden");
-    let _ = START_HIDDEN.set(hidden_flag || engine.settings().start_hidden);
+    let hidden_arg = std::env::args().skip(1).any(|arg| arg == "--hidden");
+    let reopen_arg = std::env::args().skip(1).any(|arg| arg == REOPEN_ARG);
+    let _ = REOPENED.set(reopen_arg);
+    let _ = START_HIDDEN.set(starts_hidden(
+        hidden_arg,
+        reopen_arg,
+        engine.settings().start_hidden,
+    ));
 
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
@@ -126,4 +151,29 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .unwrap_or_else(|error| panic!("CompuQuiet could not start its window: {error}"));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::starts_hidden;
+
+    #[test]
+    fn a_reopen_always_shows_the_window() {
+        // (--hidden, --reopen, start_hidden setting) -> starts hidden
+        let cases = [
+            (false, false, false, false),
+            (true, false, false, true),
+            (false, false, true, true),
+            (true, true, false, false),
+            (false, true, true, false),
+            (true, true, true, false),
+        ];
+        for (hidden_arg, reopen_arg, setting, expected) in cases {
+            assert_eq!(
+                starts_hidden(hidden_arg, reopen_arg, setting),
+                expected,
+                "--hidden={hidden_arg} --reopen={reopen_arg} setting={setting}"
+            );
+        }
+    }
 }

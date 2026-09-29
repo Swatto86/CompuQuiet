@@ -84,6 +84,14 @@ suite. It is never a default feature; `scripts/verify.sh` asserts that.
   the event loop, not inside the icon's window procedure, because Windows
   ignores menu clicks opened from that procedure. Linux keeps the indicator
   menu and puts it back after an icon change, which otherwise drops it.
+- A window whose WebView2 failed to start is only logged by Tauri; its handle
+  stays registered but every query on it fails. `tray::reveal` treats that as
+  "no window" and `reopen` restarts the process once with `--reopen` (shown, never
+  hidden), waiting for any Quiet Mode run to finish first. A reopen that
+  fails too notifies instead of restarting again.
+- `logfile` sends every crate's `log` warnings and errors to
+  `compuquiet.log` in the data directory; it is the only record of why a
+  window failed to load.
 - Single instance: a second launch reveals the running window.
 - Autostart: `schtasks` logon task on Windows (elevated when created by an
   elevated process), `tauri-plugin-autostart` elsewhere, always guarded

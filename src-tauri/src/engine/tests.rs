@@ -61,3 +61,18 @@ fn a_second_run_while_quiet_is_refused_and_rows_fold_instances() {
     );
     assert!(rows[0].memory_bytes >= rows[rows.len() - 1].memory_bytes);
 }
+
+#[test]
+fn while_idle_holds_the_engine_and_refuses_during_a_run() {
+    let dir = tempfile::tempdir().unwrap();
+    let engine = engine(dir.path());
+    // Inside, the engine is claimed: a run could not start underneath.
+    assert_eq!(engine.while_idle(|| engine.state().busy), Some(true));
+    assert!(!engine.state().busy, "released afterwards");
+
+    let _run = engine.begin().unwrap();
+    let mut ran = false;
+    assert_eq!(engine.while_idle(|| ran = true), None);
+    assert!(!ran, "must not run while a run is in progress");
+}
+
