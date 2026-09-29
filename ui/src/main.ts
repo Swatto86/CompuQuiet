@@ -30,6 +30,8 @@ let settings: Settings;
 let info: AppInfo;
 let memoryBaseline: number | null = null;
 let busy = false;
+/** A run started outside this window (the tray, or at startup) is going. */
+let runElsewhere = false;
 
 const dashboard = new Dashboard(() => void toggle());
 let targets: Targets;
@@ -69,9 +71,19 @@ async function boot(): Promise<void> {
   wireBanner();
   wireE2eHooks();
 
-  await onProgress((line) => dashboard.appendLog(line));
+  await onProgress((line) => {
+    if (!busy && !runElsewhere) {
+      runElsewhere = true;
+      dashboard.setBusy(true);
+    }
+    dashboard.appendLog(line);
+  });
   await onState((state) => {
     engine = state;
+    if (runElsewhere && !busy) {
+      runElsewhere = false;
+      dashboard.setBusy(false);
+    }
     renderAll();
   });
   await onConfirmQuit(() => void quitFlow());
@@ -210,8 +222,17 @@ function wireTabs(): void {
 }
 
 async function saveSettings(next: Settings): Promise<void> {
-  await api.saveSettings(next);
+  // Applied before the round trip, so a second quick change builds on this
+  // one rather than on the settings before it; put back if the save fails.
+  const previous = settings;
   settings = next;
+  try {
+    await api.saveSettings(next);
+  } catch (error) {
+    if (settings === next) settings = previous;
+    renderAll();
+    throw error;
+  }
   renderBanner();
   renderPlan();
 }
@@ -225,7 +246,9 @@ async function pollStats(): Promise<void> {
         ? Math.max(0, memoryBaseline - stats.memory_used)
         : null;
     dashboard.updateStats(stats, freed);
-    if (!engine.quiet) memoryBaseline = stats.memory_used;
+    // Not while a run is freeing memory, or the figure would shrink.
+    if (!engine.quiet && !busy && !runElsewhere)
+      memoryBaseline = stats.memory_used;
   } catch {
     // The next poll will report; a missed sample is not worth a toast.
   }
@@ -256,7 +279,11 @@ async function toggle(): Promise<void> {
 
 async function quitFlow(): Promise<void> {
   if (!engine.quiet) {
-    await api.quit(false);
+    try {
+      await api.quit(false);
+    } catch (error) {
+      toast(errorMessage(error), true);
+    }
     return;
   }
   const choice = await showDialog({
@@ -290,5 +317,10 @@ async function quitFlow(): Promise<void> {
 
 void boot().catch((error: unknown) => {
   toast(`CompuQuiet could not start: ${errorMessage(error)}`, true);
-  void api.frontendReady();
+  api.frontendReady().catch((reason: unknown) => {
+    toast(
+      `CompuQuiet could not show its window: ${errorMessage(reason)}`,
+      true,
+    );
+  });
 });

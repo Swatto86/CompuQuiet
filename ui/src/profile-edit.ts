@@ -139,6 +139,36 @@ export function setService(
   };
 }
 
+/**
+ * Carry a change saved elsewhere (Scan adding its finds) from `before` to
+ * `after` into a working copy with unsaved edits, instead of discarding the
+ * edits. Scan only adds targets and switches options on.
+ */
+export function rebase(
+  working: Profile,
+  before: Profile,
+  after: Profile,
+): Profile {
+  const next = structuredClone(working);
+  const has = (list: { name: string }[], name: string): boolean =>
+    list.some((target) => normalizeName(target.name) === normalizeName(name));
+  for (const target of after.processes) {
+    if (
+      !has(before.processes, target.name) &&
+      !has(next.processes, target.name)
+    )
+      next.processes.push(structuredClone(target));
+  }
+  for (const target of after.services) {
+    if (!has(before.services, target.name) && !has(next.services, target.name))
+      next.services.push(structuredClone(target));
+  }
+  if (after.power !== before.power) next.power = after.power;
+  if (after.purge_memory !== before.purge_memory)
+    next.purge_memory = after.purge_memory;
+  return next;
+}
+
 /** Deep equality for the "unsaved changes" indicator. */
 export function sameProfile(a: Profile, b: Profile): boolean {
   return JSON.stringify(a) === JSON.stringify(b);

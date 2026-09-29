@@ -18,6 +18,7 @@ import {
   removeKeepAlive,
   removeProcess,
   removeService,
+  rebase,
   sameProfile,
   setProcess,
   setService,
@@ -103,8 +104,11 @@ export class Targets {
   }
 
   setProfile(profile: Profile): void {
+    // Unsaved edits survive a save made elsewhere (Scan adding its finds).
+    this.working = sameProfile(this.saved, this.working)
+      ? structuredClone(profile)
+      : rebase(this.working, this.saved, profile);
     this.saved = profile;
-    this.working = structuredClone(profile);
     this.render();
   }
 
@@ -138,13 +142,18 @@ export class Targets {
   }
 
   private async save(): Promise<void> {
+    // What was sent is what is saved: an edit made during the round trip
+    // stays unsaved rather than being marked saved.
+    const sent = structuredClone(this.working);
+    byId<HTMLButtonElement>("targets-save").disabled = true;
     try {
-      await this.host.save(this.working);
-      this.saved = structuredClone(this.working);
-      this.render();
+      await this.host.save(sent);
+      this.saved = sent;
       toast("Targets saved");
     } catch (error) {
       toast(errorMessage(error), true);
+    } finally {
+      this.render();
     }
   }
 
