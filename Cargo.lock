@@ -515,7 +515,7 @@ dependencies = [
 
 [[package]]
 name = "compuquiet"
-version = "1.1.4"
+version = "1.1.5"
 dependencies = [
  "anyhow",
  "cq-core",
@@ -615,7 +615,7 @@ dependencies = [
 
 [[package]]
 name = "cq-core"
-version = "1.1.4"
+version = "1.1.5"
 dependencies = [
  "dirs 6.0.0",
  "serde",
@@ -626,7 +626,7 @@ dependencies = [
 
 [[package]]
 name = "cq-platform"
-version = "1.1.4"
+version = "1.1.5"
 dependencies = [
  "cq-core",
  "nix",
