@@ -53,6 +53,7 @@ mod tests {
             memory_bytes: memory,
             cpu_percent: 1.0,
             start_time: 0,
+            parent: None,
         }
     }
 

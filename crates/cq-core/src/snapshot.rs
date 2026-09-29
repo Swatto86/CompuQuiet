@@ -18,6 +18,9 @@ pub struct ProcessInfo {
     pub cpu_percent: f32,
     /// Seconds since the epoch. Identifies a PID across reuse.
     pub start_time: u64,
+    /// The PID of the process that started this one, when known.
+    #[serde(default)]
+    pub parent: Option<u32>,
 }
 
 impl ProcessInfo {
@@ -26,6 +29,30 @@ impl ProcessInfo {
             .as_ref()
             .and_then(|exe| exe.file_stem())
             .map(|stem| stem.to_string_lossy().into_owned())
+    }
+
+    /// The outermost ancestor in `processes` running the same executable,
+    /// or this process. A helper a program starts for itself (a crash
+    /// handler, a renderer) comes back when that program is relaunched, and
+    /// its own arguments are only meaningful to the parent that gave them.
+    pub fn program_root<'a>(&'a self, processes: &'a [ProcessInfo]) -> &'a ProcessInfo {
+        let mut root = self;
+        // Bounded, so PIDs reused into a cycle cannot loop forever.
+        for _ in 0..processes.len() {
+            let Some(parent) = root
+                .parent
+                .and_then(|pid| processes.iter().find(|p| p.pid == pid))
+            else {
+                break;
+            };
+            // A "parent" that started after its child is a reused PID.
+            if parent.exe.is_none() || parent.exe != root.exe || parent.start_time > root.start_time
+            {
+                break;
+            }
+            root = parent;
+        }
+        root
     }
 }
 
@@ -78,4 +105,58 @@ pub struct Activity {
     pub known: bool,
     pub foreground_pid: Option<u32>,
     pub windowed_pids: Vec<u32>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ProcessInfo;
+    use std::path::PathBuf;
+
+    fn process(pid: u32, exe: &str, parent: Option<u32>, start_time: u64) -> ProcessInfo {
+        ProcessInfo {
+            pid,
+            name: exe.to_string(),
+            exe: Some(PathBuf::from(format!("C:/apps/{exe}"))),
+            args: vec![exe.to_string(), format!("--pid-{pid}")],
+            cwd: None,
+            memory_bytes: 0,
+            cpu_percent: 0.0,
+            start_time,
+            parent,
+        }
+    }
+
+    #[test]
+    fn a_helper_leads_back_to_the_program_that_started_it() {
+        let processes = vec![
+            process(1, "explorer.exe", None, 10),
+            process(10, "claude.exe", Some(1), 100),
+            process(11, "claude.exe", Some(10), 101),
+            process(12, "claude.exe", Some(11), 102),
+        ];
+        // The crash handler's grandchild resolves to the main window process.
+        assert_eq!(processes[3].program_root(&processes).pid, 10);
+        // A program started by something else is its own root.
+        assert_eq!(processes[1].program_root(&processes).pid, 10);
+        assert_eq!(processes[0].program_root(&processes).pid, 1);
+    }
+
+    #[test]
+    fn a_reused_pid_or_unknown_exe_is_not_a_parent() {
+        let mut processes = vec![
+            // Started after its "child": PID 20 was reused.
+            process(20, "app.exe", None, 500),
+            process(21, "app.exe", Some(20), 400),
+            process(30, "tool.exe", None, 100),
+            process(31, "tool.exe", Some(30), 101),
+            // Two processes naming each other must not loop.
+            process(40, "loop.exe", Some(41), 100),
+            process(41, "loop.exe", Some(40), 100),
+        ];
+        processes[2].exe = None;
+        assert_eq!(processes[1].program_root(&processes).pid, 21);
+        assert_eq!(processes[3].program_root(&processes).pid, 31);
+        let root = processes[4].program_root(&processes).pid;
+        assert!(root == 40 || root == 41);
+    }
 }

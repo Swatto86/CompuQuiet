@@ -11,6 +11,7 @@
 mod activity;
 mod power;
 mod services;
+mod session;
 
 use std::ffi::{CStr, c_void};
 use std::path::Path;
@@ -156,6 +157,11 @@ impl Platform for Windows {
 
     fn launch(&self, exe: &Path, args: &[String], cwd: Option<&Path>) -> Result<()> {
         spawn_detached(exe, args, cwd)
+    }
+
+    fn session_start(&self) -> u64 {
+        let boot = self.boot_time();
+        session::logon_time().map_or(boot, |logon| logon.max(boot))
     }
 
     fn stop_service(&self, name: &str) -> Result<()> {

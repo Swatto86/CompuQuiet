@@ -76,3 +76,102 @@ fn while_idle_holds_the_engine_and_refuses_during_a_run() {
     assert!(!ran, "must not run while a run is in progress");
 }
 
+/// Quiet Mode with one of each undoable step: a stopped service, a suspended
+/// and a closed program, and the power plan.
+fn quiet_with_every_kind_of_step(
+    fake: &Arc<cq_platform::fake::Fake>,
+    dir: &std::path::Path,
+) -> Result<Engine, AppError> {
+    let engine = Engine::new(fake.clone(), dir.to_path_buf());
+    let mut settings = engine.settings();
+    settings.auto_scan = false;
+    settings.profile.services = vec![cq_core::ServiceTarget {
+        name: "SysMain".into(),
+        enabled: true,
+    }];
+    settings.profile.processes = [
+        ("OneDrive", cq_core::ProcessAction::Suspend),
+        ("Dropbox", cq_core::ProcessAction::Close),
+    ]
+    .into_iter()
+    .map(|(name, action)| cq_core::ProcessTarget {
+        name: name.into(),
+        action,
+        enabled: true,
+    })
+    .collect();
+    engine.save_settings(settings)?;
+    engine.go_quiet(&|_| {})?;
+    Ok(engine)
+}
+
+fn sysmain(fake: &cq_platform::fake::Fake) -> Option<cq_core::ServiceState> {
+    let snapshot = fake.snapshot(&["SysMain".into()]).ok()?;
+    snapshot.services.first().map(|service| service.state)
+}
+
+#[test]
+fn after_a_restart_only_the_power_plan_is_put_back() {
+    let dir = tempfile::tempdir().unwrap();
+    let fake = Arc::new(cq_platform::fake::Fake::new());
+    let engine = quiet_with_every_kind_of_step(&fake, dir.path()).unwrap();
+    let later = now() + 3600;
+    fake.set_boot_and_session(later, later);
+
+    assert_eq!(engine.restore(&|_| {}).unwrap(), 0, "Quiet Mode ends");
+    assert!(!Journal::path(dir.path()).exists());
+    assert!(
+        fake.launched().is_empty(),
+        "nothing relaunched with old arguments"
+    );
+    assert_eq!(
+        sysmain(&fake),
+        Some(cq_core::ServiceState::Stopped),
+        "left to the restart"
+    );
+    let plan = fake.snapshot(&[]).unwrap().power_plan.unwrap();
+    assert_eq!(plan.id, "balanced", "the power plan is a saved setting");
+    let skipped = engine
+        .state()
+        .log
+        .iter()
+        .filter(|line| {
+            line.ok
+                && line
+                    .detail
+                    .as_deref()
+                    .is_some_and(|d| d.starts_with("Skipped:"))
+        })
+        .count();
+    assert_eq!(skipped, 3, "relaunch, resume and service start");
+}
+
+#[test]
+fn after_a_new_sign_in_services_come_back_but_programs_do_not() {
+    let dir = tempfile::tempdir().unwrap();
+    let fake = Arc::new(cq_platform::fake::Fake::new());
+    let engine = quiet_with_every_kind_of_step(&fake, dir.path()).unwrap();
+    // Fast Startup or a sign-out: same boot, new sign-in.
+    fake.set_boot_and_session(0, now() + 3600);
+
+    assert_eq!(engine.restore(&|_| {}).unwrap(), 0);
+    assert!(fake.launched().is_empty());
+    assert_eq!(sysmain(&fake), Some(cq_core::ServiceState::Running));
+}
+
+#[test]
+fn a_program_that_cannot_be_relaunched_does_not_keep_quiet_mode_on() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut journal = Journal::new(now());
+    journal.record(cq_core::DoneStep::ProcessClosed {
+        name: "PROCEXP64.exe".into(),
+        exe: None,
+        args: Vec::new(),
+        cwd: None,
+    });
+    journal.save(dir.path()).unwrap();
+    let engine = engine(dir.path());
+    assert!(engine.state().quiet);
+    assert_eq!(engine.restore(&|_| {}).unwrap(), 0);
+    assert!(!engine.state().quiet);
+}

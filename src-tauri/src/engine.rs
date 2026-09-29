@@ -305,19 +305,25 @@ impl Engine {
         let Some(mut journal) = self.lock().journal.clone() else {
             return Err(AppError::new("not_quiet", "Quiet Mode is not on"));
         };
+        let elapsed = journal.elapsed(self.platform.boot_time(), self.platform.session_start());
         let mut failed = std::collections::HashSet::new();
         let mut log = Vec::new();
         for (index, step) in journal.restore_steps() {
-            let line = match self.undo(&step) {
-                Ok(()) => LogLine {
+            let outcome = match step.overtaken(elapsed) {
+                Some(reason) => Ok(Some(format!("Skipped: {reason}"))),
+                None => self.undo(&step).map(|()| None),
+            };
+            let line = match outcome {
+                Ok(detail) => LogLine {
                     label: step.label(),
                     ok: true,
-                    detail: None,
+                    detail,
                 },
                 Err(error) => {
-                    // A process that is already gone needs no resuming: the
-                    // entry is done with, not failed.
-                    let gone = error.code == "not_running";
+                    // A process already gone, or a program or service no
+                    // longer installed, cannot be put back: the entry is
+                    // done with, not failed, or Quiet Mode could never end.
+                    let gone = matches!(error.code.as_str(), "not_running" | "not_installed");
                     if !gone {
                         failed.insert(index);
                     }

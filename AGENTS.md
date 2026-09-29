@@ -5,6 +5,14 @@ the decisions and constraints that are not visible in the code.
 
 ## Decisions
 
+- **2026-09-29: a restart or new sign-in ends Quiet Mode.** A journal older
+  than the sign-in is finished at launch: parked processes are gone and
+  self-starting programs are back, so nothing is resumed or relaunched with
+  stale arguments; services restart only if the OS did not reboot (Fast
+  Startup and sign-out keep them stopped); the power plan is always restored.
+  Windows reads the sign-in time from WTS; Linux and macOS use the boot time,
+  so a sign-out there without a reboot still relaunches closed programs.
+
 - **2026-09-29: a window that never loaded restarts the app once.** The
   elevated logon launch sometimes gets no WebView2; Tauri only logs that, so
   the tray ran with no window behind it and every item looked dead. Tray

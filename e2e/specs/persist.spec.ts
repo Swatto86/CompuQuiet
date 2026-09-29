@@ -1,7 +1,12 @@
-/** Settings and targets survive a save and a restart of the app. */
+/**
+ * Settings and targets survive a save and a restart of the app, and a Quiet
+ * Mode left on from before the machine last restarted is finished at startup.
+ */
 import { strict as assert } from "node:assert";
+import fs from "node:fs";
+import path from "node:path";
 
-import { clickTab, readJson } from "./support.ts";
+import { clickTab, dataDir, readJson, waitForPill } from "./support.ts";
 
 interface SavedSettings {
   theme: string;
@@ -70,5 +75,34 @@ describe("persistence", () => {
     );
     assert.ok(names.includes("Spotify"), names.join(", "));
     await clickTab("dashboard");
+  });
+
+  it("finishes a Quiet Mode left on from before the last restart", async () => {
+    // As if written in a session before the fake machine's 2020 boot: what
+    // it parked is gone, so nothing is relaunched with stale arguments.
+    fs.writeFileSync(
+      path.join(dataDir(), "journal.json"),
+      JSON.stringify({
+        version: 1,
+        started_at: 1_000_000_000,
+        done: [
+          { kind: "service_stopped", name: "SysMain" },
+          {
+            kind: "process_closed",
+            name: "Dropbox.exe",
+            exe: "C:/fake/Dropbox.exe",
+            args: ["Dropbox.exe"],
+            cwd: null,
+          },
+        ],
+      }),
+    );
+    await browser.reloadSession();
+    await $("#toggle").waitForExist({ timeout: 30_000 });
+    await browser.waitUntil(async () => !readJson("journal.json"), {
+      timeout: 15_000,
+      timeoutMsg: "the stale journal was not finished at startup",
+    });
+    await waitForPill("Ready");
   });
 });

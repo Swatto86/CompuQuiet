@@ -165,14 +165,19 @@ fn plan_processes(profile: &Profile, snapshot: &Snapshot, self_pid: u32, os: Os,
                     name: process.name.clone(),
                     start_time: process.start_time,
                 },
-                ProcessAction::Close => Step::CloseProcess {
-                    pid: process.pid,
-                    name: process.name.clone(),
-                    exe: process.exe.clone(),
-                    args: process.args.clone(),
-                    cwd: process.cwd.clone(),
-                    start_time: process.start_time,
-                },
+                ProcessAction::Close => {
+                    // Undone by relaunching the program, which brings its
+                    // helpers back with it.
+                    let origin = process.program_root(&snapshot.processes);
+                    Step::CloseProcess {
+                        pid: process.pid,
+                        name: process.name.clone(),
+                        exe: origin.exe.clone(),
+                        args: origin.args.clone(),
+                        cwd: origin.cwd.clone(),
+                        start_time: process.start_time,
+                    }
+                }
             });
         }
         if hits == 0 {
@@ -206,6 +211,7 @@ mod tests {
             memory_bytes: 1,
             cpu_percent: 0.0,
             start_time: 42,
+            parent: None,
         }
     }
 
@@ -279,6 +285,36 @@ mod tests {
                 reason: "not running".into()
             }]
         );
+    }
+
+    #[test]
+    fn closing_a_helper_records_its_program_for_the_relaunch() {
+        let mut profile = Profile::default_for(Os::Windows);
+        profile.processes = vec![ProcessTarget {
+            name: "Claude".into(),
+            action: ProcessAction::Close,
+            enabled: true,
+        }];
+        let main = process(20, "claude");
+        let mut helper = process(21, "claude");
+        helper.args = vec!["claude.exe".into(), "--type=crashpad-handler".into()];
+        helper.parent = Some(20);
+        let snapshot = Snapshot {
+            processes: vec![main.clone(), helper],
+            ..Snapshot::default()
+        };
+        let plan = build_plan(&profile, &snapshot, 1, Os::Windows, &full_caps());
+        let closes: Vec<_> = plan
+            .steps
+            .iter()
+            .filter_map(|step| match step {
+                Step::CloseProcess { pid, args, .. } => Some((*pid, args.clone())),
+                _ => None,
+            })
+            .collect();
+        // Both are closed; both relaunch as the main program, which the
+        // journal then relaunches once.
+        assert_eq!(closes, vec![(20, main.args.clone()), (21, main.args)]);
     }
 
     #[test]

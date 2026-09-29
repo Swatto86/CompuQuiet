@@ -20,6 +20,7 @@ use crate::error::{PlatformError, Result};
 
 const GIB: u64 = 1024 * 1024 * 1024;
 const MIB: u64 = 1024 * 1024;
+const FAKE_BOOT_TIME: u64 = 1_600_000_000;
 
 #[derive(Default)]
 struct State {
@@ -30,6 +31,10 @@ struct State {
     purges: u32,
     launched: Vec<PathBuf>,
     next_pid: u32,
+    /// Seconds since the epoch. A journal from before these (the acceptance
+    /// suite seeds one) comes from an earlier boot.
+    boot_time: u64,
+    session_start: u64,
 }
 
 pub struct Fake {
@@ -46,6 +51,7 @@ fn process(pid: u32, name: &str, memory_mib: u64) -> ProcessInfo {
         memory_bytes: memory_mib * MIB,
         cpu_percent: 1.5,
         start_time: 1_700_000_000 + u64::from(pid),
+        parent: None,
     }
 }
 
@@ -86,9 +92,25 @@ impl Fake {
                     name: "Balanced".into(),
                 }),
                 next_pid: 1000,
+                // Booted and signed in during 2020, before every process.
+                boot_time: FAKE_BOOT_TIME,
+                session_start: FAKE_BOOT_TIME,
                 ..State::default()
             }),
         }
+    }
+
+    /// Pretend the machine restarted or the user signed in again: these are
+    /// the boot and sign-in times reported from now on.
+    pub fn set_boot_and_session(&self, boot_time: u64, session_start: u64) {
+        let mut state = self.lock();
+        state.boot_time = boot_time;
+        state.session_start = session_start;
+    }
+
+    /// Programs launched so far, in order.
+    pub fn launched(&self) -> Vec<PathBuf> {
+        self.lock().launched.clone()
     }
 
     fn lock(&self) -> std::sync::MutexGuard<'_, State> {
@@ -167,6 +189,14 @@ impl Platform for Fake {
         })
     }
 
+    fn boot_time(&self) -> u64 {
+        self.lock().boot_time
+    }
+
+    fn session_start(&self) -> u64 {
+        self.lock().session_start
+    }
+
     fn activity(&self) -> Activity {
         // The game is in front and the shell has a window; everything else is
         // background, including the unknown render farm.
@@ -216,6 +246,7 @@ impl Platform for Fake {
             memory_bytes: 64 * MIB,
             cpu_percent: 0.5,
             start_time: 1_700_000_000 + u64::from(pid),
+            parent: None,
         });
         state.launched.push(exe.to_path_buf());
         Ok(())

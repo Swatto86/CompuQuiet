@@ -4,7 +4,9 @@
 //!
 //! Restore replays the journal in reverse. If a restore step fails the entry
 //! stays in the journal so the user can retry; only a fully restored journal
-//! is deleted.
+//! is deleted. A restart or a new sign-in since Quiet Mode began has already
+//! undone some steps (see [`Elapsed`]); those are skipped, not repeated with
+//! stale arguments.
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -63,7 +65,35 @@ pub enum RestoreStep {
     },
 }
 
+/// What has happened to the machine since Quiet Mode began.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Elapsed {
+    /// The user has signed in again (including after a Fast Startup
+    /// shutdown): parked processes are gone, and programs that start
+    /// themselves have started again.
+    pub new_session: bool,
+    /// The operating system has booted: stopped services are back under
+    /// their normal start settings.
+    pub rebooted: bool,
+}
+
 impl RestoreStep {
+    /// Why this step no longer applies, when something since has undone it.
+    /// The power plan is a saved setting and is always put back.
+    pub fn overtaken(&self, elapsed: Elapsed) -> Option<&'static str> {
+        match self {
+            RestoreStep::ResumeProcess { .. } | RestoreStep::Relaunch { .. }
+                if elapsed.new_session =>
+            {
+                Some("you have signed in again since, so it is not brought back")
+            }
+            RestoreStep::StartService { .. } if elapsed.rebooted => {
+                Some("the PC has restarted since, which put the service back")
+            }
+            _ => None,
+        }
+    }
+
     pub fn label(&self) -> String {
         match self {
             RestoreStep::ResumeProcess { name, pid, .. } => format!("Resume {name} (PID {pid})"),
@@ -139,6 +169,18 @@ impl Journal {
 
     pub fn path(dir: &Path) -> PathBuf {
         dir.join(JOURNAL_FILE)
+    }
+
+    /// Compare when Quiet Mode began with the platform's boot and sign-in
+    /// times (seconds since the epoch).
+    pub fn elapsed(&self, boot_time: u64, session_start: u64) -> Elapsed {
+        let rebooted = self.started_at < boot_time;
+        Elapsed {
+            // A reboot always ends the sign-in, even if the platform cannot
+            // tell when the new one began.
+            new_session: rebooted || self.started_at < session_start,
+            rebooted,
+        }
     }
 
     /// `None` when there is nothing to restore. A journal from a newer app is
@@ -273,6 +315,40 @@ mod tests {
                 "Restore the Balanced power plan",
             ]
         );
+    }
+
+    #[test]
+    fn a_restart_or_new_sign_in_skips_what_it_already_undid() {
+        let journal = sample(); // started at 1_700_000_000
+        let skipped = |boot: u64, session: u64| -> Vec<String> {
+            let elapsed = journal.elapsed(boot, session);
+            journal
+                .restore_steps()
+                .into_iter()
+                .filter(|(_, step)| step.overtaken(elapsed).is_some())
+                .map(|(_, step)| step.label())
+                .collect()
+        };
+        // Same boot, same sign-in: everything is put back.
+        assert!(skipped(1_600_000_000, 1_690_000_000).is_empty());
+        // Signed in again (a sign-out, or a Fast Startup shutdown): the
+        // parked programs are gone, the service is still stopped.
+        assert_eq!(
+            skipped(1_600_000_000, 1_700_000_500),
+            vec!["Relaunch Dropbox.exe", "Resume OneDrive.exe (PID 10)"]
+        );
+        // Rebooted: the service is back too; only the power plan remains,
+        // even when the platform cannot say when the sign-in began.
+        for session in [1_700_000_600, 0] {
+            assert_eq!(
+                skipped(1_700_000_500, session),
+                vec![
+                    "Relaunch Dropbox.exe",
+                    "Resume OneDrive.exe (PID 10)",
+                    "Start service SysMain",
+                ]
+            );
+        }
     }
 
     #[test]

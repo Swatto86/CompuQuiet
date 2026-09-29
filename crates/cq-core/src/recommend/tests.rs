@@ -12,6 +12,7 @@ fn process(pid: u32, name: &str, mib: u64) -> ProcessInfo {
         memory_bytes: mib * 1024 * 1024,
         cpu_percent: 0.5,
         start_time: 1,
+        parent: None,
     }
 }
 

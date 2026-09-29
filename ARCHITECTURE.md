@@ -29,10 +29,17 @@ Dependencies point inward: `src-tauri` → `cq-platform` → `cq-core`.
    and streams a progress line to the window. A failed step is logged and the
    run continues.
 4. **Restore.** The journal is replayed newest-first (`restore_steps`),
-   relaunching a closed program once per distinct executable. Entries whose
-   undo failed are kept for retry; an empty journal is deleted.
+   relaunching a closed program once per distinct command line. A helper a
+   program started for itself is journaled with its program's command line
+   (`ProcessInfo::program_root`), so the program comes back, not the helper.
+   Entries whose undo failed are kept for retry; one whose process or program
+   no longer exists is done with. An empty journal is deleted.
 5. **Recovery.** At launch a leftover journal puts the engine straight into
-   Quiet Mode marked "recovered", so a crash or reboot never strands changes.
+   Quiet Mode marked "recovered", so a crash never strands changes. Steps a
+   restart or a new sign-in has already undone are skipped (`Elapsed`,
+   `RestoreStep::overtaken`), compared against the platform's boot and
+   sign-in times; the power plan is a saved setting and is always put back.
+   A journal from before the current sign-in is finished at launch.
 
 Processes are identified by PID plus start time so a reused PID is refused.
 

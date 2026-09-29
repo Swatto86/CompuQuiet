@@ -69,6 +69,7 @@ impl Sampler {
                 memory_bytes: process.memory(),
                 cpu_percent: process.cpu_usage(),
                 start_time: process.start_time(),
+                parent: process.parent().map(|pid| pid.as_u32()),
             })
             .collect()
     }
