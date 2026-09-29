@@ -33,6 +33,9 @@ struct State {
     /// Where the fake machine is: a journal whose marker has a larger uptime
     /// (the acceptance suite seeds one) comes from an earlier boot.
     marker: Marker,
+    /// Stopping or starting this service panics, standing in for the app
+    /// dying in the middle of a step.
+    crash_on_service: Option<String>,
 }
 
 pub struct Fake {
@@ -97,6 +100,16 @@ impl Fake {
                 ..State::default()
             }),
         }
+    }
+
+    /// Make stopping or starting `service` crash, or stop doing so.
+    pub fn crash_on_service(&self, service: Option<&str>) {
+        self.lock().crash_on_service = service.map(str::to_ascii_lowercase);
+    }
+
+    fn crash_if_asked(&self, name: &str) {
+        let crash = self.lock().crash_on_service.as_deref() == Some(&*name.to_ascii_lowercase());
+        assert!(!crash, "the fake machine crashed while handling {name}");
     }
 
     /// Pretend the machine restarted or the user signed in again.
@@ -245,6 +258,7 @@ impl Platform for Fake {
     }
 
     fn stop_service(&self, name: &str) -> Result<()> {
+        self.crash_if_asked(name);
         let mut state = self.lock();
         match state.services.get_mut(&name.to_ascii_lowercase()) {
             Some(current) => {
@@ -256,6 +270,7 @@ impl Platform for Fake {
     }
 
     fn start_service(&self, name: &str) -> Result<()> {
+        self.crash_if_asked(name);
         let mut state = self.lock();
         match state.services.get_mut(&name.to_ascii_lowercase()) {
             Some(current) => {

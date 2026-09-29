@@ -21,6 +21,7 @@ mod windows;
 use std::path::Path;
 
 pub use error::{PlatformError, Result};
+pub use procs::run_tool;
 
 use cq_core::{Activity, Capabilities, Marker, Os, PowerPlan, Snapshot, SystemStats};
 

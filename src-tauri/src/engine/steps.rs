@@ -1,11 +1,65 @@
 //! One journaled step against the platform, and its undo.
 
-use cq_core::{DoneStep, RestoreStep, Step};
+use cq_core::{CoreError, DoneStep, Journal, PowerPlan, RestoreStep, Step};
 
-use super::Engine;
+use super::{Engine, LogLine};
 use crate::error::AppError;
 
 impl Engine {
+    /// Carry out one step, written to the journal before it happens so a
+    /// crash while it happens strands nothing: every undo copes with a step
+    /// that never took effect. `Err` means the journal could not be saved,
+    /// and nothing more may be changed.
+    pub(super) fn run_journaled(
+        &self,
+        step: &Step,
+        active_plan: Option<&PowerPlan>,
+        journal: &mut Journal,
+    ) -> Result<LogLine, CoreError> {
+        let intended = DoneStep::intended(step, active_plan);
+        if let Some(entry) = &intended {
+            journal.record(entry.clone());
+            if let Err(error) = journal.save(&self.data_dir) {
+                journal.done.pop();
+                return Err(error);
+            }
+        }
+        Ok(match self.execute(step) {
+            Ok(done) => {
+                // What happened can differ from what was written down: the
+                // plan the platform actually replaced, say.
+                let changed = intended.as_ref() != Some(&done);
+                if intended.is_some() {
+                    journal.done.pop();
+                }
+                journal.record(done);
+                if changed {
+                    journal.save(&self.data_dir)?;
+                }
+                LogLine {
+                    label: step.label(),
+                    ok: true,
+                    detail: None,
+                }
+            }
+            Err(error) => {
+                // It did not happen: its entry comes back out. Left in, it
+                // would only be undone harmlessly.
+                if intended.is_some() {
+                    journal.done.pop();
+                    if let Err(error) = journal.save(&self.data_dir) {
+                        log::warn!("removing a step that did not happen: {error}");
+                    }
+                }
+                LogLine {
+                    label: step.label(),
+                    ok: false,
+                    detail: Some(error.to_string()),
+                }
+            }
+        })
+    }
+
     pub(super) fn execute(&self, step: &Step) -> Result<DoneStep, AppError> {
         Ok(match step {
             Step::SetPerformancePower => DoneStep::PowerPlanChanged {

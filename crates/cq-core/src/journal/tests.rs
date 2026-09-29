@@ -91,16 +91,60 @@ fn a_restart_or_new_sign_in_skips_what_it_already_undid() {
 }
 
 #[test]
-fn a_failed_restore_keeps_only_that_entry() {
-    let mut journal = sample();
-    let failed: HashSet<usize> = [1usize].into_iter().collect();
-    journal.retain(&failed);
+fn resolving_a_step_settles_every_entry_it_covers() {
+    let journal = sample();
+    let steps = journal.restore_steps();
+    assert_eq!(steps[0].0, vec![4, 3], "one relaunch settles both copies");
+    // All but the service start done: only its entry remains, and the
+    // memory purge (nothing to undo) is dropped.
+    let resolved: HashSet<usize> = steps
+        .iter()
+        .filter(|(_, step)| !matches!(step, RestoreStep::StartService { .. }))
+        .flat_map(|(indices, _)| indices.clone())
+        .collect();
     assert_eq!(
-        journal.done,
+        journal.without(&resolved).done,
         vec![DoneStep::ServiceStopped {
             name: "SysMain".into()
         }]
     );
+    assert!(journal.without(&(0..6).collect()).done.is_empty());
+}
+
+#[test]
+fn every_undoable_step_is_journaled_before_it_runs() {
+    let balanced = PowerPlan {
+        id: "balanced".into(),
+        name: "Balanced".into(),
+    };
+    let close = Step::CloseProcess {
+        pid: 9,
+        name: "Dropbox.exe".into(),
+        exe: Some(PathBuf::from("C:/d/Dropbox.exe")),
+        args: vec!["Dropbox.exe".into()],
+        cwd: None,
+        start_time: 5,
+    };
+    assert_eq!(
+        DoneStep::intended(&close, None),
+        Some(DoneStep::ProcessClosed {
+            name: "Dropbox.exe".into(),
+            exe: Some(PathBuf::from("C:/d/Dropbox.exe")),
+            args: vec!["Dropbox.exe".into()],
+            cwd: None,
+        })
+    );
+    let stop = Step::StopService {
+        name: "SysMain".into(),
+    };
+    assert!(DoneStep::intended(&stop, None).is_some());
+    assert_eq!(
+        DoneStep::intended(&Step::SetPerformancePower, Some(&balanced)),
+        Some(DoneStep::PowerPlanChanged { previous: balanced })
+    );
+    // Unknown until it has happened, or nothing to undo: written afterwards.
+    assert_eq!(DoneStep::intended(&Step::SetPerformancePower, None), None);
+    assert_eq!(DoneStep::intended(&Step::PurgeMemory, None), None);
 }
 
 #[test]

@@ -218,3 +218,92 @@ fn claiming_for_exit_holds_the_engine_only_when_leaving_succeeds() {
     assert_eq!(engine.go_quiet(&|_| {}).unwrap_err().code, "busy");
     assert_eq!(engine.claim_for_exit(|| Ok::<_, ()>(())), None);
 }
+
+fn crashes(run: impl FnOnce()) -> bool {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(run)).is_err()
+}
+
+#[test]
+fn a_crash_while_a_step_runs_leaves_it_on_record() {
+    let dir = tempfile::tempdir().unwrap();
+    let fake = Arc::new(cq_platform::fake::Fake::new());
+    fake.crash_on_service(Some("SysMain"));
+    assert!(crashes(|| {
+        let _ = quiet_with_every_kind_of_step(&fake, dir.path());
+    }));
+    let on_disk = Journal::load(dir.path())
+        .unwrap()
+        .expect("the journal survives");
+    let stop = cq_core::DoneStep::ServiceStopped {
+        name: "SysMain".into(),
+    };
+    assert!(on_disk.done.contains(&stop), "{:?}", on_disk.done);
+
+    // Putting back a step that may never have happened is harmless.
+    fake.crash_on_service(None);
+    let recovered = Engine::new(fake.clone(), dir.path().to_path_buf());
+    assert!(recovered.state().quiet);
+    assert_eq!(recovered.restore(&|_| {}).unwrap(), 0);
+    assert_eq!(sysmain(&fake), Some(cq_core::ServiceState::Running));
+}
+
+#[test]
+fn an_interrupted_restore_never_repeats_what_it_finished() {
+    let dir = tempfile::tempdir().unwrap();
+    let fake = Arc::new(cq_platform::fake::Fake::new());
+    let engine = quiet_with_every_kind_of_step(&fake, dir.path()).unwrap();
+    // Newest first: Dropbox relaunched, OneDrive resumed, then SysMain dies.
+    fake.crash_on_service(Some("SysMain"));
+    assert!(crashes(|| {
+        let _ = engine.restore(&|_| {});
+    }));
+    let left = Journal::load(dir.path())
+        .unwrap()
+        .expect("progress was saved");
+    assert!(
+        left.done.iter().all(|done| matches!(
+            done,
+            cq_core::DoneStep::ServiceStopped { .. } | cq_core::DoneStep::PowerPlanChanged { .. }
+        )),
+        "{:?}",
+        left.done
+    );
+
+    fake.crash_on_service(None);
+    let again = Engine::new(fake.clone(), dir.path().to_path_buf());
+    assert_eq!(again.restore(&|_| {}).unwrap(), 0);
+    assert_eq!(
+        fake.launched().len(),
+        1,
+        "Dropbox relaunched once, not twice"
+    );
+}
+
+#[test]
+fn a_program_that_is_already_running_is_not_relaunched() {
+    let dir = tempfile::tempdir().unwrap();
+    let fake = Arc::new(cq_platform::fake::Fake::new());
+    let engine = quiet_with_every_kind_of_step(&fake, dir.path()).unwrap();
+    // Started again by hand while Quiet Mode was on.
+    let args = ["Dropbox.exe".to_string(), "--background".to_string()];
+    fake.launch(std::path::Path::new("C:/fake/Dropbox.exe"), &args, None)
+        .unwrap();
+    assert_eq!(engine.restore(&|_| {}).unwrap(), 0);
+    assert_eq!(fake.launched().len(), 1, "only the copy started by hand");
+    assert!(
+        engine
+            .state()
+            .log
+            .iter()
+            .any(|line| line.detail.as_deref() == Some("Skipped: it is already running"))
+    );
+}
+
+#[test]
+fn an_emptied_journal_left_on_disk_means_quiet_mode_is_off() {
+    let dir = tempfile::tempdir().unwrap();
+    Journal::new(now()).save(dir.path()).unwrap();
+    let engine = engine(dir.path());
+    assert!(!engine.state().quiet);
+    assert!(!Journal::path(dir.path()).exists());
+}

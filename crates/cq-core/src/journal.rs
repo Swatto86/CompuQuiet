@@ -1,19 +1,23 @@
-//! The undo journal: every step that actually happened, written to disk
-//! before the next one starts, so a crash, a reboot or a closed laptop lid
-//! cannot lose the list of things to put back.
+//! The undo journal. Each step is written to disk before it is carried out
+//! ([`DoneStep::intended`]), so a crash, a reboot or a closed laptop lid at
+//! any moment cannot lose something to put back. An entry can therefore name
+//! a step that never took effect, and every undo copes with that: starting a
+//! running service, resuming a process that is not suspended and relaunching
+//! a program that is already running all change nothing.
 //!
-//! Restore replays the journal in reverse. If a restore step fails the entry
-//! stays in the journal so the user can retry; only a fully restored journal
-//! is deleted. A restart or a new sign-in since Quiet Mode began has already
-//! undone some steps (see [`Elapsed`]); those are skipped, not repeated with
-//! stale arguments.
+//! Restore replays the journal in reverse and saves its progress after every
+//! step, so an interrupted restore never repeats one. A step that fails stays
+//! for a retry; an emptied journal is deleted. A restart or a new sign-in
+//! since Quiet Mode began has already undone some steps (see [`Elapsed`]);
+//! those are skipped, not repeated with stale arguments.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
 use crate::CoreError;
+use crate::plan::Step;
 use crate::snapshot::PowerPlan;
 use crate::store::{read_json, write_json};
 
@@ -120,6 +124,41 @@ impl RestoreStep {
 }
 
 impl DoneStep {
+    /// The entry to journal before carrying `step` out. The power plan's is
+    /// known in advance only when the active plan could be read first
+    /// (`active_plan`); without it, and for the memory purge (nothing to
+    /// undo), the entry is written once the step has happened.
+    pub fn intended(step: &Step, active_plan: Option<&PowerPlan>) -> Option<DoneStep> {
+        Some(match step {
+            Step::SetPerformancePower => DoneStep::PowerPlanChanged {
+                previous: active_plan?.clone(),
+            },
+            Step::StopService { name } => DoneStep::ServiceStopped { name: name.clone() },
+            Step::SuspendProcess {
+                pid,
+                name,
+                start_time,
+            } => DoneStep::ProcessSuspended {
+                pid: *pid,
+                name: name.clone(),
+                start_time: *start_time,
+            },
+            Step::CloseProcess {
+                name,
+                exe,
+                args,
+                cwd,
+                ..
+            } => DoneStep::ProcessClosed {
+                name: name.clone(),
+                exe: exe.clone(),
+                args: args.clone(),
+                cwd: cwd.clone(),
+            },
+            Step::PurgeMemory => return None,
+        })
+    }
+
     /// The step that undoes this one, if any.
     pub fn restore(&self) -> Option<RestoreStep> {
         match self {
@@ -242,34 +281,41 @@ impl Journal {
         self.done.push(step);
     }
 
-    /// Undo steps, newest first. Several closed instances of one program are
-    /// relaunched once; the program decides how many copies it wants.
-    pub fn restore_steps(&self) -> Vec<(usize, RestoreStep)> {
-        let mut relaunched: HashSet<(Option<PathBuf>, Vec<String>)> = HashSet::new();
-        let mut steps = Vec::new();
+    /// Undo steps, newest first, each with the entries it settles. Several
+    /// closed instances of one program are relaunched once; the program
+    /// decides how many copies it wants.
+    pub fn restore_steps(&self) -> Vec<(Vec<usize>, RestoreStep)> {
+        let mut relaunches: HashMap<(Option<PathBuf>, Vec<String>), usize> = HashMap::new();
+        let mut steps: Vec<(Vec<usize>, RestoreStep)> = Vec::new();
         for (index, done) in self.done.iter().enumerate().rev() {
             let Some(step) = done.restore() else {
                 continue;
             };
-            if let RestoreStep::Relaunch { exe, args, .. } = &step
-                && !relaunched.insert((exe.clone(), args.clone()))
-            {
-                continue;
+            if let RestoreStep::Relaunch { exe, args, .. } = &step {
+                let key = (exe.clone(), args.clone());
+                if let Some(&position) = relaunches.get(&key) {
+                    steps[position].0.push(index);
+                    continue;
+                }
+                relaunches.insert(key, steps.len());
             }
-            steps.push((index, step));
+            steps.push((vec![index], step));
         }
         steps
     }
 
-    /// Keep only the entries whose restore failed (or has no undo), so a
-    /// retry does not repeat what already succeeded.
-    pub fn retain(&mut self, failed: &HashSet<usize>) {
-        let mut index = 0;
-        self.done.retain(|done| {
-            let keep = failed.contains(&index) && done.restore().is_some();
-            index += 1;
-            keep
-        });
+    /// The journal still to be undone once the `resolved` entries are, and
+    /// without entries that have no undo.
+    pub fn without(&self, resolved: &HashSet<usize>) -> Journal {
+        let mut rest = self.clone();
+        rest.done = self
+            .done
+            .iter()
+            .enumerate()
+            .filter(|(index, done)| !resolved.contains(index) && done.restore().is_some())
+            .map(|(_, done)| done.clone())
+            .collect();
+        rest
     }
 
     pub fn summary(&self) -> Summary {

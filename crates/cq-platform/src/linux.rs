@@ -71,14 +71,21 @@ fn systemctl(user: bool, verb: &str, unit: &str, extra: &[&str]) -> Result<Strin
     args.extend_from_slice(extra);
     args.push("--");
     args.push(unit);
-    run_tool("systemctl", &args).map_err(|e| {
-        let text = e.to_string();
-        if text.contains("Access denied") || text.contains("Interactive authentication required") {
-            PlatformError::NeedsElevation
-        } else {
-            e
-        }
-    })
+    run_tool("systemctl", &args).map_err(|error| classify_systemctl(unit, error))
+}
+
+/// What a systemctl failure means. `run_tool` runs it in the C locale, so
+/// its messages are the English ones matched here.
+fn classify_systemctl(unit: &str, error: PlatformError) -> PlatformError {
+    let text = error.to_string();
+    if text.contains("Access denied") || text.contains("Interactive authentication required") {
+        PlatformError::NeedsElevation
+    } else if text.contains("not found") || text.contains("not loaded") {
+        // Removed since Quiet Mode stopped it: nothing is left to start.
+        PlatformError::NotInstalled(unit.to_string())
+    } else {
+        error
+    }
 }
 
 pub(crate) fn parse_show(output: &str) -> (ServiceState, String) {
@@ -254,6 +261,25 @@ fn current_profile() -> Result<PowerPlan> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_unit_removed_since_it_was_stopped_is_not_installed() {
+        let failure = |message: &str| PlatformError::Other(message.to_string());
+        let gone = classify_systemctl(
+            "tracker.service",
+            failure(
+                "systemctl start -- tracker.service failed (exit status: 5): Failed to start tracker.service: Unit tracker.service not found.",
+            ),
+        );
+        assert!(matches!(gone, PlatformError::NotInstalled(_)), "{gone}");
+        let denied = classify_systemctl(
+            "tracker.service",
+            failure("systemctl stop failed: Failed to stop tracker.service: Access denied"),
+        );
+        assert!(denied.needs_elevation());
+        let other = classify_systemctl("x.service", failure("systemctl start failed: boom"));
+        assert!(matches!(other, PlatformError::Other(_)));
+    }
 
     #[test]
     fn unit_names_are_validated_and_user_units_recognised() {

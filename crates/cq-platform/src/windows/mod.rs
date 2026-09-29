@@ -10,6 +10,7 @@
 
 mod activity;
 mod power;
+mod process;
 mod services;
 mod session;
 
@@ -26,9 +27,7 @@ use windows_sys::Win32::Security::{
     TokenElevation,
 };
 use windows_sys::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress};
-use windows_sys::Win32::System::Threading::{
-    GetCurrentProcess, OpenProcess, OpenProcessToken, PROCESS_SUSPEND_RESUME,
-};
+use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
 use windows_sys::Win32::UI::Shell::ShellExecuteW;
 use windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
 
@@ -41,7 +40,6 @@ const ERROR_NOT_ALL_ASSIGNED: u32 = 1300;
 const SYSTEM_MEMORY_LIST_INFORMATION: i32 = 80;
 const MEMORY_PURGE_STANDBY_LIST: u32 = 4;
 
-type NtProcessFn = unsafe extern "system" fn(HANDLE) -> NTSTATUS;
 type NtSetSystemInformationFn = unsafe extern "system" fn(i32, *mut c_void, u32) -> NTSTATUS;
 
 pub struct Windows {
@@ -55,31 +53,6 @@ impl Windows {
             sampler: Sampler::new(),
             elevated: is_elevated(),
         }
-    }
-
-    fn signal_process(&self, pid: u32, start_time: u64, symbol: &CStr) -> Result<()> {
-        self.sampler.assert_identity(pid, start_time)?;
-        let function: NtProcessFn = ntdll_function(symbol)?;
-        // SAFETY: OpenProcess/CloseHandle with a handle we own; the NT call
-        // takes only that handle. Access is limited to suspend/resume.
-        unsafe {
-            let handle = OpenProcess(PROCESS_SUSPEND_RESUME, 0, pid);
-            if handle.is_null() {
-                return Err(PlatformError::from_os(
-                    format!("opening PID {pid}"),
-                    std::io::Error::last_os_error(),
-                ));
-            }
-            let status = function(handle);
-            CloseHandle(handle);
-            if status < 0 {
-                return Err(PlatformError::Other(format!(
-                    "{} on PID {pid} failed with NTSTATUS {status:#010x}",
-                    symbol.to_string_lossy()
-                )));
-            }
-        }
-        Ok(())
     }
 }
 
@@ -144,13 +117,7 @@ impl Platform for Windows {
         {
             return Ok(());
         }
-        run_tool("taskkill", &["/F", "/PID", &pid_arg]).map_err(|e| {
-            if e.to_string().contains("Access is denied") {
-                PlatformError::NeedsElevation
-            } else {
-                e
-            }
-        })?;
+        self.terminate(pid)?;
         if self.sampler.wait_for_exit(pid, GRACE) {
             Ok(())
         } else {

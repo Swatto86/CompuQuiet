@@ -14,6 +14,10 @@ the decisions and constraints that are not visible in the code.
   sign-out keep them stopped), resumes are always tried (the PID check
   refuses anything else) and the power plan is always restored. Older
   journals, and Linux/macOS sign-outs without a reboot, restore everything.
+- **Every step is on record before it happens, and every undo is safe to
+  repeat.** A crash mid-step or mid-restore strands nothing and repeats
+  nothing; restore saves after each step and never relaunches a command line
+  that is already running.
 - **Leaving never cuts a run short.** Quit, the tray's Quit, elevated
   relaunch and the updater's install claim the engine
   (`Engine::claim_for_exit`) and wait or refuse while a run is in progress.

@@ -201,18 +201,25 @@ pub fn spawn_detached(exe: &Path, args: &[String], cwd: Option<&Path>) -> Result
     Ok(())
 }
 
+/// Longest a system tool may run. powercfg, taskkill and schtasks answer in a
+/// second; systemctl can wait out a unit's own stop timeout (90 s by default)
+/// and a polkit prompt waits on the user. Past this a tool is hung, and a
+/// hung tool must not hold Quiet Mode (and Quit) hostage.
+const TOOL_TIMEOUT: Duration = Duration::from_secs(180);
+
 /// Run a system tool with structured arguments and capture its output.
 pub fn run_tool(program: &str, args: &[&str]) -> Result<String> {
     let mut command = Command::new(program);
-    command.args(args).stdin(Stdio::null());
+    command.args(args);
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
         command.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
     }
-    let output = command
-        .output()
-        .map_err(|e| PlatformError::io(format!("running {program}"), e))?;
+    // Messages are matched in a few places; keep them in one language.
+    #[cfg(unix)]
+    command.env("LC_ALL", "C");
+    let output = output_within(command, program, TOOL_TIMEOUT)?;
     let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
     if output.status.success() {
         Ok(stdout)
@@ -229,6 +236,78 @@ pub fn run_tool(program: &str, args: &[&str]) -> Result<String> {
             output.status
         )))
     }
+}
+
+/// `Command::output` with a deadline: past it the tool is killed and an
+/// error returned. The pipes are drained on their own threads so a chatty
+/// tool never blocks on a full pipe, and a grandchild that inherited them
+/// cannot make this wait forever either.
+fn output_within(
+    mut command: Command,
+    program: &str,
+    timeout: Duration,
+) -> Result<std::process::Output> {
+    use std::io::Read;
+    use std::sync::mpsc;
+
+    command
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut child = command
+        .spawn()
+        .map_err(|e| PlatformError::io(format!("running {program}"), e))?;
+    let drain = |pipe: Option<Box<dyn Read + Send>>| {
+        let (sender, receiver) = mpsc::channel();
+        std::thread::spawn(move || {
+            let mut bytes = Vec::new();
+            if let Some(mut pipe) = pipe {
+                let _ = pipe.read_to_end(&mut bytes);
+            }
+            let _ = sender.send(bytes);
+        });
+        receiver
+    };
+    let stdout = drain(
+        child
+            .stdout
+            .take()
+            .map(|p| Box::new(p) as Box<dyn Read + Send>),
+    );
+    let stderr = drain(
+        child
+            .stderr
+            .take()
+            .map(|p| Box::new(p) as Box<dyn Read + Send>),
+    );
+    let deadline = Instant::now() + timeout;
+    let status = loop {
+        if let Some(status) = child
+            .try_wait()
+            .map_err(|e| PlatformError::io(format!("waiting for {program}"), e))?
+        {
+            break status;
+        }
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(PlatformError::Other(format!(
+                "{program} did not finish within {} s and was stopped",
+                timeout.as_secs()
+            )));
+        }
+        std::thread::sleep(Duration::from_millis(25));
+    };
+    let collect = |receiver: mpsc::Receiver<Vec<u8>>| {
+        receiver
+            .recv_timeout(Duration::from_secs(2))
+            .unwrap_or_default()
+    };
+    Ok(std::process::Output {
+        status,
+        stdout: collect(stdout),
+        stderr: collect(stderr),
+    })
 }
 
 #[cfg(test)]
@@ -252,6 +331,39 @@ mod tests {
             .unwrap();
         assert!(sampler.assert_identity(me, listed.start_time + 60).is_err());
         assert!(sampler.stats().memory_total > 0);
+    }
+
+    #[test]
+    fn a_hung_tool_is_stopped_at_its_deadline() {
+        let command = if cfg!(windows) {
+            let mut ping = Command::new("ping");
+            ping.args(["-n", "30", "127.0.0.1"]);
+            ping
+        } else {
+            let mut sleep = Command::new("sleep");
+            sleep.arg("30");
+            sleep
+        };
+        let started = Instant::now();
+        let error = output_within(command, "slow", Duration::from_millis(500)).unwrap_err();
+        assert!(started.elapsed() < Duration::from_secs(10), "{error}");
+        assert!(error.to_string().contains("did not finish"), "{error}");
+    }
+
+    #[test]
+    fn a_tool_s_output_and_failure_are_reported() {
+        let echo = if cfg!(windows) {
+            run_tool("cmd", &["/c", "echo hello"])
+        } else {
+            run_tool("sh", &["-c", "echo hello"])
+        };
+        assert_eq!(echo.unwrap().trim(), "hello");
+        let failed = if cfg!(windows) {
+            run_tool("cmd", &["/c", "exit 3"])
+        } else {
+            run_tool("sh", &["-c", "exit 3"])
+        };
+        assert!(failed.unwrap_err().to_string().contains("failed"));
     }
 
     #[test]

@@ -32,6 +32,11 @@ impl MacOs {
         format!("{}/{label}", self.domain())
     }
 
+    /// Whether launchd has the agent loaded in this domain.
+    fn loaded(&self, label: &str) -> bool {
+        run_tool("launchctl", &["print", &self.target(label)]).is_ok()
+    }
+
     /// The agent's property list, wherever launchd would have loaded it from.
     fn plist_for(label: &str) -> Option<PathBuf> {
         let home = dirs_home();
@@ -146,6 +151,10 @@ impl Platform for MacOs {
                 "{label:?} is not a launchd label"
             )));
         }
+        // Already unloaded (by the user, or since it was stopped): done.
+        if !self.loaded(label) {
+            return Ok(());
+        }
         run_tool("launchctl", &["bootout", &self.target(label)]).map(drop)
     }
 
@@ -154,6 +163,10 @@ impl Platform for MacOs {
             return Err(PlatformError::Other(format!(
                 "{label:?} is not a launchd label"
             )));
+        }
+        // Loaded again meanwhile: bootstrap would fail with an I/O error.
+        if self.loaded(label) {
+            return Ok(());
         }
         match Self::plist_for(label) {
             Some(plist) => run_tool(

@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use cq_core::journal::Summary;
-use cq_core::{Capabilities, Journal, Os, Settings, Skipped, SystemStats, build_plan};
+use cq_core::{Capabilities, CoreError, Journal, Os, Settings, Skipped, SystemStats, build_plan};
 use cq_platform::Platform;
 use serde::Serialize;
 
@@ -81,6 +81,17 @@ impl Engine {
             unreadable_journal = Some(error.to_string());
             None
         });
+        // An emptied journal is a finished restore whose file could not be
+        // deleted at the time: nothing is parked.
+        let journal = match journal {
+            Some(journal) if journal.done.is_empty() => {
+                if let Err(error) = Journal::clear(&data_dir) {
+                    log::warn!("deleting an empty journal: {error}");
+                }
+                None
+            }
+            other => other,
+        };
         Engine {
             platform,
             data_dir,
@@ -260,28 +271,9 @@ impl Engine {
         journal.began = Some(self.platform.marker());
         journal.save(&self.data_dir)?;
         for step in &plan.steps {
-            let line = match self.execute(step) {
-                Ok(done) => {
-                    journal.record(done);
-                    if let Err(error) = journal.save(&self.data_dir) {
-                        // The step happened: keep it where Restore can see
-                        // it, and change nothing more.
-                        let mut inner = self.lock();
-                        inner.journal = Some(journal);
-                        inner.log = log;
-                        return Err(error.into());
-                    }
-                    LogLine {
-                        label: step.label(),
-                        ok: true,
-                        detail: None,
-                    }
-                }
-                Err(error) => LogLine {
-                    label: step.label(),
-                    ok: false,
-                    detail: Some(error.to_string()),
-                },
+            let line = match self.run_journaled(step, snapshot.power_plan.as_ref(), &mut journal) {
+                Ok(line) => line,
+                Err(error) => return Err(self.stop_unrecorded(journal, log, error)),
             };
             progress(line.clone());
             log.push(line);
@@ -295,59 +287,13 @@ impl Engine {
         Ok(summary)
     }
 
-    /// Undo everything in the journal. Returns how many entries still need
-    /// attention; zero means the journal is gone and the machine is back.
-    pub fn restore(&self, progress: &dyn Fn(LogLine)) -> Result<usize, AppError> {
-        let _guard = self.begin()?;
-        let Some(mut journal) = self.lock().journal.clone() else {
-            return Err(AppError::new("not_quiet", "Quiet Mode is not on"));
-        };
-        let elapsed = journal.elapsed(self.platform.marker());
-        let mut failed = std::collections::HashSet::new();
-        let mut log = Vec::new();
-        for (index, step) in journal.restore_steps() {
-            let outcome = match step.overtaken(elapsed) {
-                Some(reason) => Ok(Some(format!("Skipped: {reason}"))),
-                None => self.undo(&step).map(|()| None),
-            };
-            let line = match outcome {
-                Ok(detail) => LogLine {
-                    label: step.label(),
-                    ok: true,
-                    detail,
-                },
-                Err(error) => {
-                    // A process already gone, or a program or service no
-                    // longer installed, cannot be put back: the entry is
-                    // done with, not failed, or Quiet Mode could never end.
-                    let gone = matches!(error.code.as_str(), "not_running" | "not_installed");
-                    if !gone {
-                        failed.insert(index);
-                    }
-                    LogLine {
-                        label: step.label(),
-                        ok: gone,
-                        detail: Some(error.to_string()),
-                    }
-                }
-            };
-            progress(line.clone());
-            log.push(line);
-        }
-        journal.retain(&failed);
-        let remaining = journal.done.len();
+    /// A journal save failed mid-run: keep what was done where Restore can
+    /// see it, and change nothing more.
+    fn stop_unrecorded(&self, journal: Journal, log: Vec<LogLine>, error: CoreError) -> AppError {
         let mut inner = self.lock();
-        if remaining == 0 {
-            Journal::clear(&self.data_dir)?;
-            inner.journal = None;
-        } else {
-            journal.save(&self.data_dir)?;
-            inner.journal = Some(journal);
-        }
+        inner.journal = (!journal.done.is_empty()).then_some(journal);
         inner.log = log;
-        inner.skipped.clear();
-        inner.recovered = false;
-        Ok(remaining)
+        error.into()
     }
 }
 
@@ -359,6 +305,7 @@ impl Drop for BusyGuard<'_> {
     }
 }
 
+mod restore;
 mod steps;
 
 #[cfg(all(test, feature = "fake-platform"))]

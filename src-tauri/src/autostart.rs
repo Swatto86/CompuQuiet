@@ -110,23 +110,10 @@ mod platform {
     const TASK: &str = "CompuQuiet";
     const LEGACY_TASK: &str = "ComputeQuiet";
 
+    /// Through the platform's runner, so a hung schtasks times out.
     fn schtasks(args: &[&str]) -> Result<String, AppError> {
-        use std::os::windows::process::CommandExt;
-        let output = std::process::Command::new("schtasks")
-            .args(args)
-            .creation_flags(0x0800_0000)
-            .output()
-            .map_err(|e| AppError::new("autostart", format!("running schtasks: {e}")))?;
-        let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
-        if output.status.success() {
-            Ok(stdout)
-        } else {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            Err(AppError::new(
-                "autostart",
-                format!("schtasks {}: {}", args.join(" "), stderr.trim()),
-            ))
-        }
+        cq_platform::run_tool("schtasks", args)
+            .map_err(|error| AppError::new("autostart", error.to_string()))
     }
 
     fn query_task(name: &str) -> Result<(bool, bool), AppError> {

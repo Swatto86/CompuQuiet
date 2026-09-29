@@ -24,16 +24,23 @@ Dependencies point inward: `src-tauri` → `cq-platform` → `cq-core`.
    ordered `Step`s and a list of skipped targets with reasons. Order: power
    plan, services, processes, memory purge. Critical processes, keep-alive
    entries and the app itself are never planned.
-3. **Execute and journal.** The engine runs each step through the platform,
-   appends a `DoneStep` to `journal.json` (atomic write) before the next step,
-   and streams a progress line to the window. A failed step is logged and the
-   run continues.
+3. **Execute and journal.** Each step's `DoneStep` is written to
+   `journal.json` (atomic write) before the platform carries it out
+   (`DoneStep::intended`, `Engine::run_journaled`), corrected afterwards if
+   the platform reports something different, and taken back out if the step
+   failed. A crash mid-step therefore leaves it on record, and every undo is
+   safe for a step that never happened. Progress lines stream to the window;
+   a failed step is logged and the run continues.
 4. **Restore.** The journal is replayed newest-first (`restore_steps`),
-   relaunching a closed program once per distinct command line. A helper a
-   program started for itself is journaled with its program's command line
+   relaunching a closed program once per distinct command line, and not at
+   all while that command line is already running. A helper a program started
+   for itself is journaled with its program's command line
    (`ProcessInfo::program_root`), so the program comes back, not the helper.
-   Entries whose undo failed are kept for retry; one whose process or program
-   no longer exists is done with. An empty journal is deleted.
+   The journal is saved after every settled step (`Journal::without`), so an
+   interrupted restore never repeats one. Entries whose undo failed are kept
+   for retry; one whose process, program or service no longer exists is done
+   with. An emptied journal is deleted, with retries; one left on disk
+   because the file stayed locked counts as finished at the next launch.
 5. **Recovery.** At launch a leftover journal puts the engine straight into
    Quiet Mode marked "recovered", so a crash never strands changes. Steps a
    restart or a new sign-in has already undone are skipped (`Elapsed`,
@@ -42,6 +49,11 @@ Dependencies point inward: `src-tauri` → `cq-platform` → `cq-core`.
    one; the power plan is a saved setting and is always put back. A journal
    from an earlier sign-in is finished at launch; an unreadable one blocks a
    new run rather than being overwritten.
+6. **System tools** (`powercfg`, `taskkill`, `schtasks`, `systemctl`,
+   `launchctl`, `pkexec`) run through `cq_platform::run_tool`: a 180 s
+   deadline, and the C locale on Linux and macOS so their messages can be
+   matched. Windows decisions use error codes, never a tool's translated
+   text; the forced close is `TerminateProcess`.
 
 Processes are identified by PID plus start time so a reused PID is refused.
 
