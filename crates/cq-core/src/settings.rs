@@ -87,6 +87,14 @@ impl Settings {
     /// Names come from a text field in the webview: bound their length, refuse
     /// control characters and empty strings.
     pub fn validate(&self) -> Result<(), CoreError> {
+        // Settings arrive from the page; a newer version on disk would make
+        // the next launch refuse the file and fall back to defaults.
+        if self.version > CURRENT_VERSION {
+            return Err(CoreError::Invalid(format!(
+                "settings version {} is newer than this app understands",
+                self.version
+            )));
+        }
         let names = self
             .profile
             .processes
@@ -128,6 +136,15 @@ impl Settings {
 mod tests {
     use super::*;
     use crate::profile::{ProcessAction, ProcessTarget};
+
+    #[test]
+    fn a_newer_version_from_the_page_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut settings = Settings::default_for(Os::Windows);
+        settings.version = CURRENT_VERSION + 4;
+        assert!(settings.save(dir.path()).is_err());
+        assert!(!Settings::path(dir.path()).exists());
+    }
 
     #[test]
     fn missing_settings_are_defaults_and_saved_ones_come_back() {

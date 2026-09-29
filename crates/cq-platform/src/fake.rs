@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use cq_core::{
-    Activity, Capabilities, PowerPlan, ProcessInfo, ServiceInfo, ServiceState, Snapshot,
+    Activity, Capabilities, Marker, PowerPlan, ProcessInfo, ServiceInfo, ServiceState, Snapshot,
     SystemStats,
 };
 
@@ -20,7 +20,6 @@ use crate::error::{PlatformError, Result};
 
 const GIB: u64 = 1024 * 1024 * 1024;
 const MIB: u64 = 1024 * 1024;
-const FAKE_BOOT_TIME: u64 = 1_600_000_000;
 
 #[derive(Default)]
 struct State {
@@ -31,10 +30,9 @@ struct State {
     purges: u32,
     launched: Vec<PathBuf>,
     next_pid: u32,
-    /// Seconds since the epoch. A journal from before these (the acceptance
-    /// suite seeds one) comes from an earlier boot.
-    boot_time: u64,
-    session_start: u64,
+    /// Where the fake machine is: a journal whose marker has a larger uptime
+    /// (the acceptance suite seeds one) comes from an earlier boot.
+    marker: Marker,
 }
 
 pub struct Fake {
@@ -92,20 +90,18 @@ impl Fake {
                     name: "Balanced".into(),
                 }),
                 next_pid: 1000,
-                // Booted and signed in during 2020, before every process.
-                boot_time: FAKE_BOOT_TIME,
-                session_start: FAKE_BOOT_TIME,
+                marker: Marker {
+                    uptime: 3_600,
+                    sign_in: Some(1),
+                },
                 ..State::default()
             }),
         }
     }
 
-    /// Pretend the machine restarted or the user signed in again: these are
-    /// the boot and sign-in times reported from now on.
-    pub fn set_boot_and_session(&self, boot_time: u64, session_start: u64) {
-        let mut state = self.lock();
-        state.boot_time = boot_time;
-        state.session_start = session_start;
+    /// Pretend the machine restarted or the user signed in again.
+    pub fn set_marker(&self, marker: Marker) {
+        self.lock().marker = marker;
     }
 
     /// Programs launched so far, in order.
@@ -189,12 +185,8 @@ impl Platform for Fake {
         })
     }
 
-    fn boot_time(&self) -> u64 {
-        self.lock().boot_time
-    }
-
-    fn session_start(&self) -> u64 {
-        self.lock().session_start
+    fn marker(&self) -> Marker {
+        self.lock().marker
     }
 
     fn activity(&self) -> Activity {

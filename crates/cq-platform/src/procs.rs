@@ -16,6 +16,12 @@ use sysinfo::{
 
 use crate::error::{PlatformError, Result};
 
+/// Seconds a recorded start time may differ from a fresh reading of the same
+/// process. Linux derives it from a boot time sysinfo reads once per run,
+/// which a clock step moves; a resume refused over that would leave the
+/// program frozen for good.
+const START_TIME_SLACK: u64 = 2;
+
 pub struct Sampler {
     system: Mutex<System>,
 }
@@ -99,7 +105,12 @@ impl Sampler {
             ProcessRefreshKind::nothing(),
         );
         match system.process(target) {
-            Some(process) if process.start_time() == start_time && is_live(process) => Ok(()),
+            Some(process)
+                if process.start_time().abs_diff(start_time) <= START_TIME_SLACK
+                    && is_live(process) =>
+            {
+                Ok(())
+            }
             Some(process) if !is_live(process) => {
                 Err(PlatformError::NotRunning(format!("PID {pid}")))
             }
@@ -168,6 +179,13 @@ pub fn spawn_detached(exe: &Path, args: &[String], cwd: Option<&Path>) -> Result
         // this process's Ctrl-C group.
         command.creation_flags(0x0000_0008 | 0x0000_0200);
     }
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        // Its own process group, so a signal meant for CompuQuiet's (a
+        // terminal's Ctrl-C) does not take the relaunched program with it.
+        command.process_group(0);
+    }
     let mut child = command
         .spawn()
         .map_err(|e| PlatformError::io(format!("starting {}", exe.display()), e))?;
@@ -227,7 +245,12 @@ mod tests {
             .find(|process| process.pid == me)
             .expect("this process is in the table");
         sampler.assert_identity(me, listed.start_time).unwrap();
-        assert!(sampler.assert_identity(me, listed.start_time + 1).is_err());
+        // A clock step between runs moves the reading slightly: still this
+        // process. A minute off is a different one.
+        sampler
+            .assert_identity(me, listed.start_time + START_TIME_SLACK)
+            .unwrap();
+        assert!(sampler.assert_identity(me, listed.start_time + 60).is_err());
         assert!(sampler.stats().memory_total > 0);
     }
 

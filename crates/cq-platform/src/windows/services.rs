@@ -15,6 +15,16 @@ use crate::error::{PlatformError, Result};
 
 const SETTLE: Duration = Duration::from_secs(30);
 const ERROR_SERVICE_DOES_NOT_EXIST: i32 = 1060;
+const ERROR_SERVICE_ALREADY_RUNNING: i32 = 1056;
+const ERROR_SERVICE_CANNOT_ACCEPT_CTRL: i32 = 1061;
+const ERROR_SERVICE_NOT_ACTIVE: i32 = 1062;
+
+fn os_code(error: &windows_service::Error) -> Option<i32> {
+    match error {
+        windows_service::Error::Winapi(io) => io.raw_os_error(),
+        _ => None,
+    }
+}
 
 fn map_error(name: &str, context: &str, error: windows_service::Error) -> PlatformError {
     match error {
@@ -94,12 +104,19 @@ pub fn stop(name: &str) -> Result<()> {
     let status = service
         .query_status()
         .map_err(|e| map_error(name, "querying service", e))?;
-    if status.current_state == ScmState::Stopped {
-        return Ok(());
+    match status.current_state {
+        ScmState::Stopped => return Ok(()),
+        // Already on its way down.
+        ScmState::StopPending => {}
+        _ => match service.stop() {
+            Ok(_) => {}
+            // It stopped between the query and the request.
+            Err(e) if os_code(&e) == Some(ERROR_SERVICE_NOT_ACTIVE) => return Ok(()),
+            // Mid-transition: it settles by itself, or the wait times out.
+            Err(e) if os_code(&e) == Some(ERROR_SERVICE_CANNOT_ACCEPT_CTRL) => {}
+            Err(e) => return Err(map_error(name, "stopping service", e)),
+        },
     }
-    service
-        .stop()
-        .map_err(|e| map_error(name, "stopping service", e))?;
     wait_for(&service, name, ScmState::Stopped)
 }
 
@@ -108,12 +125,16 @@ pub fn start(name: &str) -> Result<()> {
     let status = service
         .query_status()
         .map_err(|e| map_error(name, "querying service", e))?;
-    if status.current_state == ScmState::Running {
-        return Ok(());
+    match status.current_state {
+        ScmState::Running => return Ok(()),
+        // Already on its way up: a trigger or recovery action got there first.
+        ScmState::StartPending => {}
+        _ => match service.start::<&OsStr>(&[]) {
+            Ok(()) => {}
+            Err(e) if os_code(&e) == Some(ERROR_SERVICE_ALREADY_RUNNING) => {}
+            Err(e) => return Err(map_error(name, "starting service", e)),
+        },
     }
-    service
-        .start::<&OsStr>(&[])
-        .map_err(|e| map_error(name, "starting service", e))?;
     wait_for(&service, name, ScmState::Running)
 }
 

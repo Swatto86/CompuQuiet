@@ -36,27 +36,37 @@ pub(crate) fn refusal(exe: &Path) -> Option<String> {
     if lower.contains("/target/debug/") || lower.contains("/target/release/") {
         return Some("this is a development build, not an installed copy".into());
     }
-    let temp = std::env::temp_dir()
-        .to_string_lossy()
-        .to_ascii_lowercase()
-        .replace('\\', "/");
-    if !temp.is_empty() && lower.starts_with(temp.trim_end_matches('/')) {
+    if inside(exe, &std::env::temp_dir()) {
         return Some("the app is running from a temporary folder".into());
     }
-    if let Some(downloads) = dirs::download_dir() {
-        let downloads = downloads
-            .to_string_lossy()
-            .to_ascii_lowercase()
-            .replace('\\', "/");
-        if lower.starts_with(downloads.trim_end_matches('/')) {
-            return Some("move the app out of Downloads first".into());
-        }
+    if dirs::download_dir().is_some_and(|downloads| inside(exe, &downloads)) {
+        return Some("move the app out of Downloads first".into());
     }
     #[cfg(target_os = "linux")]
     if std::env::var_os("APPIMAGE").is_none() {
         return Some("only the AppImage can register itself to start at login".into());
     }
     None
+}
+
+/// Whether `path` lies within `dir`, by whole components and after resolving
+/// both, so one folder spelled two ways (an 8.3 short Temp path, macOS's
+/// /var -> /private/var) still matches and `Downloads2` is not `Downloads`.
+fn inside(path: &Path, dir: &Path) -> bool {
+    resolved(path).starts_with(resolved(dir))
+}
+
+/// `path` with its deepest existing ancestor canonicalized and the rest kept
+/// as written.
+fn resolved(path: &Path) -> std::path::PathBuf {
+    for ancestor in path.ancestors() {
+        if let Ok(real) = std::fs::canonicalize(ancestor) {
+            return path
+                .strip_prefix(ancestor)
+                .map_or_else(|_| real.clone(), |rest| real.join(rest));
+        }
+    }
+    path.to_path_buf()
 }
 
 fn current_exe() -> Result<std::path::PathBuf, AppError> {
@@ -202,6 +212,13 @@ mod tests {
         if let Some(downloads) = dirs::download_dir() {
             assert!(refusal(&downloads.join("CompuQuiet.exe")).is_some());
         }
+    }
+
+    #[test]
+    fn folders_match_by_whole_components() {
+        let base = std::env::temp_dir();
+        assert!(inside(&base.join("x").join("app.exe"), &base.join("x")));
+        assert!(!inside(&base.join("x2").join("app.exe"), &base.join("x")));
     }
 
     #[cfg(windows)]

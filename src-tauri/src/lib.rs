@@ -96,13 +96,8 @@ pub fn run() {
             update::schedule(app.handle());
 
             // Quiet Mode left on in an earlier sign-in has already lost what
-            // it parked; finish it rather than show it as still on. The
-            // sign-in time is never before the boot, so this covers restarts.
-            let state = engine.state();
-            if state
-                .started_at
-                .is_some_and(|started| started < engine.platform().session_start())
-            {
+            // it parked; finish it rather than show it as still on.
+            if engine.quiet_from_an_earlier_sign_in() {
                 let handle = app.handle().clone();
                 let engine = engine.clone();
                 tauri::async_runtime::spawn(async move {

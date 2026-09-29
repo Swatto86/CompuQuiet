@@ -13,7 +13,7 @@
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
@@ -191,24 +191,32 @@ fn toggle_from_tray(app: AppHandle) {
 fn quit_from_tray(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
         let engine = app.state::<Arc<Engine>>().inner().clone();
-        if engine.state().busy {
-            return;
-        }
-        if engine.is_quiet() && engine.settings().restore_on_quit {
-            match crate::commands::run_transition(app.clone(), engine.clone(), false).await {
-                Ok(state) if state.quiet => {
+        loop {
+            // A run in progress finishes first: leaving mid-run would strand
+            // what it has changed so far.
+            if engine.state().busy {
+                tokio::time::sleep(Duration::from_millis(250)).await;
+                continue;
+            }
+            if engine.is_quiet() && engine.settings().restore_on_quit {
+                match crate::commands::run_transition(app.clone(), engine.clone(), false).await {
+                    Ok(state) if !state.quiet => {}
+                    Err(error) if error.code == "busy" => continue,
                     // Still quiet: restore did not finish. Show the window.
-                    reveal(&app);
-                    return;
-                }
-                Ok(_) => {}
-                Err(_) => {
-                    reveal(&app);
-                    return;
+                    _ => {
+                        reveal(&app);
+                        return;
+                    }
                 }
             }
+            let left = engine.claim_for_exit(|| {
+                app.exit(0);
+                Ok::<(), ()>(())
+            });
+            if left.is_some() {
+                return;
+            }
         }
-        app.exit(0);
     });
 }
 

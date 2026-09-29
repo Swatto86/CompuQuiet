@@ -17,7 +17,7 @@ pub mod snapshot;
 pub mod store;
 
 pub use error::CoreError;
-pub use journal::{DoneStep, Journal, RestoreStep};
+pub use journal::{DoneStep, Journal, Marker, RestoreStep};
 pub use plan::{Capabilities, Plan, Skipped, Step, build_plan};
 pub use profile::{Os, PowerPolicy, ProcessAction, ProcessTarget, Profile, ServiceTarget};
 pub use recommend::{Recommendation, RecommendationKind, Risk, recommend};

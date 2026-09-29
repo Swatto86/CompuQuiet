@@ -22,7 +22,7 @@ use std::path::Path;
 
 pub use error::{PlatformError, Result};
 
-use cq_core::{Activity, Capabilities, Os, PowerPlan, Snapshot, SystemStats};
+use cq_core::{Activity, Capabilities, Marker, Os, PowerPlan, Snapshot, SystemStats};
 
 pub trait Platform: Send + Sync {
     /// The operating system this adapter models. The native adapters answer
@@ -40,18 +40,14 @@ pub trait Platform: Send + Sync {
 
     fn stats(&self) -> Result<SystemStats>;
 
-    /// Seconds since the epoch when the operating system last started. A
-    /// service stopped before then is back under its normal start setting.
-    fn boot_time(&self) -> u64 {
-        sysinfo::System::boot_time()
-    }
-
-    /// Seconds since the epoch when the current user's sign-in began. A
-    /// process parked before then is gone, and programs that start
-    /// themselves have started again. Platforms that cannot tell use the
-    /// boot time.
-    fn session_start(&self) -> u64 {
-        self.boot_time()
+    /// Where the machine is now, so a journal can tell later whether it has
+    /// booted or the user has signed in again since. Uptime, never the wall
+    /// clock; platforms that cannot identify a sign-in leave it out.
+    fn marker(&self) -> Marker {
+        Marker {
+            uptime: sysinfo::System::uptime(),
+            sign_in: None,
+        }
     }
 
     /// Which processes own a visible window and which is in front. Platforms

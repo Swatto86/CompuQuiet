@@ -1,19 +1,17 @@
-//! When the current sign-in began. A Fast Startup shutdown or a sign-out
-//! ends the session without resetting the boot time, so the boot time alone
-//! cannot say whether the programs Quiet Mode parked are still there.
+//! Which sign-in this is. A Fast Startup shutdown or a sign-out ends the
+//! session without resetting the uptime, so uptime alone cannot say whether
+//! the programs Quiet Mode parked are still there.
+//!
+//! The sign-in's logon time identifies it. It is compared for equality only,
+//! never against the clock, so a clock correction cannot fake a new sign-in.
 
 use windows_sys::Win32::System::RemoteDesktop::{
     WTS_CURRENT_SERVER_HANDLE, WTS_CURRENT_SESSION, WTSFreeMemory, WTSINFOW,
     WTSQuerySessionInformationW, WTSSessionInfo,
 };
 
-/// Seconds from 1601-01-01, where Windows file times start, to 1970-01-01.
-const FILETIME_TO_UNIX_SECS: i64 = 11_644_473_600;
-const FILETIME_TICKS_PER_SEC: i64 = 10_000_000;
-
-/// Seconds since the epoch when this session's user signed in, if Windows
-/// can say.
-pub fn logon_time() -> Option<u64> {
+/// This session's logon time as Windows recorded it, if someone is signed in.
+pub fn logon_id() -> Option<u64> {
     let mut buffer: windows_sys::core::PWSTR = std::ptr::null_mut();
     let mut bytes: u32 = 0;
     // SAFETY: both out-pointers are valid for writes. On success Windows
@@ -38,37 +36,20 @@ pub fn logon_time() -> Option<u64> {
     // SAFETY: `buffer` came from WTSQuerySessionInformationW and is not used
     // after this.
     unsafe { WTSFreeMemory(buffer.cast()) };
-    unix_seconds(logon?)
-}
-
-/// A Windows file time in seconds since the Unix epoch; zero means nobody
-/// has signed in.
-fn unix_seconds(filetime: i64) -> Option<u64> {
-    if filetime <= 0 {
-        return None;
-    }
-    u64::try_from(filetime / FILETIME_TICKS_PER_SEC - FILETIME_TO_UNIX_SECS).ok()
+    // Zero means nobody has signed in (a service session).
+    logon
+        .and_then(|time| u64::try_from(time).ok())
+        .filter(|&time| time > 0)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
-    #[test]
-    fn file_times_convert_to_unix_seconds() {
-        assert_eq!(unix_seconds(0), None, "no one signed in");
-        assert_eq!(
-            unix_seconds(FILETIME_TO_UNIX_SECS * FILETIME_TICKS_PER_SEC),
-            Some(0)
-        );
-        // 2026-09-29T15:34:11Z
-        assert_eq!(unix_seconds(134_351_696_510_000_000), Some(1_790_696_051));
-    }
+    use super::logon_id;
 
     #[test]
     #[ignore = "needs an interactive sign-in; CI runners have none"]
-    fn this_session_has_a_sign_in_time_after_the_boot() {
-        let logon = logon_time().expect("the test runs in a signed-in session");
-        assert!(logon >= sysinfo::System::boot_time().saturating_sub(5));
+    fn this_session_has_a_stable_sign_in() {
+        let first = logon_id().expect("the test runs in a signed-in session");
+        assert_eq!(logon_id(), Some(first));
     }
 }

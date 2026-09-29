@@ -111,12 +111,16 @@ fn sysmain(fake: &cq_platform::fake::Fake) -> Option<cq_core::ServiceState> {
 }
 
 #[test]
-fn after_a_restart_only_the_power_plan_is_put_back() {
+fn after_a_restart_programs_and_services_are_left_to_it() {
     let dir = tempfile::tempdir().unwrap();
     let fake = Arc::new(cq_platform::fake::Fake::new());
     let engine = quiet_with_every_kind_of_step(&fake, dir.path()).unwrap();
-    let later = now() + 3600;
-    fake.set_boot_and_session(later, later);
+    // Booted again: uptime is back below where Quiet Mode began.
+    fake.set_marker(cq_core::Marker {
+        uptime: 5,
+        sign_in: Some(2),
+    });
+    assert!(engine.quiet_from_an_earlier_sign_in());
 
     assert_eq!(engine.restore(&|_| {}).unwrap(), 0, "Quiet Mode ends");
     assert!(!Journal::path(dir.path()).exists());
@@ -143,7 +147,10 @@ fn after_a_restart_only_the_power_plan_is_put_back() {
                     .is_some_and(|d| d.starts_with("Skipped:"))
         })
         .count();
-    assert_eq!(skipped, 3, "relaunch, resume and service start");
+    assert_eq!(
+        skipped, 2,
+        "relaunch and service start; resumes are always tried"
+    );
 }
 
 #[test]
@@ -152,7 +159,11 @@ fn after_a_new_sign_in_services_come_back_but_programs_do_not() {
     let fake = Arc::new(cq_platform::fake::Fake::new());
     let engine = quiet_with_every_kind_of_step(&fake, dir.path()).unwrap();
     // Fast Startup or a sign-out: same boot, new sign-in.
-    fake.set_boot_and_session(0, now() + 3600);
+    fake.set_marker(cq_core::Marker {
+        uptime: 7_200,
+        sign_in: Some(2),
+    });
+    assert!(engine.quiet_from_an_earlier_sign_in());
 
     assert_eq!(engine.restore(&|_| {}).unwrap(), 0);
     assert!(fake.launched().is_empty());
@@ -174,4 +185,36 @@ fn a_program_that_cannot_be_relaunched_does_not_keep_quiet_mode_on() {
     assert!(engine.state().quiet);
     assert_eq!(engine.restore(&|_| {}).unwrap(), 0);
     assert!(!engine.state().quiet);
+}
+
+#[test]
+fn an_unreadable_journal_is_never_overwritten_by_a_new_run() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = Journal::path(dir.path());
+    std::fs::write(&path, "{ not a journal").unwrap();
+    let engine = engine(dir.path());
+    assert!(engine.state().startup_error.is_some());
+    assert_eq!(
+        engine.go_quiet(&|_| {}).unwrap_err().code,
+        "journal_unreadable"
+    );
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "{ not a journal");
+}
+
+#[test]
+fn claiming_for_exit_holds_the_engine_only_when_leaving_succeeds() {
+    let dir = tempfile::tempdir().unwrap();
+    let engine = engine(dir.path());
+    assert_eq!(
+        engine.claim_for_exit(|| Err::<(), _>("cancelled")),
+        Some(Err("cancelled"))
+    );
+    assert!(!engine.state().busy, "a failed exit lets runs start again");
+    assert_eq!(engine.claim_for_exit(|| Ok::<_, ()>(())), Some(Ok(())));
+    assert!(
+        engine.state().busy,
+        "nothing may start while the app leaves"
+    );
+    assert_eq!(engine.go_quiet(&|_| {}).unwrap_err().code, "busy");
+    assert_eq!(engine.claim_for_exit(|| Ok::<_, ()>(())), None);
 }

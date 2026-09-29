@@ -10,12 +10,10 @@ use crate::profile::Os;
 /// Compare process names the way users write them: case-insensitive, with a
 /// trailing `.exe` ignored and surrounding whitespace dropped.
 pub fn normalize(name: &str) -> String {
-    let trimmed = name.trim();
-    let stem = trimmed
-        .strip_suffix(".exe")
-        .or_else(|| trimmed.strip_suffix(".EXE"))
-        .unwrap_or(trimmed);
-    stem.to_ascii_lowercase()
+    // Lower-case first, so `Explorer.Exe` loses its extension too and still
+    // meets the critical list.
+    let lower = name.trim().to_ascii_lowercase();
+    lower.strip_suffix(".exe").unwrap_or(&lower).to_string()
 }
 
 /// Does `target` (a profile entry) name this process?
@@ -182,6 +180,12 @@ const MACOS_CRITICAL: &[&str] = &[
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_odd_cased_extension_is_still_critical() {
+        assert_eq!(normalize("Explorer.Exe"), "explorer");
+        assert!(is_critical("Dwm.eXe", Os::Windows));
+    }
 
     #[test]
     fn names_match_case_insensitively_and_without_exe() {

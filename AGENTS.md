@@ -5,13 +5,18 @@ the decisions and constraints that are not visible in the code.
 
 ## Decisions
 
-- **2026-09-29: a restart or new sign-in ends Quiet Mode.** A journal older
-  than the sign-in is finished at launch: parked processes are gone and
-  self-starting programs are back, so nothing is resumed or relaunched with
-  stale arguments; services restart only if the OS did not reboot (Fast
-  Startup and sign-out keep them stopped); the power plan is always restored.
-  Windows reads the sign-in time from WTS; Linux and macOS use the boot time,
-  so a sign-out there without a reboot still relaunches closed programs.
+- **2026-09-29: a restart or new sign-in ends Quiet Mode.** The journal
+  records where Quiet Mode began (optional `began`: uptime and, on Windows,
+  the WTS sign-in's logon stamp), never compared with the wall clock, which
+  jumps by hours on this dual-boot PC. A journal from an earlier sign-in is
+  finished at launch: closed programs are not relaunched with stale
+  arguments, services restart unless uptime shows a reboot (Fast Startup and
+  sign-out keep them stopped), resumes are always tried (the PID check
+  refuses anything else) and the power plan is always restored. Older
+  journals, and Linux/macOS sign-outs without a reboot, restore everything.
+- **Leaving never cuts a run short.** Quit, the tray's Quit, elevated
+  relaunch and the updater's install claim the engine
+  (`Engine::claim_for_exit`) and wait or refuse while a run is in progress.
 
 - **2026-09-29: a window that never loaded restarts the app once.** The
   elevated logon launch sometimes gets no WebView2; Tauri only logs that, so

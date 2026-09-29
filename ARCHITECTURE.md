@@ -37,9 +37,11 @@ Dependencies point inward: `src-tauri` → `cq-platform` → `cq-core`.
 5. **Recovery.** At launch a leftover journal puts the engine straight into
    Quiet Mode marked "recovered", so a crash never strands changes. Steps a
    restart or a new sign-in has already undone are skipped (`Elapsed`,
-   `RestoreStep::overtaken`), compared against the platform's boot and
-   sign-in times; the power plan is a saved setting and is always put back.
-   A journal from before the current sign-in is finished at launch.
+   `RestoreStep::overtaken`), comparing the journal's `Marker` (uptime and
+   sign-in identity from `Platform::marker`, no wall clock) with the current
+   one; the power plan is a saved setting and is always put back. A journal
+   from an earlier sign-in is finished at launch; an unreadable one blocks a
+   new run rather than being overwritten.
 
 Processes are identified by PID plus start time so a reused PID is refused.
 

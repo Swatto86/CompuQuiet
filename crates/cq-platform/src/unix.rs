@@ -45,7 +45,8 @@ pub fn close(sampler: &Sampler, pid: u32, start_time: u64) -> Result<()> {
     sampler.assert_identity(pid, start_time)?;
     let _ = signal(pid, Signal::SIGCONT);
     signal(pid, Signal::SIGTERM)?;
-    if sampler.wait_for_exit(pid, GRACE) {
+    // Gone, or the PID now belongs to someone else: nothing left to force.
+    if sampler.wait_for_exit(pid, GRACE) || sampler.assert_identity(pid, start_time).is_err() {
         return Ok(());
     }
     signal(pid, Signal::SIGKILL)?;

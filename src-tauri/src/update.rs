@@ -38,7 +38,7 @@ pub fn nudge(app: &AppHandle) {
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
         if let Err(error) = install_if_idle(&app).await {
-            eprintln!("CompuQuiet update: {error}");
+            log::warn!("update: {error}");
         }
         IN_FLIGHT.store(false, Ordering::Relaxed);
     });
@@ -60,18 +60,32 @@ async fn install_if_idle(app: &AppHandle) -> tauri_plugin_updater::Result<()> {
     let Some(update) = app.updater()?.check().await? else {
         return Ok(());
     };
-    let version = update.version.clone();
-    let _ = app
-        .notification()
-        .builder()
-        .title("CompuQuiet")
-        .body(format!("Updating to {version}. CompuQuiet will restart."))
-        .show();
-    update.download_and_install(|_, _| {}, || {}).await?;
-    if idle(app) {
-        app.restart();
+    let bytes = update.download(|_, _| {}, || {}).await?;
+    // On Windows `install` runs the installer and exits this process, so it
+    // happens holding the engine: no run can be under way or start, and a
+    // machine that went quiet during the download is left alone. The check
+    // runs again when Quiet Mode ends.
+    let engine = app.state::<Arc<Engine>>().inner().clone();
+    let installed = engine.claim_for_exit(|| {
+        if engine.is_quiet() {
+            return Err(None);
+        }
+        let _ = app
+            .notification()
+            .builder()
+            .title("CompuQuiet")
+            .body(format!(
+                "Updating to {}. CompuQuiet will restart.",
+                update.version
+            ))
+            .show();
+        update.install(&bytes).map_err(Some)
+    });
+    match installed {
+        None | Some(Err(None)) => Ok(()),
+        Some(Err(Some(error))) => Err(error),
+        Some(Ok(())) => app.restart(),
     }
-    Ok(())
 }
 
 #[cfg(test)]

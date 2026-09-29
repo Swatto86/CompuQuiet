@@ -138,7 +138,10 @@ impl Platform for Windows {
         // A polite WM_CLOSE first; taskkill fails for console programs, which
         // simply means the forced path below applies.
         let _ = run_tool("taskkill", &["/PID", &pid_arg]);
-        if self.sampler.wait_for_exit(pid, GRACE) {
+        // Gone, or the PID now belongs to someone else: nothing left to force.
+        if self.sampler.wait_for_exit(pid, GRACE)
+            || self.sampler.assert_identity(pid, start_time).is_err()
+        {
             return Ok(());
         }
         run_tool("taskkill", &["/F", "/PID", &pid_arg]).map_err(|e| {
@@ -159,9 +162,11 @@ impl Platform for Windows {
         spawn_detached(exe, args, cwd)
     }
 
-    fn session_start(&self) -> u64 {
-        let boot = self.boot_time();
-        session::logon_time().map_or(boot, |logon| logon.max(boot))
+    fn marker(&self) -> cq_core::Marker {
+        cq_core::Marker {
+            uptime: sysinfo::System::uptime(),
+            sign_in: session::logon_id(),
+        }
     }
 
     fn stop_service(&self, name: &str) -> Result<()> {

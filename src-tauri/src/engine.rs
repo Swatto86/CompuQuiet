@@ -11,10 +11,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use cq_core::journal::Summary;
-use cq_core::{
-    Capabilities, DoneStep, Journal, Os, RestoreStep, Settings, Skipped, Step, SystemStats,
-    build_plan,
-};
+use cq_core::{Capabilities, Journal, Os, Settings, Skipped, SystemStats, build_plan};
 use cq_platform::Platform;
 use serde::Serialize;
 
@@ -51,6 +48,9 @@ struct Inner {
     skipped: Vec<Skipped>,
     recovered: bool,
     startup_error: Option<String>,
+    /// A journal file is on disk but could not be read. Starting Quiet Mode
+    /// would overwrite the only record of what it parked.
+    unreadable_journal: Option<String>,
 }
 
 pub struct Engine {
@@ -75,8 +75,10 @@ impl Engine {
             startup_error = Some(error.to_string());
             Settings::default_for(os)
         });
+        let mut unreadable_journal = None;
         let journal = Journal::load(&data_dir).unwrap_or_else(|error| {
             startup_error = Some(error.to_string());
+            unreadable_journal = Some(error.to_string());
             None
         });
         Engine {
@@ -89,6 +91,7 @@ impl Engine {
                 log: Vec::new(),
                 skipped: Vec::new(),
                 startup_error,
+                unreadable_journal,
             }),
             busy: AtomicBool::new(false),
         }
@@ -155,6 +158,27 @@ impl Engine {
         Some(f())
     }
 
+    /// Like [`Self::while_idle`] for leaving the app: when `f` succeeds the
+    /// engine stays claimed, so no run can start before the process is gone.
+    pub fn claim_for_exit<T, E>(&self, f: impl FnOnce() -> Result<T, E>) -> Option<Result<T, E>> {
+        let guard = self.begin().ok()?;
+        let result = f();
+        if result.is_ok() {
+            std::mem::forget(guard);
+        }
+        Some(result)
+    }
+
+    /// Quiet Mode was left on in an earlier sign-in, so what it parked is
+    /// gone and it only needs finishing.
+    pub fn quiet_from_an_earlier_sign_in(&self) -> bool {
+        let marker = self.platform.marker();
+        self.lock()
+            .journal
+            .as_ref()
+            .is_some_and(|journal| journal.elapsed(marker).new_session)
+    }
+
     /// Claim the engine for one run. Two runs at once would race on the journal.
     fn begin(&self) -> Result<BusyGuard<'_>, AppError> {
         if self
@@ -173,6 +197,15 @@ impl Engine {
             let inner = self.lock();
             if inner.journal.is_some() {
                 return Err(AppError::new("already_quiet", "Quiet Mode is already on"));
+            }
+            if let Some(error) = &inner.unreadable_journal {
+                return Err(AppError::new(
+                    "journal_unreadable",
+                    format!(
+                        "The record of an earlier Quiet Mode could not be read ({error}).                          Update CompuQuiet, or move {} aside if it is damaged.",
+                        Journal::path(&self.data_dir).display()
+                    ),
+                ));
             }
             inner.settings.clone()
         };
@@ -224,12 +257,20 @@ impl Engine {
         );
 
         let mut journal = Journal::new(now());
+        journal.began = Some(self.platform.marker());
         journal.save(&self.data_dir)?;
         for step in &plan.steps {
             let line = match self.execute(step) {
                 Ok(done) => {
                     journal.record(done);
-                    journal.save(&self.data_dir)?;
+                    if let Err(error) = journal.save(&self.data_dir) {
+                        // The step happened: keep it where Restore can see
+                        // it, and change nothing more.
+                        let mut inner = self.lock();
+                        inner.journal = Some(journal);
+                        inner.log = log;
+                        return Err(error.into());
+                    }
                     LogLine {
                         label: step.label(),
                         ok: true,
@@ -254,50 +295,6 @@ impl Engine {
         Ok(summary)
     }
 
-    fn execute(&self, step: &Step) -> Result<DoneStep, AppError> {
-        Ok(match step {
-            Step::SetPerformancePower => DoneStep::PowerPlanChanged {
-                previous: self.platform.set_performance_power()?,
-            },
-            Step::StopService { name } => {
-                self.platform.stop_service(name)?;
-                DoneStep::ServiceStopped { name: name.clone() }
-            }
-            Step::SuspendProcess {
-                pid,
-                name,
-                start_time,
-            } => {
-                self.platform.suspend(*pid, *start_time)?;
-                DoneStep::ProcessSuspended {
-                    pid: *pid,
-                    name: name.clone(),
-                    start_time: *start_time,
-                }
-            }
-            Step::CloseProcess {
-                pid,
-                name,
-                exe,
-                args,
-                cwd,
-                start_time,
-            } => {
-                self.platform.close(*pid, *start_time)?;
-                DoneStep::ProcessClosed {
-                    name: name.clone(),
-                    exe: exe.clone(),
-                    args: args.clone(),
-                    cwd: cwd.clone(),
-                }
-            }
-            Step::PurgeMemory => {
-                self.platform.purge_memory()?;
-                DoneStep::MemoryPurged
-            }
-        })
-    }
-
     /// Undo everything in the journal. Returns how many entries still need
     /// attention; zero means the journal is gone and the machine is back.
     pub fn restore(&self, progress: &dyn Fn(LogLine)) -> Result<usize, AppError> {
@@ -305,7 +302,7 @@ impl Engine {
         let Some(mut journal) = self.lock().journal.clone() else {
             return Err(AppError::new("not_quiet", "Quiet Mode is not on"));
         };
-        let elapsed = journal.elapsed(self.platform.boot_time(), self.platform.session_start());
+        let elapsed = journal.elapsed(self.platform.marker());
         let mut failed = std::collections::HashSet::new();
         let mut log = Vec::new();
         for (index, step) in journal.restore_steps() {
@@ -352,23 +349,6 @@ impl Engine {
         inner.recovered = false;
         Ok(remaining)
     }
-
-    fn undo(&self, step: &RestoreStep) -> Result<(), AppError> {
-        match step {
-            RestoreStep::ResumeProcess {
-                pid, start_time, ..
-            } => self.platform.resume(*pid, *start_time)?,
-            RestoreStep::Relaunch { exe, args, cwd, .. } => {
-                let exe = exe.as_ref().ok_or_else(|| {
-                    AppError::new("not_installed", "the program's path was not recorded")
-                })?;
-                self.platform.launch(exe, args, cwd.as_deref())?;
-            }
-            RestoreStep::StartService { name } => self.platform.start_service(name)?,
-            RestoreStep::RestorePowerPlan { plan } => self.platform.restore_power(plan)?,
-        }
-        Ok(())
-    }
 }
 
 struct BusyGuard<'a>(&'a AtomicBool);
@@ -378,6 +358,8 @@ impl Drop for BusyGuard<'_> {
         self.0.store(false, Ordering::SeqCst);
     }
 }
+
+mod steps;
 
 #[cfg(all(test, feature = "fake-platform"))]
 mod tests;

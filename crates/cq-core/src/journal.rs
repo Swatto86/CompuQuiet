@@ -65,6 +65,19 @@ pub enum RestoreStep {
     },
 }
 
+/// Where the machine was when Quiet Mode began, measured without the wall
+/// clock, which can jump by an hour or more (a dual-boot PC's hardware clock
+/// read in two time zones, for one).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Marker {
+    /// Seconds since the operating system booted. Less than this later means
+    /// it has booted again.
+    pub uptime: u64,
+    /// Identifies the user's sign-in, where the platform can: a different
+    /// value later means they have signed in again.
+    pub sign_in: Option<u64>,
+}
+
 /// What has happened to the machine since Quiet Mode began.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Elapsed {
@@ -79,12 +92,12 @@ pub struct Elapsed {
 
 impl RestoreStep {
     /// Why this step no longer applies, when something since has undone it.
-    /// The power plan is a saved setting and is always put back.
+    /// A resume is always tried: the PID and start time already refuse a
+    /// process that is not the one parked. The power plan is a saved setting
+    /// and is always put back.
     pub fn overtaken(&self, elapsed: Elapsed) -> Option<&'static str> {
         match self {
-            RestoreStep::ResumeProcess { .. } | RestoreStep::Relaunch { .. }
-                if elapsed.new_session =>
-            {
+            RestoreStep::Relaunch { .. } if elapsed.new_session => {
                 Some("you have signed in again since, so it is not brought back")
             }
             RestoreStep::StartService { .. } if elapsed.rebooted => {
@@ -155,6 +168,9 @@ pub struct Journal {
     pub version: u32,
     /// Seconds since the epoch when Quiet Mode was switched on.
     pub started_at: u64,
+    /// Absent in journals from 1.1.4 and earlier, which restore everything.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub began: Option<Marker>,
     pub done: Vec<DoneStep>,
 }
 
@@ -163,6 +179,7 @@ impl Journal {
         Journal {
             version: CURRENT_VERSION,
             started_at,
+            began: None,
             done: Vec::new(),
         }
     }
@@ -171,14 +188,21 @@ impl Journal {
         dir.join(JOURNAL_FILE)
     }
 
-    /// Compare when Quiet Mode began with the platform's boot and sign-in
-    /// times (seconds since the epoch).
-    pub fn elapsed(&self, boot_time: u64, session_start: u64) -> Elapsed {
-        let rebooted = self.started_at < boot_time;
+    /// Compare where Quiet Mode began with where the machine is `now`. A
+    /// reboot missed because the machine has since been up longer than it
+    /// had been then only means the old, restore-everything behaviour.
+    pub fn elapsed(&self, now: Marker) -> Elapsed {
+        let Some(began) = self.began else {
+            return Elapsed::default();
+        };
+        let rebooted = now.uptime < began.uptime;
+        let signed_in_again = matches!(
+            (began.sign_in, now.sign_in),
+            (Some(then), Some(current)) if then != current
+        );
         Elapsed {
-            // A reboot always ends the sign-in, even if the platform cannot
-            // tell when the new one began.
-            new_session: rebooted || self.started_at < session_start,
+            // A reboot always ends the sign-in.
+            new_session: rebooted || signed_in_again,
             rebooted,
         }
     }
@@ -264,123 +288,4 @@ impl Journal {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn sample() -> Journal {
-        let mut journal = Journal::new(1_700_000_000);
-        journal.record(DoneStep::PowerPlanChanged {
-            previous: PowerPlan {
-                id: "balanced".into(),
-                name: "Balanced".into(),
-            },
-        });
-        journal.record(DoneStep::ServiceStopped {
-            name: "SysMain".into(),
-        });
-        journal.record(DoneStep::ProcessSuspended {
-            pid: 10,
-            name: "OneDrive.exe".into(),
-            start_time: 5,
-        });
-        journal.record(DoneStep::ProcessClosed {
-            name: "Dropbox.exe".into(),
-            exe: Some(PathBuf::from("C:/d/Dropbox.exe")),
-            args: vec!["Dropbox.exe".into()],
-            cwd: None,
-        });
-        journal.record(DoneStep::ProcessClosed {
-            name: "Dropbox.exe".into(),
-            exe: Some(PathBuf::from("C:/d/Dropbox.exe")),
-            args: vec!["Dropbox.exe".into()],
-            cwd: None,
-        });
-        journal.record(DoneStep::MemoryPurged);
-        journal
-    }
-
-    #[test]
-    fn restore_runs_in_reverse_and_relaunches_a_program_once() {
-        let labels: Vec<_> = sample()
-            .restore_steps()
-            .into_iter()
-            .map(|(_, step)| step.label())
-            .collect();
-        assert_eq!(
-            labels,
-            vec![
-                "Relaunch Dropbox.exe",
-                "Resume OneDrive.exe (PID 10)",
-                "Start service SysMain",
-                "Restore the Balanced power plan",
-            ]
-        );
-    }
-
-    #[test]
-    fn a_restart_or_new_sign_in_skips_what_it_already_undid() {
-        let journal = sample(); // started at 1_700_000_000
-        let skipped = |boot: u64, session: u64| -> Vec<String> {
-            let elapsed = journal.elapsed(boot, session);
-            journal
-                .restore_steps()
-                .into_iter()
-                .filter(|(_, step)| step.overtaken(elapsed).is_some())
-                .map(|(_, step)| step.label())
-                .collect()
-        };
-        // Same boot, same sign-in: everything is put back.
-        assert!(skipped(1_600_000_000, 1_690_000_000).is_empty());
-        // Signed in again (a sign-out, or a Fast Startup shutdown): the
-        // parked programs are gone, the service is still stopped.
-        assert_eq!(
-            skipped(1_600_000_000, 1_700_000_500),
-            vec!["Relaunch Dropbox.exe", "Resume OneDrive.exe (PID 10)"]
-        );
-        // Rebooted: the service is back too; only the power plan remains,
-        // even when the platform cannot say when the sign-in began.
-        for session in [1_700_000_600, 0] {
-            assert_eq!(
-                skipped(1_700_000_500, session),
-                vec![
-                    "Relaunch Dropbox.exe",
-                    "Resume OneDrive.exe (PID 10)",
-                    "Start service SysMain",
-                ]
-            );
-        }
-    }
-
-    #[test]
-    fn a_failed_restore_keeps_only_that_entry() {
-        let mut journal = sample();
-        let failed: HashSet<usize> = [1usize].into_iter().collect();
-        journal.retain(&failed);
-        assert_eq!(
-            journal.done,
-            vec![DoneStep::ServiceStopped {
-                name: "SysMain".into()
-            }]
-        );
-    }
-
-    #[test]
-    fn the_journal_survives_a_round_trip_and_a_newer_version_is_refused() {
-        let dir = tempfile::tempdir().unwrap();
-        assert!(Journal::load(dir.path()).unwrap().is_none());
-        let journal = sample();
-        journal.save(dir.path()).unwrap();
-        assert_eq!(Journal::load(dir.path()).unwrap(), Some(journal.clone()));
-        assert_eq!(journal.summary().processes_closed, 2);
-        assert!(journal.summary().memory_purged);
-
-        let mut newer = journal;
-        newer.version = CURRENT_VERSION + 1;
-        newer.save(dir.path()).unwrap();
-        assert!(Journal::load(dir.path()).is_err());
-
-        Journal::clear(dir.path()).unwrap();
-        Journal::clear(dir.path()).unwrap();
-        assert!(Journal::load(dir.path()).unwrap().is_none());
-    }
-}
+mod tests;

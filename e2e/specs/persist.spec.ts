@@ -78,13 +78,15 @@ describe("persistence", () => {
   });
 
   it("finishes a Quiet Mode left on from before the last restart", async () => {
-    // As if written in a session before the fake machine's 2020 boot: what
-    // it parked is gone, so nothing is relaunched with stale arguments.
+    // As if written before the fake machine last booted (its uptime was
+    // higher then): what it parked is gone, so nothing is relaunched with
+    // stale arguments.
     fs.writeFileSync(
       path.join(dataDir(), "journal.json"),
       JSON.stringify({
         version: 1,
         started_at: 1_000_000_000,
+        began: { uptime: 999_999, sign_in: 0 },
         done: [
           { kind: "service_stopped", name: "SysMain" },
           {

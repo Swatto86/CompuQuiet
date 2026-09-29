@@ -135,14 +135,20 @@ pub fn frontend_ready(app: AppHandle) {
     }
 }
 
+// schtasks can take a second or more, so these stay off the main thread,
+// which also runs the tray.
 #[tauri::command]
-pub fn get_autostart(app: AppHandle) -> Result<AutostartStatus, AppError> {
-    autostart::status(&app)
+pub async fn get_autostart(app: AppHandle) -> Result<AutostartStatus, AppError> {
+    tauri::async_runtime::spawn_blocking(move || autostart::status(&app)).await?
 }
 
 #[tauri::command]
-pub fn set_autostart(app: AppHandle, enabled: bool) -> Result<AutostartStatus, AppError> {
-    autostart::set(&app, enabled)
+pub async fn set_autostart(app: AppHandle, enabled: bool) -> Result<AutostartStatus, AppError> {
+    tauri::async_runtime::spawn_blocking(move || autostart::set(&app, enabled)).await?
+}
+
+fn busy() -> AppError {
+    AppError::new("busy", "Wait for the current run to finish")
 }
 
 /// Start an elevated copy and leave. Allowed while quiet: the journal is on
@@ -150,13 +156,22 @@ pub fn set_autostart(app: AppHandle, enabled: bool) -> Result<AutostartStatus, A
 /// recovers it — which is exactly how an unelevated launch gets to restore
 /// the services an earlier elevated session stopped.
 #[tauri::command]
-pub fn relaunch_elevated(app: AppHandle, engine: State<'_, Arc<Engine>>) -> Result<(), AppError> {
-    if engine.state().busy {
-        return Err(AppError::new("busy", "Wait for the current run to finish"));
-    }
+pub async fn relaunch_elevated(
+    app: AppHandle,
+    engine: State<'_, Arc<Engine>>,
+) -> Result<(), AppError> {
+    let engine = engine.inner().clone();
     let exe = std::env::current_exe().map_err(|e| AppError::new("app", e.to_string()))?;
-    let platform = crate::platform_for_relaunch();
-    platform.relaunch_elevated(&exe, &[])?;
+    // The UAC prompt waits on the user, so not on the main thread; and the
+    // engine stays claimed so no run starts that the exit would cut short.
+    let launched = tauri::async_runtime::spawn_blocking(move || {
+        engine.claim_for_exit(|| crate::platform_for_relaunch().relaunch_elevated(&exe, &[]))
+    })
+    .await?;
+    launched.ok_or_else(busy)??;
+    // The elevated copy must not find this one's single-instance lock and
+    // hand itself back to a process that is leaving.
+    tauri_plugin_single_instance::destroy(&app);
     app.exit(0);
     Ok(())
 }
@@ -171,7 +186,7 @@ pub async fn quit(
 ) -> Result<(), AppError> {
     let engine = engine.inner().clone();
     if restore_first && engine.is_quiet() {
-        let state = run_transition(app.clone(), engine, false).await?;
+        let state = run_transition(app.clone(), engine.clone(), false).await?;
         if state.quiet {
             return Err(AppError::new(
                 "restore_incomplete",
@@ -179,8 +194,13 @@ pub async fn quit(
             ));
         }
     }
-    app.exit(0);
-    Ok(())
+    // Leaving mid-run would strand whatever that run has changed so far.
+    engine
+        .claim_for_exit(|| {
+            app.exit(0);
+            Ok(())
+        })
+        .unwrap_or_else(|| Err(busy()))
 }
 
 /// Drive a tray menu action from the acceptance suite (fake platform only).

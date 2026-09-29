@@ -12,21 +12,20 @@ use crate::procs::run_tool;
 const ULTIMATE: &str = "e9a42b02-d5df-448d-aa00-03f14749eb61";
 const HIGH_PERFORMANCE: &str = "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c";
 
-/// Parse one `powercfg` line: `Power Scheme GUID: <guid>  (<name>) *`.
+/// Parse one `powercfg` line, `Power Scheme GUID: <guid>  (<name>) *`, by its
+/// shape: Windows translates the label (`GUID des Energieschemas:` in German).
 pub(crate) fn parse_line(line: &str) -> Option<PowerPlan> {
-    let rest = line.trim().strip_prefix("Power Scheme GUID:")?.trim();
-    let (id, tail) = rest.split_once(char::is_whitespace)?;
+    let id = line
+        .split_whitespace()
+        .find(|token| is_guid(&token.to_ascii_lowercase()))?;
+    let tail = &line[line.find(id)? + id.len()..];
     let start = tail.find('(')?;
     let end = tail.rfind(')')?;
     if end <= start {
         return None;
     }
-    let id = id.trim().to_ascii_lowercase();
-    if !is_guid(&id) {
-        return None;
-    }
     Some(PowerPlan {
-        id,
+        id: id.to_ascii_lowercase(),
         name: tail[start + 1..end].trim().to_string(),
     })
 }
@@ -106,6 +105,17 @@ mod tests {
         assert_eq!(custom.id, HIGH_PERFORMANCE);
         assert!(parse_line("Existing Power Schemes (* Active)").is_none());
         assert!(parse_line("Power Scheme GUID: not-a-guid (x)").is_none());
+    }
+
+    #[test]
+    fn a_translated_powercfg_line_parses_too() {
+        let german = parse_line(
+            "GUID des Energieschemas: 381b4222-f694-41f0-9685-ff5bb260df2e  (Ausbalanciert) *",
+        )
+        .unwrap();
+        assert_eq!(german.id, "381b4222-f694-41f0-9685-ff5bb260df2e");
+        assert_eq!(german.name, "Ausbalanciert");
+        assert!(parse_line("Vorhandene Energieschemas (* Aktiv)").is_none());
     }
 
     #[test]
