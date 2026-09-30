@@ -32,7 +32,7 @@ export interface Profile {
   purge_memory: boolean;
   /** Hold off sleep and screen-off while Quiet Mode is on. */
   keep_awake: boolean;
-  /** Ask Ollama and LM Studio to unload the models they hold in memory. */
+  /** Ask Ollama, LM Studio, llama.cpp and llama-swap to unload the models they hold in memory. */
   unload_ai_models: boolean;
   keep_alive: string[];
 }

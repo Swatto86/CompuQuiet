@@ -223,6 +223,7 @@ fn a_program_that_cannot_be_relaunched_does_not_keep_quiet_mode_on() {
         exe: None,
         args: Vec::new(),
         cwd: None,
+        env: cq_core::Env::new(),
     });
     journal.save(dir.path()).unwrap();
     let engine = engine(dir.path());
@@ -333,8 +334,13 @@ fn a_program_that_is_already_running_is_not_relaunched() {
     let engine = quiet_with_every_kind_of_step(&fake, dir.path()).unwrap();
     // Started again by hand while Quiet Mode was on.
     let args = ["Dropbox.exe".to_string(), "--background".to_string()];
-    fake.launch(std::path::Path::new("C:/fake/Dropbox.exe"), &args, None)
-        .unwrap();
+    fake.launch(
+        std::path::Path::new("C:/fake/Dropbox.exe"),
+        &args,
+        None,
+        &cq_core::Env::new(),
+    )
+    .unwrap();
     assert_eq!(engine.restore(&|_| {}).unwrap(), 0);
     assert_eq!(fake.launched().len(), 1, "only the copy started by hand");
     assert!(

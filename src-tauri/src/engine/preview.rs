@@ -36,6 +36,9 @@ pub enum PreviewAction {
     Close,
     Purge,
     UnloadModel,
+    /// A `llama-server` with one model, stopped to free it and started again
+    /// with the same settings when Quiet Mode ends.
+    CloseServer,
 }
 
 /// One line of the preview: a service, a program (all its processes), an AI
@@ -213,12 +216,20 @@ pub(super) fn fold(steps: &[Step], processes: &[ProcessInfo]) -> Vec<PreviewItem
                 server,
                 name,
                 bytes,
+                ..
             } => PreviewItem {
                 memory_bytes: *bytes,
                 ..whole(
                     PreviewAction::UnloadModel,
                     &format!("{name} ({})", server.label()),
                 )
+            },
+            Step::CloseModelServer(server) => PreviewItem {
+                action: PreviewAction::CloseServer,
+                name: server.name.clone(),
+                processes: 1,
+                memory_bytes: held(server.pid),
+                relaunch: Some(command_text(&server.exe, &server.args)),
             },
             Step::SuspendProcess { pid, name, .. } => PreviewItem {
                 action: PreviewAction::Suspend,

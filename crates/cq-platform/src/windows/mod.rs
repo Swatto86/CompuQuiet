@@ -18,6 +18,7 @@
 mod activity;
 mod audio;
 mod awake;
+mod environment;
 mod launch;
 mod memory;
 mod pace;
@@ -33,7 +34,7 @@ use std::path::Path;
 use std::ptr::{null, null_mut};
 use std::time::Duration;
 
-use cq_core::{Activity, Capabilities, PowerPlan, ServiceInfo, Snapshot, SystemStats};
+use cq_core::{Activity, Capabilities, Env, PowerPlan, ServiceInfo, Snapshot, SystemStats};
 use windows_sys::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress};
 use windows_sys::Win32::UI::Shell::ShellExecuteW;
 use windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
@@ -174,10 +175,10 @@ impl Platform for Windows {
     /// rights, so it is started with the desktop user's normal token
     /// instead. Only when that token cannot be had (no shell, no Secondary
     /// Logon service) does it fall back to starting it as this process would.
-    fn launch(&self, exe: &Path, args: &[String], cwd: Option<&Path>) -> Result<()> {
+    fn launch(&self, exe: &Path, args: &[String], cwd: Option<&Path>, env: &Env) -> Result<()> {
         if self.elevated {
             launchable(exe)?;
-            match launch::as_shell_user(exe, args, cwd)? {
+            match launch::as_shell_user(exe, args, cwd, env)? {
                 launch::Outcome::Started => return Ok(()),
                 launch::Outcome::Unavailable(why) => log::warn!(
                     "starting {} with administrator rights, because the desktop user's could not be used: {why}",
@@ -185,7 +186,11 @@ impl Platform for Windows {
                 ),
             }
         }
-        spawn_detached(exe, args, cwd)
+        spawn_detached(exe, args, cwd, env)
+    }
+
+    fn environment(&self, pid: u32, start_time: u64) -> Option<Vec<(String, String)>> {
+        self.sampler.environment(pid, start_time)
     }
 
     fn marker(&self) -> cq_core::Marker {

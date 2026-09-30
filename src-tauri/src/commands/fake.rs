@@ -3,7 +3,7 @@
 //! makes its calls fail; the real engine, tray and window are what it drives.
 
 use cq_core::{GpuInfo, LoadedModel};
-use cq_platform::fake::{Call, Failure, Fake};
+use cq_platform::fake::{Call, Failure, Fake, LLAMA_SERVER};
 use tauri::AppHandle;
 
 use crate::error::AppError;
@@ -63,6 +63,33 @@ pub fn fake_models(models: Option<Vec<LoadedModel>>) -> Result<Vec<LoadedModel>,
         fake.set_models(models);
     }
     Ok(fake.models())
+}
+
+/// Start a `llama-server` with one model on the fake machine, with this
+/// environment (`Some`; one already running is replaced), and return the
+/// environment of the one running now, `None` when there is none, so the
+/// acceptance suite can drive the stop and start again of such a server and
+/// see what it was started with. `fake_program` ends it like any program.
+#[tauri::command]
+pub fn fake_llama_server(
+    env: Option<Vec<(String, String)>>,
+) -> Result<Option<Vec<(String, String)>>, AppError> {
+    let fake = machine()?;
+    if let Some(env) = env {
+        let usable = |(name, value): &(String, String)| {
+            !name.is_empty()
+                && name.len() <= 256
+                && value.len() <= 1024
+                && !name.contains(['=', '\u{0}'])
+                && !value.contains('\u{0}')
+        };
+        if env.len() > 64 || !env.iter().all(usable) {
+            return Err(AppError::new("fake_env", "that environment is not usable"));
+        }
+        fake.stop_program(LLAMA_SERVER);
+        fake.start_llama_server(env);
+    }
+    Ok(fake.environment_of(LLAMA_SERVER))
 }
 
 /// Open or close a program on the fake machine, as the user would.

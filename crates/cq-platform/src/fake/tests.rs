@@ -34,6 +34,7 @@ fn a_full_cycle_is_reflected_in_the_next_snapshot() {
         Path::new("C:/fake/Dropbox.exe"),
         &["Dropbox.exe".into()],
         None,
+        &Env::new(),
     )
     .unwrap();
     fake.start_service("SysMain").unwrap();
@@ -139,4 +140,45 @@ fn a_model_is_unloaded_once_and_a_second_ask_finds_it_gone() {
     ));
     fake.set_models(vec![model.clone()]);
     assert_eq!(fake.models(), vec![model]);
+}
+
+#[test]
+fn a_llama_server_is_stopped_to_free_its_model_and_started_again_with_only_what_carries() {
+    let fake = Fake::new();
+    assert!(
+        fake.loaded_models(&fake.processes().unwrap())
+            .closes
+            .is_empty()
+    );
+    fake.start_llama_server(
+        [
+            ("PATH", "/bin"),
+            ("CUDA_VISIBLE_DEVICES", "1"),
+            ("HF_TOKEN", "hf_secret"),
+        ]
+        .map(|(name, value)| (name.to_string(), value.to_string()))
+        .to_vec(),
+    );
+    let found = fake.loaded_models(&fake.processes().unwrap());
+    assert_eq!(found.closes.len(), 1, "{found:?}");
+    let close = found.closes[0].clone();
+    assert_eq!(close.env.len(), 1);
+    assert_eq!(close.env["CUDA_VISIBLE_DEVICES"], "1");
+    assert_eq!(
+        fake.environment(close.pid, close.start_time)
+            .map(|env| env.len()),
+        Some(3)
+    );
+
+    fake.close(close.pid, close.start_time).unwrap();
+    assert!(fake.environment_of(LLAMA_SERVER).is_none());
+    // A journal cannot set what is not carried, and what is carried arrives.
+    let mut wanted = close.env.clone();
+    wanted.insert("LD_PRELOAD".into(), "/tmp/evil.so".into());
+    fake.launch(&close.exe, &close.args, close.cwd.as_deref(), &wanted)
+        .unwrap();
+    assert_eq!(
+        fake.environment_of(LLAMA_SERVER),
+        Some(vec![("CUDA_VISIBLE_DEVICES".to_string(), "1".to_string())])
+    );
 }

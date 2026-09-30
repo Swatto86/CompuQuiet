@@ -216,7 +216,7 @@ export function fakeGpu(
 }
 
 export interface FakeModel {
-  server: "ollama" | "lm_studio";
+  server: "ollama" | "lm_studio" | "llama_cpp" | "llama_swap";
   name: string;
   bytes: number;
 }
@@ -228,6 +228,21 @@ export interface FakeModel {
  */
 export function fakeModels(models?: FakeModel[]): Promise<FakeModel[]> {
   return invokeCommand<FakeModel[]>("fake_models", { models: models ?? null });
+}
+
+/**
+ * Start a single-model llama-server ("llama-server.exe", on port 8081 with
+ * "-m C:/models/qwen.gguf") on the fake machine with this environment, in
+ * place of one already there, and get back the environment of the one running
+ * now, or null when none is. Call with no argument to only look;
+ * `fakeProgram("llama-server.exe", false)` ends it.
+ */
+export function fakeLlamaServer(
+  env?: [string, string][],
+): Promise<[string, string][] | null> {
+  return invokeCommand<[string, string][] | null>("fake_llama_server", {
+    env: env ?? null,
+  });
 }
 
 /** Open or close a program on the fake machine, as the user would. */

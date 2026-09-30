@@ -26,6 +26,11 @@ export function itemLine(item: PreviewItem): PreviewLine {
         text: `Unload ${item.name}${item.memory_bytes > 0 ? `, ${formatBytes(item.memory_bytes)}` : ""}. It loads again when it is next used`,
         command: null,
       };
+    case "close_server":
+      return {
+        text: `llama.cpp server ${item.name}${size}: closed now, started again with the same settings when Quiet Mode ends, with`,
+        command: item.relaunch,
+      };
     case "stop_service":
       return { text: `Stop service ${item.name}`, command: null };
     case "suspend":

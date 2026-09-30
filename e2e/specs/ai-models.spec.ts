@@ -4,17 +4,26 @@
  * server to let go of it, and nothing about it is journaled, since there is
  * nothing to put back.
  *
- * The fake machine's Ollama starts with one model, "llama3:8b" (5 GiB). Runs
- * after run-report; puts the option and the model back as it found them.
+ * The fake machine's Ollama starts with one model, "llama3:8b" (5 GiB). A
+ * llama.cpp router and llama-swap are listed and unloaded the same way. A
+ * llama-server with one model cannot be asked, so it is stopped and journaled
+ * like a closed program, and started again by restore with the few variables
+ * that decide how it runs (and no token). Runs after run-report; puts the
+ * option and the model back as it found them.
  */
 import { strict as assert } from "node:assert";
+import fs from "node:fs";
+import path from "node:path";
 
 import {
   type FakeModel,
   clickTab,
+  dataDir,
   fakeFail,
   fakeHeal,
+  fakeLlamaServer,
   fakeModels,
+  fakeProgram,
   readJson,
   screenshot,
   texts,
@@ -22,7 +31,7 @@ import {
 } from "./support.ts";
 
 interface Journal {
-  done: { kind: string }[];
+  done: { kind: string; name?: string; env?: Record<string, string> }[];
 }
 
 interface SavedSettings {
@@ -72,6 +81,7 @@ describe("unloading local AI models", () => {
 
   after(async () => {
     await fakeHeal();
+    await fakeProgram("llama-server.exe", false);
     await fakeModels([SEEDED]);
     await setOption(false);
     await browser.reloadSession();
@@ -139,7 +149,7 @@ describe("unloading local AI models", () => {
     await browser.waitUntil(
       async () =>
         (await texts("#preview-left li")).includes(
-          "AI models — none is loaded in Ollama or LM Studio",
+          "AI models — none is loaded in Ollama, LM Studio, llama.cpp or llama-swap",
         ),
       {
         timeout: 10_000,
@@ -163,5 +173,101 @@ describe("unloading local AI models", () => {
     await fakeHeal();
     await $("#toggle").click();
     await waitForPill("Ready");
+  });
+
+  it("lists a llama.cpp router's and llama-swap's models and unloads them the same way", async () => {
+    await fakeModels([
+      { server: "llama_cpp", name: "gemma-3-4b", bytes: 2 * 1024 ** 3 },
+      { server: "llama_swap", name: "qwen-coder", bytes: 0 },
+    ]);
+    const lines = [
+      "Unload gemma-3-4b (llama.cpp), 2.0 GB. It loads again when it is next used",
+      "Unload qwen-coder (llama-swap). It loads again when it is next used",
+    ];
+    await browser.waitUntil(
+      async () => {
+        const listed = await steps();
+        return lines.every((line) => listed.includes(line));
+      },
+      {
+        timeout: 10_000,
+        timeoutMsg: `the preview: ${(await texts(STEPS)).join(" | ")}`,
+      },
+    );
+    const listed = await texts(STEPS);
+    assert.equal(listed[listed.length - 1], "Purge cached memory");
+
+    await $("#toggle").click();
+    await waitForPill("Quiet");
+    assert.deepEqual(await fakeModels(), []);
+    const log = await $$("#log li").map((line) => line.getText());
+    for (const line of [
+      "Unload gemma-3-4b from llama.cpp",
+      "Unload qwen-coder from llama-swap",
+    ])
+      assert.ok(log.includes(line), `the run log: ${log.join(" | ")}`);
+    await $("#toggle").click();
+    await waitForPill("Ready");
+  });
+
+  it("stops a server with one model to free it, and restore starts it again with its own settings", async () => {
+    await fakeModels([]);
+    const before = await fakeLlamaServer([
+      ["PATH", "C:/tools"],
+      ["CUDA_VISIBLE_DEVICES", "1"],
+      ["GGML_CUDA_ENABLE_UNIFIED_MEMORY", "1"],
+      ["HF_TOKEN", "hf_never_kept"],
+    ]);
+    assert.equal(before?.length, 4, "the server is running");
+
+    const SERVER_LINE =
+      /^llama\.cpp server llama-server\.exe \(1 process, [\d.]+ MB\): closed now, started again with the same settings when Quiet Mode ends, with C:\/fake\/llama-server\.exe -m C:\/models\/qwen\.gguf --port 8081$/;
+    await browser.waitUntil(
+      async () => (await steps()).some((line) => SERVER_LINE.test(line)),
+      {
+        timeout: 10_000,
+        timeoutMsg: `the preview: ${(await texts(STEPS)).join(" | ")}`,
+      },
+    );
+    const listed = await texts(STEPS);
+    assert.equal(listed[listed.length - 1], "Purge cached memory");
+    assert.ok(
+      SERVER_LINE.test(listed[listed.length - 2]),
+      "it comes just before the purge",
+    );
+    assert.notEqual(await fakeLlamaServer(), null, "a look stops nothing");
+
+    await $("#toggle").click();
+    await waitForPill("Quiet");
+    assert.equal(await fakeLlamaServer(), null, "it is stopped");
+    const log = await $$("#log li").map((line) => line.getText());
+    assert.ok(
+      log.some((line) => /^Close llama-server\.exe \(PID \d+\)$/.test(line)),
+      `the run log: ${log.join(" | ")}`,
+    );
+    const journal = readJson<Journal>("journal.json");
+    assert.ok(journal, "journal.json was not written");
+    const closed = journal.done.find(
+      (step) =>
+        step.kind === "process_closed" && step.name === "llama-server.exe",
+    );
+    assert.deepEqual(closed?.env, {
+      CUDA_VISIBLE_DEVICES: "1",
+      GGML_CUDA_ENABLE_UNIFIED_MEMORY: "1",
+    });
+    const raw = fs.readFileSync(path.join(dataDir(), "journal.json"), "utf8");
+    assert.ok(!raw.includes("hf_never_kept"), "a token is never journaled");
+
+    await $("#toggle").click();
+    await waitForPill("Ready");
+    assert.deepEqual(
+      await fakeLlamaServer(),
+      [
+        ["CUDA_VISIBLE_DEVICES", "1"],
+        ["GGML_CUDA_ENABLE_UNIFIED_MEMORY", "1"],
+      ],
+      "started again with the variables it ran with, and nothing else",
+    );
+    await fakeProgram("llama-server.exe", false);
   });
 });

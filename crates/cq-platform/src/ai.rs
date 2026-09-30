@@ -1,8 +1,10 @@
 //! Local AI model servers, asked to let go of the models they hold in memory.
 //!
 //! Ollama is spoken to over its own HTTP API on this machine's loopback (see
-//! `ollama`). LM Studio has no API that works without a key, so its `lms`
-//! tool is run instead, and only when it is safe to:
+//! `ollama`), and llama.cpp's servers and llama-swap the same way (see
+//! `llama`, which finds them in the process table). LM Studio has no API
+//! that works without a key, so its `lms` tool is run instead, and only when
+//! it is safe to:
 //!
 //! - from `~/.lmstudio/bin` alone, never found on the search path;
 //! - while LM Studio is running, because the tool can start the app;
@@ -12,13 +14,15 @@
 //! Nothing is unloaded on a guess: what is listed is what is asked for, by
 //! names checked before they become an argument.
 
+mod http;
+mod llama;
 mod ollama;
 
 use std::time::Duration;
 
 use cq_core::plan::Skipped;
 use cq_core::policy::matches;
-use cq_core::{LoadedModel, ModelServer, ModelServers, ProcessInfo};
+use cq_core::{LoadedModel, ModelServer, ModelServers, Os, ProcessInfo};
 use serde_json::Value;
 
 use crate::error::{PlatformError, Result};
@@ -55,9 +59,20 @@ impl Reach {
 }
 
 /// The models held in memory now. `processes` is the table the plan is made
-/// from, which says whether LM Studio is running.
-pub(crate) fn loaded(processes: &[ProcessInfo], elevated: bool) -> ModelServers {
-    look(&Reach::here(), processes, elevated)
+/// from, which says whether LM Studio is running and where llama.cpp's
+/// servers are; `environment` reads a server's own environment.
+pub(crate) fn loaded(
+    processes: &[ProcessInfo],
+    elevated: bool,
+    os: Os,
+    environment: llama::Environment,
+) -> ModelServers {
+    let mut found = look(&Reach::here(), processes, elevated);
+    let llama = llama::look(processes, os, environment);
+    found.loaded.extend(llama.loaded);
+    found.closes.extend(llama.closes);
+    found.skipped.extend(llama.skipped);
+    found
 }
 
 /// Ask the server to let go of `model`.
@@ -130,6 +145,7 @@ fn unload_via(reach: &Reach, model: &LoadedModel, elevated: bool) -> Result<()> 
             let tool = lms_tool(reach, elevated)?;
             run_tool_within(tool, &["unload", &model.name], LMS_WITHIN).map(drop)
         }
+        ModelServer::LlamaCpp | ModelServer::LlamaSwap => llama::unload(model),
     }
 }
 
@@ -167,6 +183,7 @@ fn parse_lms(output: &str) -> Result<Vec<LoadedModel>> {
                 server: ModelServer::LmStudio,
                 name: name.to_string(),
                 bytes: entry.get("sizeBytes").and_then(Value::as_u64).unwrap_or(0),
+                endpoint: None,
             })
         })
         .collect();

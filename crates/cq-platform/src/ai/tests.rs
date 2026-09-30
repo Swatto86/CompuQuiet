@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use super::ollama::tests::{closed_port, ok, serve};
+use super::http::tests::{closed_port, ok, serve};
 use super::*;
 
 fn process(name: &str) -> ProcessInfo {
@@ -80,6 +80,7 @@ fn names_that_could_be_read_as_flags_or_break_a_request_are_refused() {
             server: ModelServer::LmStudio,
             name: "--all".into(),
             bytes: 0,
+            endpoint: None,
         },
         false,
     )
@@ -103,11 +104,13 @@ fn lm_studios_list_is_read_by_identifier_and_a_list_nobody_can_read_is_an_error(
                 server: ModelServer::LmStudio,
                 name: "qwen-work".into(),
                 bytes: 2_497_281_024,
+                endpoint: None,
             },
             LoadedModel {
                 server: ModelServer::LmStudio,
                 name: "nomic-embed".into(),
                 bytes: 84_000_000,
+                endpoint: None,
             },
         ]
     );
@@ -190,6 +193,7 @@ fn lm_studios_tool_is_not_run_with_administrator_rights_or_when_it_is_missing() 
         server: ModelServer::LmStudio,
         name: "qwen".into(),
         bytes: 0,
+        endpoint: None,
     };
     assert!(matches!(
         unload_via(&no_one_home(), &model, true),
@@ -249,6 +253,7 @@ fn ollama_is_unloaded_through_its_api() {
         server: ModelServer::Ollama,
         name: "llama3:8b".into(),
         bytes: 0,
+        endpoint: None,
     };
     // Administrator rights matter to the tool, not to the API.
     unload_via(&reach, &model, true).unwrap();

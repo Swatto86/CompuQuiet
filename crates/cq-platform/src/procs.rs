@@ -30,6 +30,8 @@ const START_TIME_SLACK: u64 = 2;
 /// apart in a journal.
 const WALL_CLOCK_START: u64 = 1_000_000_000;
 
+mod environment;
+
 pub struct Sampler {
     table: Mutex<System>,
     gauge: Mutex<System>,

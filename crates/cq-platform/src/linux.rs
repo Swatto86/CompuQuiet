@@ -8,7 +8,7 @@ use std::path::Path;
 use std::time::Duration;
 
 use cq_core::{
-    Activity, Capabilities, PowerPlan, ServiceInfo, ServiceState, Snapshot, SystemStats,
+    Activity, Capabilities, Env, PowerPlan, ServiceInfo, ServiceState, Snapshot, SystemStats,
 };
 
 use crate::Platform;
@@ -278,8 +278,12 @@ impl Platform for Linux {
         unix::close(&self.sampler, pid, start_time)
     }
 
-    fn launch(&self, exe: &Path, args: &[String], cwd: Option<&Path>) -> Result<()> {
-        spawn_detached(exe, args, cwd)
+    fn launch(&self, exe: &Path, args: &[String], cwd: Option<&Path>, env: &Env) -> Result<()> {
+        spawn_detached(exe, args, cwd, env)
+    }
+
+    fn environment(&self, pid: u32, start_time: u64) -> Option<Vec<(String, String)>> {
+        self.sampler.environment(pid, start_time)
     }
 
     fn stop_service(&self, name: &str) -> Result<()> {

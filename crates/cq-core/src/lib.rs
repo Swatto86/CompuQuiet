@@ -23,7 +23,10 @@ pub mod watch;
 pub use audio::guard_audio;
 pub use error::CoreError;
 pub use journal::{DoneStep, Journal, Marker, RestoreStep};
-pub use models::{LoadedModel, ModelServer, ModelServers, plan_unloads};
+pub use models::{
+    Endpoint, Env, LoadedModel, ModelServer, ModelServers, ServerClose, carried, is_carried,
+    plan_unloads,
+};
 pub use plan::{Capabilities, Plan, Skipped, Step, build_plan, guard_battery};
 pub use profile::{Os, PowerPolicy, ProcessAction, ProcessTarget, Profile, ServiceTarget};
 pub use recommend::{Recommendation, RecommendationKind, Risk, recommend};

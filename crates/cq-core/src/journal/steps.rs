@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 use super::Elapsed;
+use crate::models::Env;
 use crate::plan::Step;
 use crate::snapshot::{Pace, PowerPlan};
 
@@ -36,6 +37,11 @@ pub enum DoneStep {
         exe: Option<PathBuf>,
         args: Vec<String>,
         cwd: Option<PathBuf>,
+        /// What it is started again with besides CompuQuiet's own
+        /// environment: set only for a model server, whose variables decide
+        /// how it runs. 1.1.7 and earlier neither write nor mind it.
+        #[serde(default, skip_serializing_if = "Env::is_empty")]
+        env: Env,
     },
     MemoryPurged,
 }
@@ -60,6 +66,8 @@ pub enum RestoreStep {
         exe: Option<PathBuf>,
         args: Vec<String>,
         cwd: Option<PathBuf>,
+        #[serde(default, skip_serializing_if = "Env::is_empty")]
+        env: Env,
     },
     StartService {
         name: String,
@@ -168,6 +176,14 @@ impl DoneStep {
                 exe: exe.clone(),
                 args: args.clone(),
                 cwd: cwd.clone(),
+                env: Env::new(),
+            },
+            Step::CloseModelServer(server) => DoneStep::ProcessClosed {
+                name: server.name.clone(),
+                exe: Some(server.exe.clone()),
+                args: server.args.clone(),
+                cwd: server.cwd.clone(),
+                env: server.env.clone(),
             },
             Step::PurgeMemory | Step::KeepAwake | Step::UnloadModel { .. } => return None,
         })
@@ -225,11 +241,13 @@ impl DoneStep {
                 exe,
                 args,
                 cwd,
+                env,
             } => Some(RestoreStep::Relaunch {
                 name: name.clone(),
                 exe: exe.clone(),
                 args: args.clone(),
                 cwd: cwd.clone(),
+                env: env.clone(),
             }),
             DoneStep::MemoryPurged => None,
         }

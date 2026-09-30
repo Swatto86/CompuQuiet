@@ -10,12 +10,14 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use crate::models::ModelServer;
+use crate::models::{Endpoint, ModelServer, ServerClose};
 use crate::policy::{is_critical_service, normalize};
 use crate::profile::{Os, PowerPolicy, Profile};
 use crate::snapshot::{ServiceState, Snapshot};
 
 mod processes;
+
+pub use processes::sandboxed;
 
 /// What this platform, at this privilege level, can actually do.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -72,7 +74,15 @@ pub enum Step {
         name: String,
         /// What it holds, for the preview.
         bytes: u64,
+        /// Where to ask, for the servers there can be several of.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        endpoint: Option<Endpoint>,
     },
+    /// Stop a single-model `llama-server`, the one way to free its model.
+    /// Journaled and started again on restore, like any closed program, but
+    /// kept as it is in a run nobody pressed the button for: suspending it
+    /// would free nothing, and it holds no work of the user's to lose.
+    CloseModelServer(ServerClose),
 }
 
 impl Step {
@@ -88,6 +98,9 @@ impl Step {
             Step::PurgeMemory => "Purge cached memory".to_string(),
             Step::UnloadModel { server, name, .. } => {
                 format!("Unload {name} from {}", server.label())
+            }
+            Step::CloseModelServer(server) => {
+                format!("Close {} (PID {})", server.name, server.pid)
             }
         }
     }

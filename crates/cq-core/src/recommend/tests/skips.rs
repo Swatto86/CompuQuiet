@@ -63,6 +63,7 @@ fn workloads_and_the_family_of_the_program_in_front_are_not_guessed_at() {
             process(61, "ollama.exe", 900),
             process(62, "vmmemWSL", 900),
             process(63, "llama-server.exe", 900),
+            process(64, "llama-swap.exe", 900),
             // Nothing ties this one to anything the user is doing.
             process(70, "render-farm.exe", 900),
         ],

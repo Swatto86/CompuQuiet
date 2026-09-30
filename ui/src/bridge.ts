@@ -88,7 +88,8 @@ export type PreviewAction =
   | "slow_down"
   | "close"
   | "purge"
-  | "unload_model";
+  | "unload_model"
+  | "close_server";
 
 /** One line of the preview: a service, a program (all its processes), a model, the plan or the purge. */
 export interface PreviewItem {

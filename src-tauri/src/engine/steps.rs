@@ -1,6 +1,6 @@
 //! One journaled step against the platform, and its undo.
 
-use cq_core::{CoreError, DoneStep, Journal, LoadedModel, PowerPlan, RestoreStep, Step};
+use cq_core::{CoreError, DoneStep, Env, Journal, LoadedModel, PowerPlan, RestoreStep, Step};
 
 use super::{Engine, LogLine};
 use crate::error::AppError;
@@ -79,6 +79,7 @@ impl Engine {
                         Step::SuspendProcess { .. }
                             | Step::SlowProcess { .. }
                             | Step::CloseProcess { .. }
+                            | Step::CloseModelServer(_)
                             | Step::UnloadModel { .. }
                     );
                 // The run's own log is gone once the app restarts; this stays.
@@ -150,6 +151,19 @@ impl Engine {
                     exe: exe.clone(),
                     args: args.clone(),
                     cwd: cwd.clone(),
+                    env: Env::new(),
+                }
+            }
+            // A server with one model frees it by stopping, and is started
+            // again like any closed program, with the variables it ran with.
+            Step::CloseModelServer(server) => {
+                self.platform.close(server.pid, server.start_time)?;
+                DoneStep::ProcessClosed {
+                    name: server.name.clone(),
+                    exe: Some(server.exe.clone()),
+                    args: server.args.clone(),
+                    cwd: server.cwd.clone(),
+                    env: server.env.clone(),
                 }
             }
             Step::PurgeMemory => {
@@ -168,11 +182,13 @@ impl Engine {
                 server,
                 name,
                 bytes,
+                endpoint,
             } => {
                 self.platform.unload_model(&LoadedModel {
                     server: *server,
                     name: name.clone(),
                     bytes: *bytes,
+                    endpoint: *endpoint,
                 })?;
                 return Ok(None);
             }
@@ -194,11 +210,17 @@ impl Engine {
             } => self
                 .platform
                 .speed_up(*pid, *start_time, previous.as_ref())?,
-            RestoreStep::Relaunch { exe, args, cwd, .. } => {
+            RestoreStep::Relaunch {
+                exe,
+                args,
+                cwd,
+                env,
+                ..
+            } => {
                 let exe = exe.as_ref().ok_or_else(|| {
                     AppError::new("not_installed", "the program's path was not recorded")
                 })?;
-                self.platform.launch(exe, args, cwd.as_deref())?;
+                self.platform.launch(exe, args, cwd.as_deref(), env)?;
             }
             RestoreStep::StartService { name } => self.platform.start_service(name)?,
             RestoreStep::RestorePowerPlan { plan } => {

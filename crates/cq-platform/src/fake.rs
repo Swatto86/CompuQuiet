@@ -12,7 +12,7 @@ use std::sync::Mutex;
 use std::time::Duration;
 
 use cq_core::{
-    Activity, Capabilities, GpuInfo, LoadedModel, Marker, ModelServers, Pace, PowerPlan,
+    Activity, Capabilities, Env, GpuInfo, LoadedModel, Marker, ModelServers, Pace, PowerPlan,
     ProcessInfo, ServiceInfo, ServiceState, Snapshot, SystemStats,
 };
 
@@ -22,6 +22,7 @@ use crate::error::{PlatformError, Result};
 mod controls;
 mod faults;
 mod paces;
+pub use controls::LLAMA_SERVER;
 use controls::{SERVICES, process};
 pub use faults::{Call, Failure};
 
@@ -61,6 +62,8 @@ struct State {
     gpu: Option<Vec<GpuInfo>>,
     /// The models its AI servers hold in memory.
     models: Vec<LoadedModel>,
+    /// The environment each process was started with, where one is known.
+    environments: HashMap<u32, Vec<(String, String)>>,
 }
 
 pub struct Fake {
@@ -271,11 +274,12 @@ impl Platform for Fake {
             state.processes.remove(index);
             state.suspended.remove(&pid);
             state.slowed.remove(&pid);
+            state.environments.remove(&pid);
             Ok(())
         })
     }
 
-    fn launch(&self, exe: &Path, args: &[String], cwd: Option<&Path>) -> Result<()> {
+    fn launch(&self, exe: &Path, args: &[String], cwd: Option<&Path>, env: &Env) -> Result<()> {
         let name = exe
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
@@ -294,9 +298,14 @@ impl Platform for Fake {
                 start_time: 1_700_000_000 + u64::from(pid),
                 parent: None,
             });
+            state.remember_environment(pid, env);
             state.launched.push(exe.to_path_buf());
             Ok(())
         })
+    }
+
+    fn environment(&self, pid: u32, _start_time: u64) -> Option<Vec<(String, String)>> {
+        self.lock().environments.get(&pid).cloned()
     }
 
     fn stop_service(&self, name: &str) -> Result<()> {
@@ -361,8 +370,8 @@ impl Platform for Fake {
         })
     }
 
-    fn loaded_models(&self, _processes: &[ProcessInfo]) -> ModelServers {
-        self.models_found()
+    fn loaded_models(&self, processes: &[ProcessInfo]) -> ModelServers {
+        self.models_found(processes)
     }
 
     fn unload_model(&self, model: &LoadedModel) -> Result<()> {

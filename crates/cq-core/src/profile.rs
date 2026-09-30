@@ -134,8 +134,9 @@ pub struct Profile {
     /// in files written before it existed.
     #[serde(default)]
     pub keep_awake: bool,
-    /// Opt-in: ask Ollama and LM Studio to unload the models they hold in
-    /// memory. Absent in files written before it existed.
+    /// Opt-in: ask Ollama, LM Studio, llama.cpp and llama-swap to unload the
+    /// models they hold in memory (stopping a llama-server that has just the
+    /// one). Absent in files written before it existed.
     #[serde(default)]
     pub unload_ai_models: bool,
     /// Names the user has promised never to touch, on top of the built-ins.

@@ -314,6 +314,7 @@ pub const WORKLOADS: &[&str] = &[
     "ollama app",
     "ollama_llama_server",
     "llama-server",
+    "llama-swap",
     "llama-cli",
     "koboldcpp",
     "LM Studio",

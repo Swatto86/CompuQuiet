@@ -23,7 +23,7 @@ reboot cannot lose the list of what to put back.
 | Performance power plan | `powercfg` (Ultimate or High performance) | `powerprofilesctl` | not available |
 | Purge cached memory (opt-in) | standby list (administrator) | `drop_caches` via polkit | not available |
 | Keep the PC awake while quiet (opt-in) | `SetThreadExecutionState` | `systemd-inhibit` | `caffeinate` |
-| Unload local AI models (opt-in) | Ollama's local API; LM Studio's `lms` tool | same | same |
+| Unload local AI models (opt-in) | Ollama's, llama.cpp's and llama-swap's local APIs; LM Studio's `lms` tool | same | same |
 
 The desktop shell, compositor, input, audio, security software, the terminal
 you are typing in and CompuQuiet itself are always protected and cannot be
@@ -101,15 +101,26 @@ unless CompuQuiet runs as root.
    and the screen turning off while Quiet Mode is on and lets go when it ends
    or CompuQuiet exits. A closed laptop lid still sleeps it, and on battery it
    is skipped unless Settings allows it.
-9. **Unload local AI models** (Park list > System, off by default) asks Ollama
-   and LM Studio to unload the models they hold in memory, which frees graphics
-   memory for a game. A model loads again the next time something uses it, so
-   there is nothing to put back, but a reply being written stops. The preview
-   lists each model. Ollama is asked over its own local API, never over the
-   network. LM Studio's `lms` tool is run only from `~/.lmstudio/bin`, only
-   while LM Studio is running, and not when CompuQuiet has administrator rights
-   (the tool sits in your user folder), which the preview says. A run that
-   starts by itself unloads them too.
+9. **Unload local AI models** (Park list > System, off by default) asks Ollama,
+   LM Studio, llama.cpp and llama-swap to unload the models they hold in
+   memory, which frees graphics memory for a game. A model loads again the next
+   time something uses it, so there is nothing to put back, but a reply being
+   written stops. The preview lists each model. Ollama, a llama.cpp server
+   started without a model (its router mode) and llama-swap are asked over their
+   own local APIs, found among the running programs and reached only on this
+   machine's own loopback address, never over the network. A llama.cpp server
+   started with a single model has no unload request, so it is closed and
+   started again with the same settings when Quiet Mode ends: the same command
+   line and folder, and the few variables that decide its graphics card and
+   settings (`CUDA_VISIBLE_DEVICES`, `HIP_VISIBLE_DEVICES`,
+   `ROCR_VISIBLE_DEVICES`, `GGML_*` and `LLAMA_ARG_*`). It is left running, with
+   the reason in the preview, when it is answering a request or asleep already,
+   asks for an API key, holds a secret on its command line or among those
+   variables, is run by a service manager or in a sandbox, or cannot be read.
+   LM Studio's `lms` tool is run only from `~/.lmstudio/bin`, only while LM
+   Studio is running, and not when CompuQuiet has administrator rights (the
+   tool sits in your user folder), which the preview says. A run that starts by
+   itself unloads them too.
 10. **Profiles** (top of the Park list) keep a separate park list and options
     for each use: one for a game, one for local AI, one for work. *Add* makes
     one from a copy of the profile in use or from the built-in list, and starts

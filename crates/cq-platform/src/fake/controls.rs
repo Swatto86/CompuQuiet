@@ -4,9 +4,13 @@
 
 use std::path::PathBuf;
 
-use cq_core::{GpuInfo, LoadedModel, Marker, ModelServer, ModelServers, ProcessInfo, ServiceState};
+use cq_core::{
+    GpuInfo, LoadedModel, Marker, ModelServer, ModelServers, ProcessInfo, ServerClose,
+    ServiceState, carried,
+};
 
-use super::{Call, Fake, GIB, MIB, PlatformError, Result};
+use super::{Call, Fake, GIB, MIB, PlatformError, Result, State};
+use crate::launch_env::passed_on;
 
 /// The services this machine has: name, what the Services list calls it, and
 /// the state it starts in. `AudioSrv` is one that Quiet Mode must never stop.
@@ -46,12 +50,16 @@ pub(super) fn seeded_gpu() -> Vec<GpuInfo> {
     }]
 }
 
+/// The single-model llama.cpp server the acceptance suite starts.
+pub const LLAMA_SERVER: &str = "llama-server.exe";
+
 /// The model the fake machine's Ollama starts with in memory.
 pub(super) fn seeded_models() -> Vec<LoadedModel> {
     vec![LoadedModel {
         server: ModelServer::Ollama,
         name: "llama3:8b".to_string(),
         bytes: 5 * GIB,
+        endpoint: None,
     }]
 }
 
@@ -76,11 +84,62 @@ impl Fake {
         self.lock().models.clone()
     }
 
-    pub(super) fn models_found(&self) -> ModelServers {
+    /// What the AI servers hold, and the single-model llama-servers running
+    /// (see [`Self::start_llama_server`]), which are stopped to free theirs.
+    pub(super) fn models_found(&self, processes: &[ProcessInfo]) -> ModelServers {
+        let state = self.lock();
+        let closes = processes
+            .iter()
+            .filter(|process| process.name.eq_ignore_ascii_case(LLAMA_SERVER))
+            .filter_map(|process| {
+                let environment = state.environments.get(&process.pid)?;
+                Some(ServerClose {
+                    pid: process.pid,
+                    name: process.name.clone(),
+                    start_time: process.start_time,
+                    exe: process.exe.clone()?,
+                    args: process.args.clone(),
+                    cwd: process.cwd.clone(),
+                    env: carried(environment).ok()?,
+                })
+            })
+            .collect();
         ModelServers {
-            loaded: self.models(),
+            loaded: state.models.clone(),
+            closes,
             skipped: Vec::new(),
         }
+    }
+
+    /// Start a `llama-server` with one model and this environment, as a
+    /// person would from a terminal.
+    pub fn start_llama_server(&self, environment: Vec<(String, String)>) {
+        let mut state = self.lock();
+        let pid = state.next_pid;
+        state.next_pid += 1;
+        let mut server = process(pid, LLAMA_SERVER, 900);
+        server.args = [
+            "llama-server.exe",
+            "-m",
+            "C:/models/qwen.gguf",
+            "--port",
+            "8081",
+        ]
+        .map(String::from)
+        .to_vec();
+        state.processes.push(server);
+        state.environments.insert(pid, environment);
+    }
+
+    /// The environment of the program of this name that is running, if it is.
+    pub fn environment_of(&self, name: &str) -> Option<Vec<(String, String)>> {
+        let state = self.lock();
+        let pid = state
+            .processes
+            .iter()
+            .find(|process| process.name.eq_ignore_ascii_case(name))?
+            .pid;
+        state.environments.get(&pid).cloned()
     }
 
     /// A server lets go of a model, or says it has none by that name.
@@ -147,5 +206,16 @@ impl Fake {
     /// Whether anything is holding the machine awake.
     pub fn awake(&self) -> bool {
         self.lock().awake
+    }
+}
+
+impl State {
+    /// What a real launch gives the program to add to its environment, and
+    /// nothing of the rest.
+    pub(super) fn remember_environment(&mut self, pid: u32, env: &cq_core::Env) {
+        let passed = passed_on(env)
+            .map(|(name, value)| (name.to_string(), value.to_string()))
+            .collect();
+        self.environments.insert(pid, passed);
     }
 }

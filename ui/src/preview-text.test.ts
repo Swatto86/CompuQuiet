@@ -77,6 +77,24 @@ test("a model says which server holds it and how much, and that it loads again",
   );
 });
 
+test("a llama.cpp server with one model is said to be closed and started again the same", () => {
+  assert.deepEqual(
+    itemLine(
+      item({
+        action: "close_server",
+        name: "llama-server.exe",
+        processes: 1,
+        memory_bytes: 900 * MIB,
+        relaunch: "C:/llama/llama-server.exe -m qwen.gguf --port 8081",
+      }),
+    ),
+    {
+      text: "llama.cpp server llama-server.exe (1 process, 900 MB): closed now, started again with the same settings when Quiet Mode ends, with",
+      command: "C:/llama/llama-server.exe -m qwen.gguf --port 8081",
+    },
+  );
+});
+
 test("a closed program shows the command line it is opened with, or says it cannot be", () => {
   const closed = itemLine(
     item({

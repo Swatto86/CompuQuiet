@@ -129,7 +129,7 @@ fn park_step(process: &ProcessInfo, action: ProcessAction, all: &[ProcessInfo], 
 /// a Store (packaged) app on Windows is refused, or runs without its package,
 /// when its executable is started directly. Either way the recorded command
 /// line cannot bring the program back.
-fn sandboxed(origin: &ProcessInfo, os: Os) -> bool {
+pub fn sandboxed(origin: &ProcessInfo, os: Os) -> bool {
     let Some(exe) = origin.exe.as_deref() else {
         return false;
     };

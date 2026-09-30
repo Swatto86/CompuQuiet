@@ -5,16 +5,33 @@
 //! undone by using the model again, so there is nothing to restore: the step
 //! is never journaled, and a journal written with it stays readable by older
 //! releases.
+//!
+//! One kind of server cannot be asked: a `llama-server` started with a single
+//! model has no unload request, so the only way to free that model is to stop
+//! the server. That is a close of the program, journaled like any other and
+//! undone by starting it again with the same command line, folder and the few
+//! environment variables that decide how it runs ([`carried`]).
+
+use std::collections::BTreeMap;
+use std::fmt;
+use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
 use crate::plan::{Plan, Skipped, Step};
+
+/// A program's environment variables, by name.
+pub type Env = BTreeMap<String, String>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ModelServer {
     Ollama,
     LmStudio,
+    /// A `llama-server` in router mode, which unloads a model it loaded.
+    LlamaCpp,
+    /// The llama-swap proxy in front of one or more `llama-server`s.
+    LlamaSwap,
 }
 
 impl ModelServer {
@@ -22,6 +39,28 @@ impl ModelServer {
         match self {
             ModelServer::Ollama => "Ollama",
             ModelServer::LmStudio => "LM Studio",
+            ModelServer::LlamaCpp => "llama.cpp",
+            ModelServer::LlamaSwap => "llama-swap",
+        }
+    }
+}
+
+/// Where a model server answers: a port on one of this machine's own
+/// loopback addresses, never anything further away.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Endpoint {
+    pub port: u16,
+    /// `::1` rather than `127.0.0.1`.
+    #[serde(default)]
+    pub ipv6: bool,
+}
+
+impl fmt::Display for Endpoint {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.ipv6 {
+            write!(f, "[::1]:{}", self.port)
+        } else {
+            write!(f, "127.0.0.1:{}", self.port)
         }
     }
 }
@@ -33,22 +72,81 @@ pub struct LoadedModel {
     pub name: String,
     /// What it holds, in bytes, when the server says.
     pub bytes: u64,
+    /// Where to ask it to let go, for the servers there can be several of
+    /// (Ollama and LM Studio are found by their usual port and tool).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub endpoint: Option<Endpoint>,
+}
+
+/// A single-model `llama-server`, which frees its model only by stopping: the
+/// program as it runs now, with what it takes to start it the same again.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ServerClose {
+    pub pid: u32,
+    pub name: String,
+    pub start_time: u64,
+    pub exe: PathBuf,
+    /// The whole argument vector, the program first, as in `ProcessInfo`.
+    pub args: Vec<String>,
+    pub cwd: Option<PathBuf>,
+    /// Only what [`carried`] passes. Older releases neither write nor mind it.
+    #[serde(default, skip_serializing_if = "Env::is_empty")]
+    pub env: Env,
 }
 
 /// What a look at the local model servers found.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ModelServers {
     pub loaded: Vec<LoadedModel>,
+    /// Single-model servers that can be stopped and started again.
+    pub closes: Vec<ServerClose>,
     /// A server that is running but cannot be asked, and why. One that is not
     /// running is not listed: it holds nothing.
     pub skipped: Vec<Skipped>,
 }
 
+/// The environment variables that decide how a llama.cpp program runs: which
+/// graphics card it uses, and its own `GGML_*` and `LLAMA_ARG_*` settings.
+/// Only these are handed on when it is started again; nothing else of
+/// another program's environment is kept or passed.
+pub fn is_carried(name: &str) -> bool {
+    let name = name.to_ascii_uppercase();
+    matches!(
+        name.as_str(),
+        "CUDA_VISIBLE_DEVICES" | "HIP_VISIBLE_DEVICES" | "ROCR_VISIBLE_DEVICES"
+    ) || name.starts_with("GGML_")
+        || name.starts_with("LLAMA_ARG_")
+}
+
+/// Words that mark a variable as a credential.
+const SECRET_WORDS: [&str; 4] = ["KEY", "TOKEN", "SECRET", "PASS"];
+
+/// The variables of `environment` to carry, or the name of one that cannot
+/// be: a credential among them would be written into the journal, and the
+/// server cannot be started again without it.
+pub fn carried(environment: &[(String, String)]) -> Result<Env, String> {
+    let mut kept = Env::new();
+    for (name, value) in environment {
+        if !is_carried(name) {
+            continue;
+        }
+        let upper = name.to_ascii_uppercase();
+        if SECRET_WORDS.iter().any(|word| upper.contains(word)) {
+            return Err(name.clone());
+        }
+        kept.insert(name.clone(), value.clone());
+    }
+    Ok(kept)
+}
+
 /// Add a step for each model found, after everything else but the memory
 /// purge, which then reclaims what they held. Says what was left alone.
 pub fn plan_unloads(plan: &mut Plan, found: ModelServers) {
-    if found.loaded.is_empty() && found.skipped.is_empty() {
-        plan.skip("AI models", "none is loaded in Ollama or LM Studio");
+    if found.loaded.is_empty() && found.closes.is_empty() && found.skipped.is_empty() {
+        plan.skip(
+            "AI models",
+            "none is loaded in Ollama, LM Studio, llama.cpp or llama-swap",
+        );
     }
     plan.skipped.extend(found.skipped);
     let at = plan
@@ -56,103 +154,15 @@ pub fn plan_unloads(plan: &mut Plan, found: ModelServers) {
         .iter()
         .position(|step| *step == Step::PurgeMemory)
         .unwrap_or(plan.steps.len());
-    let steps = found.loaded.into_iter().map(|model| Step::UnloadModel {
+    let unloads = found.loaded.into_iter().map(|model| Step::UnloadModel {
         server: model.server,
         name: model.name,
         bytes: model.bytes,
+        endpoint: model.endpoint,
     });
-    plan.steps.splice(at..at, steps);
+    let closes = found.closes.into_iter().map(Step::CloseModelServer);
+    plan.steps.splice(at..at, unloads.chain(closes));
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn model(server: ModelServer, name: &str) -> LoadedModel {
-        LoadedModel {
-            server,
-            name: name.to_string(),
-            bytes: 4_000_000_000,
-        }
-    }
-
-    #[test]
-    fn each_model_becomes_a_step_before_the_purge_and_after_the_rest() {
-        let mut plan = Plan {
-            steps: vec![Step::SetPerformancePower, Step::PurgeMemory],
-            skipped: Vec::new(),
-        };
-        plan_unloads(
-            &mut plan,
-            ModelServers {
-                loaded: vec![
-                    model(ModelServer::Ollama, "llama3:8b"),
-                    model(ModelServer::LmStudio, "qwen/qwen3-4b"),
-                ],
-                skipped: Vec::new(),
-            },
-        );
-        let unloaded: Vec<&str> = plan
-            .steps
-            .iter()
-            .filter_map(|step| match step {
-                Step::UnloadModel { name, .. } => Some(name.as_str()),
-                _ => None,
-            })
-            .collect();
-        assert_eq!(unloaded, ["llama3:8b", "qwen/qwen3-4b"]);
-        assert_eq!(plan.steps[0], Step::SetPerformancePower);
-        assert_eq!(plan.steps[3], Step::PurgeMemory, "{:?}", plan.steps);
-        assert!(plan.skipped.is_empty());
-    }
-
-    #[test]
-    fn models_are_added_at_the_end_when_there_is_no_purge() {
-        let mut plan = Plan {
-            steps: vec![Step::KeepAwake],
-            skipped: Vec::new(),
-        };
-        plan_unloads(
-            &mut plan,
-            ModelServers {
-                loaded: vec![model(ModelServer::Ollama, "a")],
-                skipped: Vec::new(),
-            },
-        );
-        assert!(matches!(plan.steps[1], Step::UnloadModel { .. }));
-    }
-
-    #[test]
-    fn nothing_loaded_is_said_and_a_server_that_could_not_be_asked_is_said_instead() {
-        let mut plan = Plan::default();
-        plan_unloads(&mut plan, ModelServers::default());
-        assert!(plan.steps.is_empty());
-        assert_eq!(plan.skipped.len(), 1);
-        assert_eq!(plan.skipped[0].name, "AI models");
-
-        let mut plan = Plan::default();
-        plan_unloads(
-            &mut plan,
-            ModelServers {
-                loaded: Vec::new(),
-                skipped: vec![Skipped {
-                    name: "LM Studio".into(),
-                    reason: "its tool failed".into(),
-                }],
-            },
-        );
-        assert_eq!(plan.skipped.len(), 1);
-        assert_eq!(plan.skipped[0].name, "LM Studio");
-    }
-
-    #[test]
-    fn an_unload_has_no_journal_entry_so_older_releases_can_read_the_journal() {
-        let step = Step::UnloadModel {
-            server: ModelServer::Ollama,
-            name: "llama3:8b".into(),
-            bytes: 1,
-        };
-        assert_eq!(crate::DoneStep::intended(&step, None), None);
-        assert_eq!(step.label(), "Unload llama3:8b from Ollama");
-    }
-}
+mod tests;

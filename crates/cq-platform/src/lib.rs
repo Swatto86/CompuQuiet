@@ -7,6 +7,7 @@
 mod ai;
 pub mod error;
 mod gpu;
+mod launch_env;
 mod procs;
 mod spawn;
 
@@ -30,7 +31,7 @@ pub use error::{PlatformError, Result};
 pub use spawn::run_tool;
 
 use cq_core::{
-    Activity, Capabilities, GpuInfo, LoadedModel, Marker, ModelServers, Os, Pace, PowerPlan,
+    Activity, Capabilities, Env, GpuInfo, LoadedModel, Marker, ModelServers, Os, Pace, PowerPlan,
     ProcessInfo, ServiceInfo, Snapshot, SystemStats,
 };
 
@@ -135,7 +136,19 @@ pub trait Platform: Send + Sync {
 
     /// Ask the process to exit; force it after a grace period.
     fn close(&self, pid: u32, start_time: u64) -> Result<()>;
-    fn launch(&self, exe: &Path, args: &[String], cwd: Option<&Path>) -> Result<()>;
+
+    /// Start a program again as it was running. `env` is added to this
+    /// process's own environment; only the variables `cq_core::is_carried`
+    /// names are passed on, so a journal cannot be made to set others.
+    fn launch(&self, exe: &Path, args: &[String], cwd: Option<&Path>, env: &Env) -> Result<()>;
+
+    /// The environment a running program was started with, as `NAME=value`
+    /// pairs. `None` where the system will not let this process read it (another
+    /// user's program, or one with higher rights). Asked of a model server
+    /// alone, for the settings it is started again with.
+    fn environment(&self, _pid: u32, _start_time: u64) -> Option<Vec<(String, String)>> {
+        None
+    }
 
     fn stop_service(&self, name: &str) -> Result<()>;
     fn start_service(&self, name: &str) -> Result<()>;
@@ -152,11 +165,19 @@ pub trait Platform: Send + Sync {
 
     fn purge_memory(&self) -> Result<()>;
 
-    /// The models the local AI servers (Ollama, LM Studio) hold in memory, and
-    /// any server that is running but could not be asked. `processes` is the
-    /// table the plan is made from: LM Studio's tool is run only while it runs.
+    /// The models the local AI servers (Ollama, LM Studio, llama.cpp,
+    /// llama-swap) hold in memory, the single-model servers that can be
+    /// stopped to free one, and any server that is running but could not be
+    /// asked. `processes` is the table the plan is made from: LM Studio's tool
+    /// is run only while it runs, and llama.cpp's servers are found in it.
     fn loaded_models(&self, processes: &[ProcessInfo]) -> ModelServers {
-        ai::loaded(processes, self.capabilities().elevated)
+        let environment = |process: &ProcessInfo| self.environment(process.pid, process.start_time);
+        ai::loaded(
+            processes,
+            self.capabilities().elevated,
+            self.os(),
+            &environment,
+        )
     }
 
     /// Ask a server to let go of a model. Nothing to undo: the model loads

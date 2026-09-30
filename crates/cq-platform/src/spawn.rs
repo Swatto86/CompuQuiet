@@ -5,7 +5,10 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
+use cq_core::Env;
+
 use crate::error::{PlatformError, Result};
+use crate::launch_env::passed_on;
 
 /// A program is started again only from the absolute path it was recorded
 /// with. A relative one would be found against wherever this app happens to
@@ -34,7 +37,7 @@ pub(crate) fn launchable(exe: &Path) -> Result<()> {
 
 /// Start a program the way it was running before it was closed. The first
 /// recorded argument is the program itself and is not passed twice.
-pub fn spawn_detached(exe: &Path, args: &[String], cwd: Option<&Path>) -> Result<()> {
+pub fn spawn_detached(exe: &Path, args: &[String], cwd: Option<&Path>, env: &Env) -> Result<()> {
     launchable(exe)?;
     let mut command = Command::new(exe);
     command
@@ -60,6 +63,7 @@ pub fn spawn_detached(exe: &Path, args: &[String], cwd: Option<&Path>) -> Result
         command.process_group(0);
         leave_the_bundle(&mut command);
     }
+    command.envs(passed_on(env));
     let mut child = command
         .spawn()
         .map_err(|e| PlatformError::io(format!("starting {}", exe.display()), e))?;
@@ -295,7 +299,7 @@ mod tests {
     #[test]
     fn launching_a_missing_program_is_reported_not_attempted() {
         let missing = std::env::temp_dir().join("compuquiet-not-here").join("x");
-        let error = spawn_detached(&missing, &[], None).unwrap_err();
+        let error = spawn_detached(&missing, &[], None, &Env::new()).unwrap_err();
         assert!(matches!(error, PlatformError::NotInstalled(_)), "{error}");
     }
 
@@ -311,7 +315,7 @@ mod tests {
             Path::new(".."),
             Path::new(""),
         ] {
-            let error = spawn_detached(path, &["x".into()], None).unwrap_err();
+            let error = spawn_detached(path, &["x".into()], None, &Env::new()).unwrap_err();
             assert!(
                 error.to_string().contains("not absolute"),
                 "{path:?}: {error}"

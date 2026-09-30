@@ -25,8 +25,12 @@ use windows_sys::Win32::System::Threading::{
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{GetShellWindow, GetWindowThreadProcessId};
 
+use cq_core::Env;
+
+use super::environment::{block_entries, merged_block};
 use super::wide;
 use crate::error::{PlatformError, Result};
+use crate::launch_env::passed_on;
 
 /// What came of asking for the program to be started with normal rights.
 pub enum Outcome {
@@ -145,8 +149,14 @@ fn command_line(exe: &Path, args: &[String]) -> String {
 }
 
 /// Start `exe` with the desktop user's normal token, in the folder it was
-/// running from when that still exists.
-pub fn as_shell_user(exe: &Path, args: &[String], cwd: Option<&Path>) -> Result<Outcome> {
+/// running from when that still exists. `env` is set over that user's own
+/// environment, limited to what [`passed_on`] allows.
+pub fn as_shell_user(
+    exe: &Path,
+    args: &[String],
+    cwd: Option<&Path>,
+    env: &Env,
+) -> Result<Outcome> {
     let token = match shell_token() {
         Ok(token) => token,
         Err(reason) => return Ok(Outcome::Unavailable(reason)),
@@ -160,6 +170,18 @@ pub fn as_shell_user(exe: &Path, args: &[String], cwd: Option<&Path>) -> Result<
             std::io::Error::last_os_error()
         )));
     }
+    let extra: Vec<(&str, &str)> = passed_on(env).collect();
+    let merged = (!extra.is_empty()).then(|| {
+        // SAFETY: the block `CreateEnvironmentBlock` just made, destroyed
+        // only below, after the process is created.
+        merged_block(
+            unsafe { block_entries(environment.cast_const().cast()) },
+            &extra,
+        )
+    });
+    let used: *const std::ffi::c_void = merged
+        .as_ref()
+        .map_or(environment.cast_const(), |block| block.as_ptr().cast());
     let application = wide(&exe.to_string_lossy());
     let mut line = wide(&command_line(exe, args));
     let folder = cwd
@@ -182,7 +204,7 @@ pub fn as_shell_user(exe: &Path, args: &[String], cwd: Option<&Path>) -> Result<
             application.as_ptr(),
             line.as_mut_ptr(),
             CREATE_UNICODE_ENVIRONMENT | CREATE_NEW_PROCESS_GROUP,
-            environment,
+            used,
             folder.as_ref().map_or(null(), |dir| dir.as_ptr()),
             &raw const startup,
             &raw mut started,
@@ -264,7 +286,7 @@ mod tests {
             "x>".to_string(),
             marker.display().to_string(),
         ];
-        match as_shell_user(cmd, &args, None).unwrap() {
+        match as_shell_user(cmd, &args, None, &Env::new()).unwrap() {
             Outcome::Started => {
                 let mut waited = 0;
                 while !marker.exists() && waited < 40 {
@@ -322,7 +344,7 @@ mod tests {
         assert!(platform.elevated, "run this from an elevated terminal");
         let ping = Path::new(r"C:\Windows\System32\PING.EXE");
         let args = ["ping.exe", "-n", "37", "127.0.0.1"].map(String::from);
-        platform.launch(ping, &args, None).unwrap();
+        platform.launch(ping, &args, None, &Env::new()).unwrap();
         let mut found = None;
         for _ in 0..40 {
             found = platform.sampler.processes().into_iter().find(|process| {

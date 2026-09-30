@@ -51,6 +51,7 @@ impl RunReport {
             match step {
                 Step::SuspendProcess { pid, .. } if *done => suspended_bytes += held(*pid),
                 Step::CloseProcess { pid, .. } if *done => closed_bytes += held(*pid),
+                Step::CloseModelServer(server) if *done => closed_bytes += held(server.pid),
                 _ => {}
             }
         }

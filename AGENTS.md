@@ -50,7 +50,7 @@ does not show.
   restore everything.
 - **2026-09-30: Linux start times are from boot** (a clock step made a resume
   look like another program); 10^9 or more is an older wall-clock value,
-  still accepted.
+  still read.
 - **Every step is on record before it happens, and every undo is safe to
   repeat.** A crash mid-step or mid-restore strands and repeats nothing;
   restore saves after each step and never relaunches a running command line.
@@ -77,10 +77,11 @@ does not show.
   (public half in `tauri.conf.json`). Only a copy that can replace itself
   checks (`update/guard.rs`; never debug or fake), and installs with the
   window closed to the tray. `auto_update` off only announces a release.
-- **2026-09-30: unloading local AI models is opt-in and local.**
-  `Step::UnloadModel` has no `DoneStep` (a model reloads when used). Ollama
-  is reached on 127.0.0.1 only; LM Studio's `lms` runs only from
-  `~/.lmstudio/bin`, never elevated.
+- **2026-09-30: unloading local AI models is opt-in and loopback-only.**
+  `Step::UnloadModel` has no `DoneStep`. A single-model `llama-server` cannot
+  unload: it is a journaled close (`Step::CloseModelServer`) restored with its
+  `cq_core::carried` variables, and left alone if busy, secret-bearing or run
+  by a service manager. `lms` runs only from `~/.lmstudio/bin`, never elevated.
 - **2026-09-30: diagnostics stay local**: home folder as `~`, step names never
   arguments, clipboard only.
 - **2026-09-30: a removed target stays removed, and essential services are
@@ -109,7 +110,7 @@ does not show.
 - Single branch `main`; commit and push verified units.
 - Inner loop: `npx tauri dev`; `scripts/fastcheck.ps1`/`.sh`.
 - Full gate: `scripts/verify.ps1` / `.sh` (fmt, clippy, tests, frontend, fake
-  platform build, WebDriver suite). Windows needs
+  build, WebDriver). Windows needs
   `scripts/setup-e2e.ps1` once per WebView2 update.
 - Release: bump the version in `Cargo.toml`, `src-tauri/tauri.conf.json` and
   `package.json` (the gate checks agreement), `AGENT_RELEASE=1 npx tauri build`

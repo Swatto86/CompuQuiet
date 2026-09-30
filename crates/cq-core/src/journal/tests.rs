@@ -1,4 +1,5 @@
 use super::*;
+use crate::models::Env;
 use crate::plan::Step;
 use crate::snapshot::{Pace, PowerPlan};
 
@@ -23,12 +24,14 @@ fn sample() -> Journal {
         exe: Some(PathBuf::from("C:/d/Dropbox.exe")),
         args: vec!["Dropbox.exe".into()],
         cwd: None,
+        env: Env::new(),
     });
     journal.record(DoneStep::ProcessClosed {
         name: "Dropbox.exe".into(),
         exe: Some(PathBuf::from("C:/d/Dropbox.exe")),
         args: vec!["Dropbox.exe".into()],
         cwd: None,
+        env: Env::new(),
     });
     journal.record(DoneStep::MemoryPurged);
     journal
@@ -134,6 +137,7 @@ fn every_undoable_step_is_journaled_before_it_runs() {
             exe: Some(PathBuf::from("C:/d/Dropbox.exe")),
             args: vec!["Dropbox.exe".into()],
             cwd: None,
+            env: Env::new(),
         })
     );
     let stop = Step::StopService {
@@ -222,6 +226,7 @@ fn a_step_is_described_by_name_and_never_by_command_line_or_folder() {
         exe: Some(PathBuf::from("C:/Users/A/Chat.exe")),
         args: vec!["--token=hunter2".into()],
         cwd: Some(PathBuf::from("C:/Users/A/secret")),
+        env: Env::new(),
     });
     let lines: Vec<_> = journal.done.iter().map(DoneStep::describe).collect();
     assert_eq!(

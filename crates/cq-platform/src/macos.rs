@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use cq_core::{
-    Activity, Capabilities, PowerPlan, ServiceInfo, ServiceState, Snapshot, SystemStats,
+    Activity, Capabilities, Env, PowerPlan, ServiceInfo, ServiceState, Snapshot, SystemStats,
 };
 
 use crate::Platform;
@@ -218,9 +218,9 @@ impl Platform for MacOs {
     /// it is not CompuQuiet's child: macOS would otherwise name CompuQuiet in
     /// its microphone and file-access prompts. `open` starts it in the
     /// folder LaunchServices chooses, so the recorded one is not used.
-    fn launch(&self, exe: &Path, args: &[String], cwd: Option<&Path>) -> Result<()> {
+    fn launch(&self, exe: &Path, args: &[String], cwd: Option<&Path>, env: &Env) -> Result<()> {
         let Some(bundle) = app_bundle(exe).and_then(Path::to_str) else {
-            return spawn_detached(exe, args, cwd);
+            return spawn_detached(exe, args, cwd, env);
         };
         absolute(exe)?;
         if !Path::new(bundle).is_dir() {
@@ -232,6 +232,10 @@ impl Platform for MacOs {
             open.extend(args.iter().skip(1).map(String::as_str));
         }
         run_tool("open", &open).map(drop)
+    }
+
+    fn environment(&self, pid: u32, start_time: u64) -> Option<Vec<(String, String)>> {
+        self.sampler.environment(pid, start_time)
     }
 
     fn stop_service(&self, label: &str) -> Result<()> {

@@ -49,8 +49,12 @@ Dependencies point inward: `src-tauri` → `cq-platform` → `cq-core`.
    With `Profile::unload_ai_models` on, `cq_core::plan_unloads` then adds a
    `Step::UnloadModel` for each model `Platform::loaded_models` finds, before
    the purge, and says what was left alone (none loaded; LM Studio's tool not
-   run). The step has no undo (a model loads again when used) and so no
-   `DoneStep`: a journal never names it, and 1.1.7 reads every journal.
+   run; a llama.cpp server that answers badly). The step has no undo (a model
+   loads again when used) and so no `DoneStep`. A `llama-server` with one model
+   has no unload, so it comes as a `Step::CloseModelServer`, which is journaled
+   as a `ProcessClosed` with an additive `env` (see the model servers below)
+   and kept, not suspended, in an unattended run (a suspended server frees
+   nothing). 1.1.7 reads every such journal and ignores `env`.
    `Engine::plan_now` runs steps 1 and 2 and the guard for both a run and the
    read-only `Engine::preview`, so a preview cannot differ from what a press
    plans; the run always plans afresh and never uses an earlier preview.
@@ -242,16 +246,58 @@ model must fit in one card, and reading only, so nothing here changes the
 machine. Which programs hold the memory is not read.
 
 `Platform::loaded_models` and `unload_model` (`ai.rs`, shared as the trait's
-defaults) talk to local model servers. Ollama is reached over HTTP/1.0 on
-127.0.0.1 alone (only the port of `OLLAMA_HOST` is taken): `GET /api/ps`, then
-`POST /api/generate` with `keep_alive` 0, as `ollama stop` does, all within
-deadlines. LM Studio's REST API needs a key, so its `lms` tool is run
+defaults) talk to local model servers. All HTTP goes through `ai/http.rs`: a
+loopback address only (`cq_core::Endpoint`: a port on `127.0.0.1` or `::1`),
+HTTP/1.0 so a reply is never chunked, every wait bounded, a reply capped.
+Ollama is reached on 127.0.0.1 alone (only the port of `OLLAMA_HOST` is
+taken): `GET /api/ps`, then `POST /api/generate` with `keep_alive` 0, as
+`ollama stop` does, all within deadlines.
+
+llama.cpp (`ai/llama.rs`) is found in the process table the plan is made from,
+never by scanning ports: each `llama-server` and `llama-swap` with no
+`llama-server` or `llama-swap` anywhere above it (their children are theirs to
+unload). Host and port come from the command line (`--host`, `--port`, llama-
+swap's `-listen`, in any `--flag value` or `--flag=value` form), else from the
+server's own `LLAMA_ARG_HOST` and `LLAMA_ARG_PORT`, else the defaults (8080);
+only a wildcard, `localhost`, `127.0.0.1` or `::1` is reached, on the loopback
+addresses in turn, and a UNIX socket, another address, a certificate flag
+(HTTPS) or an unreadable command line leaves it alone with the reason. A
+server that does not answer is left alone, saying which address was tried. An
+API key (401 or 403) leaves it alone: keys are never held. `GET /props` tells a
+router (`"role":"router"`) from a server with one model. A router lists its
+models with `GET /models` (only `loaded` holds memory; its size is the
+instance's `meta.size`) and unloads one with `POST /models/unload`. llama-swap
+lists with `GET /running` (`{"running":[{"model","state",...}]}`, `stopping`
+skipped) and unloads with `POST /api/models/unload/<id>`, each segment of the
+id percent-encoded and an id with an empty or dot segment refused. A server
+with one model is offered as a close unless it is asleep (`is_sleeping`),
+has a slot working (`GET /slots`, asked last, and skipped when `/props` says
+the endpoint is off), carries a secret (`--api-key`, `-hft`/`--hf-token`, any
+flag named for a token, secret or password), has no model flag (its model is
+then in the environment), has a carried variable named for a key, token,
+secret or password, has an environment that cannot be read
+(`Platform::environment`, from sysinfo, where the OS lets this process), is
+run by a service manager (a parent of PID 1, `systemd`, `launchd` or `init`,
+or `services.exe` anywhere above it), is in a sandbox (`cq_core::sandboxed`),
+or has no program file, folder or full command line to start it from. What is
+carried is `cq_core::carried`: `CUDA_`, `HIP_` and `ROCR_VISIBLE_DEVICES`, and
+`GGML_*` and `LLAMA_ARG_*`, nothing else. A restore passes them through
+`Platform::launch`'s `env` over CompuQuiet's own environment (the Unix spawn,
+and on Windows a merged environment block for the shell user's token), and
+only the names `is_carried` allows, whatever a journal says.
+
+LM Studio's REST API needs a key, so its `lms` tool is run
 (`ps --json`, `unload <identifier>`), but only from `~/.lmstudio/bin` (never
 found on the search path), only while an LM Studio process is in the snapshot
 (the tool can start the app), and never when this process is elevated: the
 folder is the user's, so an elevated run would hand its executable those
 rights. A model's name is checked before it becomes an argument or JSON. The
-fake keeps a model list (`fake_models`, `Call::UnloadModel`).
+fake keeps a model list (`fake_models`, `Call::UnloadModel`) that serves
+Ollama, router and llama-swap models alike, and answers `Platform::environment`
+for a single-model `llama-server` it starts (`fake_llama_server`, which also
+reports the environment of the one running); a stopped one is started again by
+`Platform::launch` with only the carried variables, as a real launch passes
+them.
 
 `Capabilities` reports what this process can do at its privilege level; the
 planner skips what it cannot with the reason shown ("needs administrator
