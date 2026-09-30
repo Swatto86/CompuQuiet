@@ -30,7 +30,7 @@ impl Engine {
     /// data directory is locked), so this is the check behind that lock.
     pub(super) fn adopt_journal_on_disk(&self, inner: &mut Inner) -> Result<(), AppError> {
         match Journal::load(&self.data_dir) {
-            Ok(Some(journal)) if !journal.done.is_empty() => {
+            Ok(Some(journal)) if !journal.is_finished() => {
                 inner.journal = Some(journal);
                 inner.recovered = true;
                 Err(AppError::new(

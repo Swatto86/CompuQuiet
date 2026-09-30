@@ -96,6 +96,15 @@ impl Engine {
             inner.unrestored = unrestored;
         }
         if remaining == 0 {
+            // A run with nothing parked saved no progress above, so a hold or
+            // an ending still in the file would bring the run back if the
+            // delete fails: the file is emptied first.
+            if journal.done.is_empty()
+                && !journal.is_finished()
+                && let Err(error) = rest.save(&self.data_dir)
+            {
+                log::warn!("emptying the finished journal: {error}");
+            }
             self.clear_journal();
         } else {
             rest.save(&self.data_dir)?;

@@ -3,7 +3,7 @@
 
 use cq_core::journal::Summary;
 use cq_core::watch::{Ending, running};
-use cq_core::{CoreError, Journal, Recommendation, Settings, Step};
+use cq_core::{CoreError, Journal, Plan, Recommendation, Settings, Step};
 
 use super::preview::Planned;
 use super::{Engine, LogLine, RunReport, now};
@@ -43,7 +43,7 @@ impl Engine {
         let started_by = match &ending {
             Some(Ending::Trigger { program }) => {
                 plan.unattended();
-                Some(started_because(program))
+                Some(started_because(program, &plan))
             }
             _ => None,
         };
@@ -108,10 +108,11 @@ impl Engine {
     }
 
     /// A journal save failed mid-run: keep what was done where Restore can
-    /// see it, and change nothing more.
+    /// see it, and change nothing more. A hold on the PC or an ending is
+    /// kept too: they are in the file already, which is what a restart reads.
     fn stop_unrecorded(&self, journal: Journal, log: Vec<LogLine>, error: CoreError) -> AppError {
         let mut inner = self.lock();
-        inner.journal = (!journal.done.is_empty()).then_some(journal);
+        inner.journal = (!journal.is_finished()).then_some(journal);
         inner.log = log;
         error.into()
     }
@@ -189,15 +190,25 @@ fn used_profile(settings: &Settings) -> LogLine {
     }
 }
 
-/// Said at the top of the log of a run the watch started.
-fn started_because(program: &str) -> LogLine {
+/// Said at the top of the log of a run the watch started. A llama.cpp server
+/// with one model is the one thing it still stops (suspending it would free
+/// nothing), so the promise of closing nothing says so when the plan has it.
+fn started_because(program: &str, plan: &Plan) -> LogLine {
+    let closed = if plan
+        .steps
+        .iter()
+        .any(|step| matches!(step, Step::CloseModelServer(_)))
+    {
+        "Nothing is closed but a llama.cpp server with one model, which is started again when this ends, and"
+    } else {
+        "Nothing is closed and"
+    };
     LogLine {
         label: format!("Started because {program} is running"),
         ok: true,
-        detail: Some(
-            "Nothing is closed and cached memory is left alone, because you did not press the button"
-                .to_string(),
-        ),
+        detail: Some(format!(
+            "{closed} cached memory is left alone, because you did not press the button"
+        )),
     }
 }
 

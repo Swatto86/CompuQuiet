@@ -94,7 +94,8 @@ unless CompuQuiet runs as root.
    Quiet Mode by itself*, off until you turn it on) starts Quiet Mode ten
    seconds after one of a list of programs (a game, a local AI server) starts
    and puts everything back thirty seconds after the last has closed. Because
-   you did not press the button it suspends instead of closing programs,
+   you did not press the button it suspends instead of closing programs (only
+   a llama.cpp server with one model is still stopped, as that frees its model),
    leaves cached memory alone, never parks the programs on the list, and never
    ends or restarts a Quiet Mode you pressed for.
 8. **Keep the PC awake** (Park list > System, off by default) holds off sleep
@@ -116,7 +117,8 @@ unless CompuQuiet runs as root.
    `ROCR_VISIBLE_DEVICES`, `GGML_*` and `LLAMA_ARG_*`). It is left running, with
    the reason in the preview, when it is answering a request or asleep already,
    asks for an API key, holds a secret on its command line or among those
-   variables, is run by a service manager or in a sandbox, or cannot be read.
+   variables, is run by a service manager or in a sandbox, is on *Never
+   touch*, or cannot be read.
    LM Studio's `lms` tool is run only from `~/.lmstudio/bin`, only while LM
    Studio is running, and not when CompuQuiet has administrator rights (the
    tool sits in your user folder), which the preview says. A run that starts by

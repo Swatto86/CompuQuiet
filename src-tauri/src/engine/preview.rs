@@ -8,8 +8,8 @@ use std::path::Path;
 use std::sync::atomic::Ordering;
 
 use cq_core::{
-    Plan, ProcessInfo, Recommendation, Settings, Skipped, Snapshot, Step, audio, build_plan,
-    guard_battery, plan_unloads,
+    Plan, ProcessInfo, Recommendation, ServerClose, Settings, Skipped, Snapshot, Step, audio,
+    build_plan, guard_battery, plan_unloads,
 };
 use serde::Serialize;
 
@@ -142,7 +142,21 @@ impl Engine {
         // Asked of the servers only when the option is on, so a machine that
         // does not use it is never spoken to.
         if profile.unload_ai_models {
-            plan_unloads(&mut plan, self.platform.loaded_models(&snapshot.processes));
+            let mut found = self.platform.loaded_models(&snapshot.processes);
+            // A server the user promised never to touch is not stopped. It is
+            // said to be left alone, which also stops "none is loaded" being
+            // claimed while one is.
+            let (spared, closes) = std::mem::take(&mut found.closes)
+                .into_iter()
+                .partition(|close| profile.keeps_alive(&close.name));
+            found.closes = closes;
+            found
+                .skipped
+                .extend(spared.into_iter().map(|close: ServerClose| Skipped {
+                    name: close.name,
+                    reason: "on your keep-alive list".to_string(),
+                }));
+            plan_unloads(&mut plan, found);
         }
         Ok(Planned {
             snapshot,

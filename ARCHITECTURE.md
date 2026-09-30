@@ -49,7 +49,8 @@ Dependencies point inward: `src-tauri` → `cq-platform` → `cq-core`.
    With `Profile::unload_ai_models` on, `cq_core::plan_unloads` then adds a
    `Step::UnloadModel` for each model `Platform::loaded_models` finds, before
    the purge, and says what was left alone (none loaded; LM Studio's tool not
-   run; a llama.cpp server that answers badly). The step has no undo (a model
+   run; a llama.cpp server that answers badly; a `llama-server` on Never
+   touch, which `Engine::plan_now` sets aside first). The step has no undo (a model
    loads again when used) and so no `DoneStep`. A `llama-server` with one model
    has no unload, so it comes as a `Step::CloseModelServer`, which is journaled
    as a `ProcessClosed` with an additive `env` (see the model servers below)
@@ -87,7 +88,10 @@ Dependencies point inward: `src-tauri` → `cq-platform` → `cq-core`.
    with, and a power plan deleted meanwhile is replaced by Balanced
    (`Platform::restore_power` returns the plan now active). An emptied
    journal is deleted, with retries; one left on disk because the file stayed
-   locked counts as finished at the next launch. What a restore could not
+   locked counts as finished at the next launch (`Journal::is_finished`: no
+   entries, no hold and no ending, which `Journal::without` clears with the
+   last entry). A run with nothing parked that holds the PC awake or ends by
+   itself is not finished and is recovered like any other. What a restore could not
    undo is listed in `EngineState::unrestored`; only then does Home offer to
    give up on it (`Engine::give_up_restoring`), after a confirmation that
    names each entry, which moves `journal.json` to `journal.json.bad` and ends

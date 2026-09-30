@@ -182,7 +182,9 @@ impl Journal {
     }
 
     /// The journal still to be undone once the `resolved` entries are, and
-    /// without entries that have no undo.
+    /// without entries that have no undo. With none left, the run no longer
+    /// holds the PC awake or waits for anything either, so that what is saved
+    /// reads as [`finished`](Self::is_finished).
     pub fn without(&self, resolved: &HashSet<usize>) -> Journal {
         let mut rest = self.clone();
         rest.done = self
@@ -192,7 +194,19 @@ impl Journal {
             .filter(|(index, done)| !resolved.contains(index) && done.restore().is_some())
             .map(|(_, done)| done.clone())
             .collect();
+        if rest.done.is_empty() {
+            rest.awake = false;
+            rest.ending = None;
+        }
         rest
+    }
+
+    /// Nothing parked, nothing held awake and nothing waited for: what a
+    /// finished restore leaves when its file could not be deleted. A run that
+    /// only holds the PC awake, or only ends by itself, has no entries but is
+    /// not finished.
+    pub fn is_finished(&self) -> bool {
+        self.done.is_empty() && !self.awake && self.ending.is_none()
     }
 
     pub fn summary(&self) -> Summary {

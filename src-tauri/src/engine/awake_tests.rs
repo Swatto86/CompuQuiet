@@ -2,6 +2,7 @@
 //! before it happens, let go when the run is over and taken up again by a run
 //! that was recovered.
 
+use cq_core::watch::Until;
 use cq_core::{Marker, ProcessAction};
 use cq_platform::fake::{Call, Failure, Fake};
 
@@ -162,4 +163,72 @@ fn a_hold_the_system_refuses_is_a_failed_step_and_is_not_recorded_as_held() {
         summary.processes_suspended, 1,
         "the rest of the run went on"
     );
+}
+
+#[test]
+fn a_run_with_nothing_parked_keeps_its_hold_and_its_timer_across_a_restart() {
+    let dir = tempfile::tempdir().unwrap();
+    let fake = Arc::new(Fake::new());
+    let engine = keep_awake(&fake, dir.path()).unwrap();
+    // Nothing to park: the run is only the hold and the timer.
+    let mut settings = engine.settings();
+    settings.profile.processes.clear();
+    engine.save_settings(settings).unwrap();
+    let ending = engine.ending_from(Until::Minutes { minutes: 120 }).unwrap();
+    engine
+        .go_quiet(&|_| {}, Some(ending.clone()), None)
+        .unwrap();
+    assert!(fake.awake());
+    assert!(on_disk(dir.path()).unwrap().done.is_empty());
+    // The app died: what it held went with it.
+    fake.keep_awake(false).unwrap();
+
+    let recovered = Engine::new(fake.clone(), dir.path().to_path_buf());
+    let state = recovered.state();
+    assert!(state.quiet && state.recovered, "the run is still on");
+    assert!(state.summary.kept_awake && state.ending.is_some());
+    recovered.resume_awake();
+    assert!(fake.awake(), "the hold is taken up again");
+    assert_eq!(on_disk(dir.path()).unwrap().ending, Some(ending));
+
+    assert_eq!(recovered.restore(&|_| {}).unwrap(), 0);
+    assert!(!fake.awake());
+    assert!(!Journal::path(dir.path()).exists());
+    assert!(!Engine::new(fake, dir.path().to_path_buf()).state().quiet);
+}
+
+#[test]
+fn a_journal_that_stops_saving_right_after_the_hold_keeps_the_run_so_restore_can_let_go() {
+    let dir = tempfile::tempdir().unwrap();
+    let fake = Arc::new(Fake::new());
+    let engine = keep_awake(&fake, dir.path()).unwrap();
+    let path = Journal::path(dir.path());
+
+    // Once the hold is on, the journal's place is taken by a folder, so the
+    // next step cannot be recorded and the run stops.
+    let error = engine
+        .go_quiet(
+            &|line| {
+                if line.label == "Keep the PC awake" && path.is_file() {
+                    std::fs::remove_file(&path).unwrap();
+                    std::fs::create_dir(&path).unwrap();
+                }
+            },
+            None,
+            None,
+        )
+        .unwrap_err();
+
+    assert_eq!(error.code, "state");
+    assert!(fake.awake());
+    assert!(
+        engine.state().quiet && engine.state().summary.kept_awake,
+        "the hold is on record where Restore can see it"
+    );
+    assert_eq!(engine.state().summary.processes_suspended, 0);
+
+    std::fs::remove_dir(&path).unwrap();
+    assert_eq!(engine.restore(&|_| {}).unwrap(), 0);
+    assert!(!fake.awake());
+    assert!(!engine.state().quiet);
 }

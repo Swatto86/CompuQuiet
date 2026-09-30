@@ -124,10 +124,11 @@ impl Engine {
             unreadable_journal = Some(error.to_string());
             None
         });
-        // An emptied journal is a finished restore whose file could not be
-        // deleted at the time: nothing is parked.
+        // A finished journal is a restore whose file could not be deleted at
+        // the time. One with nothing parked that still holds the PC awake or
+        // ends by itself is a run, which takes those up again.
         let journal = match journal {
-            Some(journal) if journal.done.is_empty() => {
+            Some(journal) if journal.is_finished() => {
                 if let Err(error) = Journal::clear(&data_dir) {
                     log::warn!("deleting an empty journal: {error}");
                 }
@@ -365,6 +366,8 @@ mod tests;
 mod journal_tests;
 #[cfg(all(test, feature = "fake-platform"))]
 mod models_tests;
+#[cfg(all(test, feature = "fake-platform"))]
+mod server_tests;
 #[cfg(all(test, feature = "fake-platform"))]
 mod settings_tests;
 #[cfg(all(test, feature = "fake-platform"))]

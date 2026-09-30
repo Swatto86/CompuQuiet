@@ -294,6 +294,34 @@ fn what_a_restore_leaves_still_ends_and_holds_awake_as_the_run_did() {
 }
 
 #[test]
+fn a_restore_that_leaves_nothing_leaves_a_journal_that_reads_as_finished() {
+    let mut journal = sample();
+    journal.ending = Some(Ending::ProgramExits {
+        name: "game.exe".into(),
+    });
+    journal.awake = true;
+    assert!(!journal.is_finished());
+
+    let rest = journal.without(&(0..6).collect());
+    assert!(rest.done.is_empty() && !rest.awake && rest.ending.is_none());
+    assert!(rest.is_finished());
+}
+
+#[test]
+fn a_run_with_nothing_parked_is_finished_only_when_it_holds_and_awaits_nothing() {
+    let mut journal = Journal::new(1);
+    assert!(journal.is_finished());
+    journal.awake = true;
+    assert!(!journal.is_finished(), "it holds the PC awake");
+    journal.awake = false;
+    journal.ending = Some(Ending::At { uptime: 7_260 });
+    assert!(!journal.is_finished(), "it ends by itself");
+    journal.ending = None;
+    journal.record(DoneStep::MemoryPurged);
+    assert!(!journal.is_finished(), "something is on record");
+}
+
+#[test]
 fn the_profile_a_run_was_made_from_is_kept_and_a_journal_without_one_still_loads() {
     let dir = tempfile::tempdir().unwrap();
     let old = serde_json::json!({
