@@ -7,23 +7,25 @@
 //! check also runs when Quiet Mode ends). Installing ends the process, so it
 //! waits until nothing is running and the window is closed to the tray, where
 //! nobody can be part-way through an edit.
+//!
+//! With `auto_update` off the checks go on but nothing is downloaded or
+//! installed: the window is told a release is out and the person decides.
 
 mod guard;
+mod progress;
 
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError};
+use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
 use cq_core::Os;
-use serde::Serialize;
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Manager};
 use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_updater::UpdaterExt;
 
+pub use self::progress::Status;
+use self::progress::{set, state};
 use crate::engine::Engine;
-
-/// Sent to the window whenever [`Status`] changes.
-pub const EVENT: &str = "update-status";
 
 const STARTUP_DELAY: Duration = Duration::from_secs(8);
 /// How often a resident copy considers checking; [`RECHECK`] and
@@ -41,49 +43,6 @@ const INSTALL_POLL: Duration = Duration::from_secs(15);
 
 static IN_FLIGHT: AtomicBool = AtomicBool::new(false);
 static UNAVAILABLE: OnceLock<Option<&'static str>> = OnceLock::new();
-static STATE: Mutex<State> = Mutex::new(State {
-    status: Status::Idle,
-    last: None,
-});
-
-/// Where updating stands, for the window to show.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
-pub enum Status {
-    /// This copy cannot update itself; `reason` says why.
-    Unavailable {
-        reason: String,
-    },
-    /// Nothing checked yet.
-    Idle,
-    Checking,
-    UpToDate,
-    Downloading {
-        version: String,
-    },
-    /// Downloaded. It installs once no run is going, Quiet Mode is off and
-    /// the window is closed to the tray. `asks_permission`: Windows will show
-    /// its permission prompt then, because this copy sits in Program Files
-    /// and is not running as administrator.
-    Ready {
-        version: String,
-        asks_permission: bool,
-    },
-    /// The last attempt failed; the next one waits out the cool-down.
-    Failed {
-        error: String,
-    },
-}
-
-struct State {
-    status: Status,
-    /// When the last attempt ended, and whether it got an answer.
-    last: Option<(Instant, bool)>,
-}
-
-fn state() -> MutexGuard<'static, State> {
-    STATE.lock().unwrap_or_else(PoisonError::into_inner)
-}
 
 /// Why this copy cannot update itself, or `None` when it can.
 pub fn unavailable() -> Option<&'static str> {
@@ -99,19 +58,8 @@ pub fn status() -> Status {
     }
 }
 
-fn set(app: &AppHandle, status: Status) {
-    {
-        let mut state = state();
-        if state.status == status {
-            return;
-        }
-        state.status = status.clone();
-    }
-    let _ = app.emit(EVENT, &status);
-}
-
 /// Look now, whatever the cool-down says: the person asked. Returns at once;
-/// [`EVENT`] carries the outcome. Still one attempt at a time.
+/// the `update-status` event carries the outcome. Still one attempt at a time.
 pub fn check_now(app: &AppHandle) -> Status {
     if unavailable().is_none() {
         start(app);
@@ -213,6 +161,11 @@ async fn attempt(app: &AppHandle) -> tauri_plugin_updater::Result<()> {
         return Ok(());
     };
     let version = update.version.clone();
+    let engine = app.state::<Arc<Engine>>().inner().clone();
+    if let Some(status) = declined(engine.settings().auto_update, &version) {
+        set(app, status);
+        return Ok(());
+    }
     set(
         app,
         Status::Downloading {
@@ -222,23 +175,28 @@ async fn attempt(app: &AppHandle) -> tauri_plugin_updater::Result<()> {
     // The plugin leaves the download without a limit unless it is set here.
     update.timeout = Some(DOWNLOAD_TIMEOUT);
     let bytes = update.download(|_, _| {}, || {}).await?;
-    let engine = app.state::<Arc<Engine>>().inner().clone();
     let asks = asks_permission(&engine);
     set(
         app,
         Status::Ready {
-            version,
+            version: version.clone(),
             asks_permission: asks,
         },
     );
     loop {
+        // Switched off while it waited: what was fetched is dropped, and
+        // nothing installs until the switch is on again.
+        if let Some(status) = declined(engine.settings().auto_update, &version) {
+            set(app, status);
+            return Ok(());
+        }
         if may_install(idle(app), window_open(app)) {
             // On Windows `install` runs the installer and exits this process,
             // so it happens holding the engine: no run can be under way or
             // start, and a machine that went quiet or a window that opened
             // meanwhile is left alone until the next look.
             let installed = engine.claim_for_exit(|| {
-                if engine.is_quiet() || window_open(app) {
+                if engine.is_quiet() || window_open(app) || !engine.settings().auto_update {
                     return Err(None);
                 }
                 if engine.settings().notifications {
@@ -274,6 +232,14 @@ async fn attempt(app: &AppHandle) -> tauri_plugin_updater::Result<()> {
         }
         tokio::time::sleep(INSTALL_POLL).await;
     }
+}
+
+/// What to show instead of fetching `version` when automatic updates are off:
+/// that it exists, and nothing more.
+fn declined(auto_update: bool, version: &str) -> Option<Status> {
+    (!auto_update).then(|| Status::Available {
+        version: version.into(),
+    })
 }
 
 /// Installing will raise Windows' permission prompt ([`guard::asks_permission`]).
@@ -332,6 +298,17 @@ mod tests {
     }
 
     #[test]
+    fn a_release_found_with_automatic_updates_off_is_announced_not_fetched() {
+        assert_eq!(declined(true, "2.0.0"), None);
+        assert_eq!(
+            declined(false, "2.0.0"),
+            Some(Status::Available {
+                version: "2.0.0".into()
+            })
+        );
+    }
+
+    #[test]
     fn checks_are_spaced_and_a_failure_waits_out_the_cool_down() {
         let after = |ago: Duration, answered| due_after(Some((ago, answered)));
         assert!(due_after(None), "the first check is always due");
@@ -341,26 +318,5 @@ mod tests {
         assert!(after(COOL_DOWN, false));
         assert!(COOL_DOWN < RECHECK, "a failure is retried sooner");
         assert!(TICK <= COOL_DOWN, "the loop can notice a cool-down ending");
-    }
-
-    #[test]
-    fn the_window_is_told_the_status_by_kind() {
-        let json = |status: Status| serde_json::to_value(status).unwrap();
-        assert_eq!(json(Status::Idle), serde_json::json!({ "kind": "idle" }));
-        assert_eq!(
-            json(Status::Ready {
-                version: "2.0.0".into(),
-                asks_permission: true
-            }),
-            serde_json::json!({
-                "kind": "ready", "version": "2.0.0", "asks_permission": true
-            })
-        );
-        assert_eq!(
-            json(Status::Unavailable {
-                reason: "why".into()
-            }),
-            serde_json::json!({ "kind": "unavailable", "reason": "why" })
-        );
     }
 }

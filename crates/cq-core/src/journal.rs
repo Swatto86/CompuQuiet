@@ -181,6 +181,23 @@ impl DoneStep {
         })
     }
 
+    /// What was done, in a line that names the program, service or plan but
+    /// never a command line or folder: it is meant to be copied into a bug
+    /// report, and arguments can hold anything.
+    pub fn describe(&self) -> String {
+        match self {
+            DoneStep::PowerPlanChanged { previous } => {
+                format!("changed the power plan from {}", previous.name)
+            }
+            DoneStep::ServiceStopped { name } => format!("stopped service {name}"),
+            DoneStep::ProcessSuspended { name, pid, .. } => {
+                format!("suspended {name} (PID {pid})")
+            }
+            DoneStep::ProcessClosed { name, .. } => format!("closed {name}"),
+            DoneStep::MemoryPurged => "purged cached memory".into(),
+        }
+    }
+
     /// The step that undoes this one, if any.
     pub fn restore(&self) -> Option<RestoreStep> {
         match self {

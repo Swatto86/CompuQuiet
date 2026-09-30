@@ -24,6 +24,7 @@ export class SettingsView {
     this.bind("set-restore-quit", (s, on) => ({ ...s, restore_on_quit: on }));
     this.bind("set-auto-scan", (s, on) => ({ ...s, auto_scan: on }));
     this.bind("set-battery", (s, on) => ({ ...s, allow_on_battery: on }));
+    this.bind("set-auto-update", (s, on) => ({ ...s, auto_update: on }));
     byId<HTMLSelectElement>("set-theme").addEventListener("change", (event) => {
       const theme = (event.target as HTMLSelectElement).value as Theme;
       applyTheme(theme);
@@ -47,6 +48,7 @@ export class SettingsView {
       settings.restore_on_quit;
     byId<HTMLInputElement>("set-auto-scan").checked = settings.auto_scan;
     byId<HTMLInputElement>("set-battery").checked = settings.allow_on_battery;
+    byId<HTMLInputElement>("set-auto-update").checked = settings.auto_update;
     byId<HTMLSelectElement>("set-theme").value = settings.theme;
     byId("data-dir").textContent = info.data_dir;
   }

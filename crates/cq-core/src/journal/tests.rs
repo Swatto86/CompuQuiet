@@ -166,3 +166,29 @@ fn the_journal_survives_a_round_trip_and_a_newer_version_is_refused() {
     Journal::clear(dir.path()).unwrap();
     assert!(Journal::load(dir.path()).unwrap().is_none());
 }
+
+#[test]
+fn a_step_is_described_by_name_and_never_by_command_line_or_folder() {
+    let mut journal = sample();
+    journal.record(DoneStep::ProcessClosed {
+        name: "Chat.exe".into(),
+        exe: Some(PathBuf::from("C:/Users/A/Chat.exe")),
+        args: vec!["--token=hunter2".into()],
+        cwd: Some(PathBuf::from("C:/Users/A/secret")),
+    });
+    let lines: Vec<_> = journal.done.iter().map(DoneStep::describe).collect();
+    assert_eq!(
+        lines,
+        vec![
+            "changed the power plan from Balanced",
+            "stopped service SysMain",
+            "suspended OneDrive.exe (PID 10)",
+            "closed Dropbox.exe",
+            "closed Dropbox.exe",
+            "purged cached memory",
+            "closed Chat.exe",
+        ]
+    );
+    let text = lines.join("\n");
+    assert!(!text.contains("hunter2") && !text.contains("secret") && !text.contains("C:/"));
+}

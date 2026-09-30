@@ -55,3 +55,37 @@ fn an_emptied_journal_on_disk_does_not_stop_a_run() {
 
     assert!(engine.go_quiet(&|_| {}).is_ok());
 }
+
+#[test]
+fn the_steps_on_record_are_named_but_never_carry_a_program_path() {
+    let dir = tempfile::tempdir().unwrap();
+    let engine = engine(dir.path());
+    assert!(engine.steps_on_record().is_empty(), "nothing is parked");
+    let mut settings = engine.settings();
+    settings.auto_scan = false;
+    settings.profile.services = vec![cq_core::ServiceTarget {
+        name: "SysMain".into(),
+        enabled: true,
+    }];
+    settings.profile.processes = vec![cq_core::ProcessTarget {
+        name: "Dropbox".into(),
+        action: cq_core::ProcessAction::Close,
+        enabled: true,
+    }];
+    engine.save_settings(settings).unwrap();
+    engine.go_quiet(&|_| {}).unwrap();
+
+    let steps = engine.steps_on_record();
+    assert!(
+        steps.contains(&"stopped service SysMain".to_string()),
+        "{steps:?}"
+    );
+    assert!(
+        steps.iter().any(|step| step.starts_with("closed Dropbox")),
+        "{steps:?}"
+    );
+    // The journal holds where Dropbox started from; the report must not.
+    let journal = std::fs::read_to_string(Journal::path(dir.path())).unwrap();
+    assert!(journal.contains("C:/fake/"), "the premise: {journal}");
+    assert!(steps.iter().all(|step| !step.contains("C:/")), "{steps:?}");
+}

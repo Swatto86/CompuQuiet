@@ -7,17 +7,16 @@ constraints that are not visible in the code.
 
 - **2026-09-30: a preview is a look, a run measures itself, battery holds
   back power.** `Engine::plan_now` serves the run and the read-only preview;
-  a press always plans afresh. `RunReport` is read by the engine around a run
-  (memory only) and keeps what suspended programs still hold apart from what
-  came back. On battery (`Platform::on_battery`; unknown, a desktop and a UPS
-  count as mains) the power plan and purge are skipped unless
-  `allow_on_battery`. No format changes.
+  a press always plans afresh. `RunReport` (memory only) is read by the
+  engine around a run. On battery (`Platform::on_battery`; unknown, a desktop
+  and a UPS count as mains) the power plan and purge are skipped unless
+  `allow_on_battery`.
 - **2026-09-30: the Windows setup is per-machine (Program Files).** The
   elevated logon task must start a program ordinary processes cannot replace:
   it is HIGHEST only for an exe under `%ProgramFiles%` made by an elevated
   process, else unelevated with the reason shown. `src-tauri/windows/hooks.nsh`
-  removes a 1.1.x per-user copy (`%LOCALAPPDATA%\CompuQuiet`; data in
-  `%APPDATA%` is untouched), re-points the task and deletes it on uninstall;
+  removes a 1.1.x per-user copy (`%LOCALAPPDATA%\CompuQuiet`; data is
+  untouched), re-points the task and deletes it on uninstall;
   an installed copy re-points a stale task at start-up. An unelevated copy's
   update raises UAC, announced. Rollback: uninstall, install a 1.1.7 setup;
   settings and journal are unchanged.
@@ -29,13 +28,12 @@ constraints that are not visible in the code.
   naming each entry; `journal.json` moves to `journal.json.bad`, never
   deleted, as an unreadable journal does.
 - **2026-09-30: the memory purge is opt-in.** A new profile defaults to no
-  purge on every platform; a saved setting is kept as it is. The Scan tab may
-  still suggest it, but auto-scan never switches it on
-  (`low_risk_additions` skips it).
+  purge on every platform; a saved setting is kept as it is. Scan may suggest
+  it; auto-scan never switches it on.
 - **2026-09-30: an unreadable `settings.json` is never overwritten.** A
   damaged or newer file leaves the engine on the built-in settings, refusing
-  every save and Go Quiet; the banner moves it to `settings.json.bad` (then
-  `.bad-2`). Restore is unaffected.
+  every save and Go Quiet; the banner moves it to `settings.json.bad`.
+  Restore is unaffected.
 - **2026-09-30: one copy per data directory, by file lock.** The first copy
   locks `instance.lock`; a later launch leaves a request in `wake/` (a fixed
   command word, no arguments; `cq_core::instance`) and exits once the running
@@ -66,7 +64,7 @@ constraints that are not visible in the code.
   restart with `--reopen`.
 - **2026-09-30: failures are kept.** `compuquiet.log` holds warnings, errors,
   failed steps (label and code, never program arguments) and panics; a full
-  file becomes `.log.1`. A failed tray run reveals the window.
+  file becomes `.log.1`.
 - **2026-09-26: renamed to CompuQuiet.** A leftover `ComputeQuiet` settings
   folder, logon task or env override is still recognised. Tray actions run
   in Rust, so they work with the window hidden.
@@ -91,7 +89,11 @@ constraints that are not visible in the code.
   the NSIS installer, AppImage and macOS `.app.tar.gz` with the minisign key
   in `TAURI_SIGNING_PRIVATE_KEY` (public half in `tauri.conf.json`). Only a
   copy that can replace itself checks (`update/guard.rs`; never a debug or
-  fake build), once idle with the window closed to the tray.
+  fake build), once idle with the window closed to the tray. With
+  `auto_update` off a release is only announced, never fetched.
+- **2026-09-30: diagnostics stay local.** `diagnostics.rs` hides the home
+  folder as `~` in the whole report, names steps but never arguments, and
+  only reaches the clipboard.
 - **2026-09-19 (1.1.0): the scanner acts on low risk only.** `auto_scan` is
   on by default and parks low-risk finds for that run without editing the
   saved targets; medium-risk finds (browsers, launchers, voice chat, Office)

@@ -46,6 +46,11 @@ pub struct Settings {
     /// written before it existed.
     #[serde(default)]
     pub allow_on_battery: bool,
+    /// Download and install a newer release without being asked. Off, the
+    /// app still looks now and then and says a release is out, but installs
+    /// nothing. Absent in files written before it existed.
+    #[serde(default = "default_true")]
+    pub auto_update: bool,
 }
 
 fn default_true() -> bool {
@@ -64,6 +69,7 @@ impl Settings {
             restore_on_quit: true,
             auto_scan: true,
             allow_on_battery: false,
+            auto_update: true,
         }
     }
 
@@ -264,6 +270,26 @@ mod tests {
                 .unwrap()
                 .allow_on_battery
         );
+    }
+
+    #[test]
+    fn a_file_from_before_update_control_loads_with_updates_on_and_keeps_an_off_choice() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut value = serde_json::to_value(Settings::default_for(Os::Linux)).unwrap();
+        assert!(
+            value
+                .as_object_mut()
+                .unwrap()
+                .remove("auto_update")
+                .is_some()
+        );
+        std::fs::write(Settings::path(dir.path()), value.to_string()).unwrap();
+        let mut settings = Settings::load(dir.path(), Os::Linux).unwrap();
+        assert!(settings.auto_update);
+
+        settings.auto_update = false;
+        settings.save(dir.path()).unwrap();
+        assert!(!Settings::load(dir.path(), Os::Linux).unwrap().auto_update);
     }
 
     #[test]

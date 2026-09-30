@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use cq_core::journal::Summary;
-use cq_core::{Capabilities, CoreError, Journal, Os, Settings, Skipped, SystemStats};
+use cq_core::{Capabilities, CoreError, DoneStep, Journal, Os, Settings, Skipped, SystemStats};
 use cq_platform::Platform;
 use serde::Serialize;
 
@@ -178,6 +178,15 @@ impl Engine {
 
     pub fn is_quiet(&self) -> bool {
         self.lock().journal.is_some()
+    }
+
+    /// What the journal says was done, one line per step, by name only.
+    pub fn steps_on_record(&self) -> Vec<String> {
+        self.lock()
+            .journal
+            .as_ref()
+            .map(|journal| journal.done.iter().map(DoneStep::describe).collect())
+            .unwrap_or_default()
     }
 
     pub fn settings(&self) -> Settings {

@@ -238,6 +238,11 @@
               <label class="row-label"><span>Theme</span>
                 <select id="set-theme"><option value="system">Match system</option><option value="dark">Dark</option><option value="light">Light</option></select>
               </label>
+              <h3 class="group">Updates</h3>
+              <label class="choice"><input type="checkbox" id="set-auto-update" />
+                <span>Install updates automatically</span>
+                <span class="choice-help">When a newer release is out and Quiet Mode is off, CompuQuiet downloads it and installs it once you close the window to the tray. Off: it still looks now and then and says under About when a release is out, but installs nothing.</span>
+              </label>
             </div>
             <div class="card">
               <h3>Storage</h3>
@@ -253,12 +258,18 @@
             <div class="card card-wide about">
               <h3>About <span id="about-version" class="muted"></span></h3>
               <p>CompuQuiet frees the machine for games and local AI: parks background work, switches to a performance power plan and purges cached memory. One click puts everything back, and an undo journal means a crash cannot lose the list.</p>
-              <p class="muted">When a newer release is on GitHub and Quiet Mode is off, the Windows installer, the Linux AppImage and the macOS app download it and restart. The .deb and the portable copies stay on the version you installed.</p>
+              <p class="muted">The Windows installer, the Linux AppImage and the macOS app can update themselves. The .deb and the portable copies stay on the version you installed; get a newer one from the releases page.</p>
               <dl class="facts">
                 <dt>Platform</dt><dd id="about-os"></dd>
                 <dt>Build</dt><dd id="about-build"></dd>
                 <dt>Administrator</dt><dd id="about-admin"></dd>
                 <dt>Updates</dt><dd><span id="about-update" aria-live="polite"></span> <button id="update-check" type="button" class="small" disabled>Check now</button></dd>
+                <dt>Diagnostics</dt>
+                <dd>
+                  <button id="diagnostics-copy" type="button" class="small">Copy diagnostics</button>
+                  <span class="muted">Puts a report on the clipboard to paste into a bug report. It names programs and services, includes the last lines of the log, and shows your home folder as ~. Nothing is sent anywhere.</span>
+                  <textarea id="diagnostics-text" class="report" readonly rows="10" aria-label="Diagnostics report" hidden></textarea>
+                </dd>
                 <dt>Source</dt><dd>github.com/Swatto86/CompuQuiet</dd>
                 <dt>Licence</dt><dd>MIT</dd>
               </dl>

@@ -157,8 +157,11 @@ export function windowTheme(): Promise<string> {
 }
 
 /** Send an app event to every listener, the page's own included. */
-export function emitEvent(event: string): Promise<void> {
-  return invokeCommand("plugin:event|emit", { event, payload: null });
+export function emitEvent(
+  event: string,
+  payload: unknown = null,
+): Promise<void> {
+  return invokeCommand("plugin:event|emit", { event, payload });
 }
 
 /**

@@ -12,6 +12,7 @@ import {
   type Settings,
 } from "./bridge.ts";
 import { Dashboard } from "./dashboard.ts";
+import { Diagnostics } from "./diagnostics.ts";
 import { showDialog, toast } from "./dialog.ts";
 import { byId } from "./dom.ts";
 import { closeHint, homePlan } from "./format.ts";
@@ -107,6 +108,7 @@ async function boot(): Promise<void> {
   });
   await onRunError((error) => toast(error.message, true));
   await onConfirmQuit(() => void quitFlow());
+  new Diagnostics();
   new Updates().start().catch((error: unknown) => {
     toast(`Could not read the update status: ${errorMessage(error)}`, true);
   });

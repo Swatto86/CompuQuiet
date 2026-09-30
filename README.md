@@ -105,8 +105,11 @@ restart once nothing is running and the window is closed to the tray. On
 Windows an unelevated copy in Program Files shows the permission prompt for
 that install (a notification says so first); a copy running as administrator
 installs without one. The `.deb` and the portable copies do not update
-themselves. Settings > About shows where that stands, and *Check now* asks
-again. A copy built before
+themselves; get those from the releases page. Settings > About shows where
+that stands, and *Check now* asks again. *Install updates automatically* in
+Settings can be turned off: CompuQuiet then still looks now and then and says
+under About that a release is out, but downloads and installs nothing until
+you turn it back on. A copy built before
 this check existed has to be replaced by hand once; after that, later
 releases install on their own.
 
@@ -120,7 +123,14 @@ State lives in `%APPDATA%\CompuQuiet` (Windows), `~/.config/CompuQuiet`
 (Linux) or `~/Library/Application Support/CompuQuiet` (macOS):
 `settings.json` and, while Quiet Mode is on, `journal.json`. An
 `instance.lock` file in the same folder keeps a second copy from running
-beside the first.
+beside the first, and `compuquiet.log` records warnings, errors and failed
+steps.
+
+**Copy diagnostics** (Settings > About) puts a report on the clipboard for a
+bug report: the version, the system, whether it runs as administrator, what
+Quiet Mode has parked (by name, never a command line), what could not be put
+back, and the last lines of the log. Your home folder is shown as `~`. It goes
+to the clipboard for you to read before you paste it, and nowhere else.
 
 ## Building from source
 

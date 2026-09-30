@@ -157,10 +157,19 @@ test("the close hint follows the tray setting", () => {
 
 test("every update state has a sentence, and only some allow a check", () => {
   const states: [UpdateStatus, RegExp, boolean][] = [
-    [{ kind: "unavailable", reason: "A development build." }, /^A dev/, false],
+    [
+      { kind: "unavailable", reason: "A development build." },
+      /^A development build\. Newer releases are at github\.com\/Swatto86\/CompuQuiet\/releases\.$/,
+      false,
+    ],
     [{ kind: "idle" }, /now and then/, true],
     [{ kind: "checking" }, /Looking/, false],
     [{ kind: "up_to_date" }, /latest release/, true],
+    [
+      { kind: "available", version: "1.2.0" },
+      /1\.2\.0 is available.*Turn on Install updates automatically.*releases\.$/,
+      true,
+    ],
     [{ kind: "downloading", version: "1.2.0" }, /Downloading 1\.2\.0/, false],
     [
       { kind: "ready", version: "1.2.0", asks_permission: false },

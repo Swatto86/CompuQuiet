@@ -7,7 +7,7 @@
 //! console, so without that line a crash would leave no trace of why.
 
 use std::fs::{File, OpenOptions};
-use std::io::Write;
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 
@@ -77,6 +77,53 @@ fn rotate(data_dir: &Path) {
     }
 }
 
+/// The end of the log, for the diagnostics.
+pub struct Tail {
+    /// Whole lines, the last `max_bytes` of the file at most.
+    pub text: String,
+    /// Earlier lines were left out.
+    pub cut: bool,
+}
+
+/// The last `max_bytes` of the log, starting at a line. A log that does not
+/// exist yet is empty, not an error: nothing has gone wrong to write down.
+pub fn tail(data_dir: &Path, max_bytes: u64) -> std::io::Result<Tail> {
+    let mut file = match File::open(path(data_dir)) {
+        Ok(file) => file,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(Tail {
+                text: String::new(),
+                cut: false,
+            });
+        }
+        Err(error) => return Err(error),
+    };
+    let len = file.metadata()?.len();
+    let cut = len > max_bytes;
+    if cut {
+        // One byte more than wanted: whether it is a newline says if the
+        // window starts on a line.
+        file.seek(SeekFrom::Start(len - max_bytes - 1))?;
+    }
+    let mut bytes = Vec::new();
+    file.take(max_bytes.saturating_add(1))
+        .read_to_end(&mut bytes)?;
+    if cut {
+        let skip = if bytes.first() == Some(&b'\n') {
+            1
+        } else {
+            // Part-way through a line, and maybe through a character.
+            bytes
+                .iter()
+                .position(|&byte| byte == b'\n')
+                .map_or(bytes.len(), |end| end + 1)
+        };
+        bytes.drain(..skip);
+    }
+    let text = String::from_utf8_lossy(&bytes).into_owned();
+    Ok(Tail { text, cut })
+}
+
 /// Route `log` warnings and errors, and panics, to the file. Failing to open
 /// it leaves logging off rather than stopping the app.
 pub fn install(data_dir: &Path) {
@@ -116,7 +163,36 @@ fn log_panics() {
 
 #[cfg(test)]
 mod tests {
-    use super::{FILE_NAME, MAX_BYTES, install, previous, rotate};
+    use super::{FILE_NAME, MAX_BYTES, install, previous, rotate, tail};
+
+    #[test]
+    fn the_tail_is_whole_lines_from_the_end_and_a_missing_log_is_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        let none = tail(dir.path(), 100).unwrap();
+        assert!(none.text.is_empty() && !none.cut, "no log yet");
+
+        let log = dir.path().join(FILE_NAME);
+        std::fs::write(&log, "first line\nsecond line\n").unwrap();
+        let whole = tail(dir.path(), 100).unwrap();
+        assert_eq!(whole.text, "first line\nsecond line\n");
+        assert!(!whole.cut);
+
+        // A window that begins exactly on the second line keeps it...
+        let cut = tail(dir.path(), 12).unwrap();
+        assert_eq!(cut.text, "second line\n");
+        assert!(cut.cut);
+        // ...and one that begins inside the first line drops that line's tail
+        // rather than show it in part.
+        assert_eq!(tail(dir.path(), 15).unwrap().text, "second line\n");
+
+        // Cut through the middle of a multi-byte character.
+        std::fs::write(&log, "\u{e9}\u{e9}\u{e9}\nlast\n").unwrap();
+        assert_eq!(tail(dir.path(), 8).unwrap().text, "last\n");
+
+        // One line longer than the limit leaves nothing whole to show.
+        std::fs::write(&log, "x".repeat(50)).unwrap();
+        assert_eq!(tail(dir.path(), 10).unwrap().text, "");
+    }
 
     #[test]
     fn a_full_log_is_kept_as_the_previous_one_not_wiped() {

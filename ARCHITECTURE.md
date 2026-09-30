@@ -140,7 +140,7 @@ exist only with the `fake-platform` feature.
 ## The window (`ui/`)
 
 No framework: one module per view (`dashboard`, `scan`, `targets`,
-`settings-view`, `updates`), `main.ts` for boot and the flows that span views,
+`settings-view`, `updates`, `diagnostics`), `main.ts` for boot and the flows that span views,
 `tabs.ts` for the tab bar, and pure helpers with `node --test` tests
 (`format`, `scan-select`, `profile-edit`). Conventions that are not visible in
 the code:
@@ -223,14 +223,31 @@ the code:
   minutes, so a stalled connection cannot hold the single attempt slot. A
   found update is downloaded at once but installed only when no run is going,
   Quiet Mode is off and the window is hidden (installing ends the process), and
-  the restart goes through `single::restart`, as `reopen` does. `update::Status`
-  (commands `update_status`, `check_for_updates`; event `update-status`) is
-  what the window shows. The Windows setup is per-machine, so an unelevated
+  the restart goes through `single::restart`, as `reopen` does. With
+  `Settings::auto_update` off (default on; saving it on again checks at once)
+  the checks go on but a found release is only announced
+  (`Status::Available`): nothing is downloaded, and a download already waiting
+  is dropped. `update::Status` (in `update/progress.rs`; commands
+  `update_status`, `check_for_updates`; event `update-status`) is what the
+  window shows. The Windows setup is per-machine, so an unelevated
   copy's install raises the permission prompt (`ShellExecute` "open" on an
   administrator-manifest installer): `Status::Ready.asks_permission` and the
   "Updating to ..." notification say so beforehand, and a refusal is a `Failed`
   status with the ordinary 6-hour look next, not the hourly retry. An
   elevated copy installs silently.
+- Diagnostics (`diagnostics.rs`, `ui/src/diagnostics.ts`): the `diagnostics`
+  command takes no argument and returns one text, which the page writes to the
+  clipboard (and, if the webview refuses that, shows in a box to copy by hand).
+  It is built in one place: `machine` (version, system, capabilities, data
+  folder, park list counts, update status), `quiet_mode` (when it began, the
+  journal's steps from `Engine::steps_on_record` / `DoneStep::describe`, which
+  name a step and never carry a command line, folder or path; what a restore
+  left; the last run; what was left alone) and the last 16 KiB of
+  `compuquiet.log` from a line start (`logfile::tail`). Every list is cut at
+  40 items. `redact` then shows the home folder as `~` in the whole text, in
+  any spelling of the path, so no part can be forgotten. It is never sent
+  anywhere. An 8.3 short spelling of the home folder (`NAME~1`) is not
+  recognised.
 - Autostart: `schtasks` logon task on Windows (elevated only when created by
   an elevated process *and* the exe is under Program Files, where only
   administrators can replace it; otherwise unelevated, and

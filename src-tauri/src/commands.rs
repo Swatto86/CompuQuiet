@@ -66,8 +66,20 @@ pub fn default_settings() -> Settings {
 }
 
 #[tauri::command]
-pub fn save_settings(engine: State<'_, Arc<Engine>>, settings: Settings) -> Result<(), AppError> {
-    engine.save_settings(settings)
+pub fn save_settings(
+    app: AppHandle,
+    engine: State<'_, Arc<Engine>>,
+    settings: Settings,
+) -> Result<(), AppError> {
+    let was_on = engine.settings().auto_update;
+    let now_on = settings.auto_update;
+    engine.save_settings(settings)?;
+    // Turning automatic installs back on asks for the release that was only
+    // announced while they were off, without waiting for the next look.
+    if now_on && !was_on {
+        crate::update::check_now(&app);
+    }
+    Ok(())
 }
 
 /// Keep an unreadable settings.json as settings.json.bad and go on with the
@@ -233,14 +245,14 @@ pub async fn set_autostart(app: AppHandle, enabled: bool) -> Result<AutostartSta
     tauri::async_runtime::spawn_blocking(move || autostart::set(&app, enabled)).await?
 }
 
-/// Where self-updating stands. Changes arrive as `update::EVENT`.
+/// Where self-updating stands. Changes arrive as the `update-status` event.
 #[tauri::command]
 pub fn update_status() -> crate::update::Status {
     crate::update::status()
 }
 
 /// Check for an update now, whatever the cool-down says. Returns at once with
-/// the status; the outcome arrives as `update::EVENT`.
+/// the status; the outcome arrives as the `update-status` event.
 #[tauri::command]
 pub fn check_for_updates(app: AppHandle) -> crate::update::Status {
     crate::update::check_now(&app)

@@ -4,6 +4,7 @@
 
 mod autostart;
 mod commands;
+mod diagnostics;
 mod engine;
 mod error;
 mod logfile;
@@ -202,6 +203,7 @@ pub fn run() {
             commands::set_autostart,
             commands::update_status,
             commands::check_for_updates,
+            diagnostics::diagnostics,
             commands::relaunch_elevated,
             commands::quit,
             commands::show_window,

@@ -41,6 +41,8 @@ export interface Settings {
   auto_scan: boolean;
   /** Run the performance plan and the memory purge on battery too. */
   allow_on_battery: boolean;
+  /** Download and install a newer release without being asked. */
+  auto_update: boolean;
 }
 
 export type Risk = "low" | "medium";
@@ -205,6 +207,7 @@ export type UpdateStatus =
   | { kind: "idle" }
   | { kind: "checking" }
   | { kind: "up_to_date" }
+  | { kind: "available"; version: string }
   | { kind: "downloading"; version: string }
   | { kind: "ready"; version: string; asks_permission: boolean }
   | { kind: "failed"; error: string };
@@ -260,6 +263,8 @@ export const api = {
     invoke<AutostartStatus>("set_autostart", { enabled }),
   updateStatus: () => invoke<UpdateStatus>("update_status"),
   checkForUpdates: () => invoke<UpdateStatus>("check_for_updates"),
+  /** A report for the clipboard, built and redacted in Rust. */
+  diagnostics: () => invoke<string>("diagnostics"),
   relaunchElevated: () => invoke<void>("relaunch_elevated"),
   quit: (restoreFirst: boolean) => invoke<void>("quit", { restoreFirst }),
 };

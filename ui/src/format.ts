@@ -155,17 +155,22 @@ export function closeHint(closeToTray: boolean): string {
     : "Closing this window quits CompuQuiet. Turn on Keep running in the tray in Settings to leave it running instead.";
 }
 
+/** Where a copy that cannot update itself, or has it switched off, gets the release. */
+export const RELEASES_PAGE = "github.com/Swatto86/CompuQuiet/releases";
+
 /** Where self-updating stands, in a sentence for the About card. */
 export function updateLine(status: UpdateStatus): string {
   switch (status.kind) {
     case "unavailable":
-      return status.reason;
+      return `${status.reason} Newer releases are at ${RELEASES_PAGE}.`;
     case "idle":
       return "Looks for a newer release now and then while CompuQuiet runs.";
     case "checking":
       return "Looking for a newer release…";
     case "up_to_date":
       return "This is the latest release.";
+    case "available":
+      return `${status.version} is available. Turn on Install updates automatically to get it, or download it from ${RELEASES_PAGE}.`;
     case "downloading":
       return `Downloading ${status.version}…`;
     case "ready":
@@ -184,6 +189,7 @@ export function canCheckForUpdates(status: UpdateStatus): boolean {
   return (
     status.kind === "idle" ||
     status.kind === "up_to_date" ||
+    status.kind === "available" ||
     status.kind === "failed"
   );
 }

@@ -138,6 +138,7 @@ export const config: WebdriverIO.Config = {
       "persist",
       "settings-guard",
       "stuck-restore",
+      "diagnostics",
       "tray-failure",
       "second-launch",
       "exit",
