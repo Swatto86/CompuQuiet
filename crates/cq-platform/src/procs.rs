@@ -131,9 +131,14 @@ impl Sampler {
         system.refresh_cpu_usage();
         system.refresh_memory();
         // Enumerated only to be counted (and to forget the ones that ended):
-        // no per-process figure is read.
+        // no per-process figure is read. Counted as `processes` lists them,
+        // so Linux's kernel threads do not swell the figure.
         system.refresh_processes_specifics(ProcessesToUpdate::All, true, Self::listing_kind());
-        let process_count = system.processes().len();
+        let process_count = system
+            .processes()
+            .values()
+            .filter(|process| process.thread_kind().is_none())
+            .count();
         SystemStats {
             cpu_percent: system.global_cpu_usage(),
             memory_total: system.total_memory(),
