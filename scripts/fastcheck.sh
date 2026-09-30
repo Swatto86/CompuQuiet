@@ -19,5 +19,6 @@ else
   cargo clippy --locked --workspace --all-targets --features compuquiet/fake-platform -- -D warnings
   echo "== frontend types =="
   npx --no-install tsc --noEmit
+  npx --no-install tsc --noEmit -p e2e
 fi
 printf '\nFAST CHECK PASSED\n'

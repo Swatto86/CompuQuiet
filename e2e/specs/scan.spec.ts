@@ -88,7 +88,7 @@ describe("Scan", () => {
 
   it("lists finds with low risk pre-ticked and existing targets greyed out", async () => {
     await browser.waitUntil(
-      async () => (await $$("#scan-rows tr")).length > 1,
+      async () => (await $$("#scan-rows tr").length) > 1,
       {
         timeout: 15_000,
         timeoutMsg: "the scan produced no rows",

@@ -50,13 +50,20 @@ export async function waitForPill(
   expected: string,
   timeout = 30_000,
 ): Promise<void> {
-  await browser.waitUntil(
-    async () => (await text("#status-pill")) === expected,
-    {
-      timeout,
-      timeoutMsg: `the status pill never read "${expected}" (it reads "${await text("#status-pill")}")`,
-    },
-  );
+  try {
+    await browser.waitUntil(
+      async () => (await text("#status-pill")) === expected,
+      { timeout },
+    );
+  } catch (cause) {
+    // Read the pill now: an option built before the wait would report the
+    // state from before the click, not the one that never changed.
+    const now = await text("#status-pill").catch(() => "unreadable");
+    throw new Error(
+      `the status pill never read "${expected}" (it reads "${now}")`,
+      { cause },
+    );
+  }
 }
 
 /** Click the in-app dialog's button whose label matches, failing loudly if none. */

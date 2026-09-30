@@ -38,6 +38,11 @@ echo "release features OK"
 say "frontend types"
 npm run --silent build
 
+say "e2e types"
+# The specs run through tsx, which strips types, so a wrong wdio call would
+# otherwise surface only as a runtime failure after the debug build below.
+npx --no-install tsc --noEmit -p e2e
+
 say "frontend formatting"
 npx --no-install prettier --check "ui/src/**/*.ts" "e2e/**/*.ts"
 

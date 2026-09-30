@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { appPids, prepareWorkspace } from "./workspace.ts";
+import { appPids, DATA_DIR_ENV, prepareWorkspace } from "./workspace.ts";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "..");
@@ -16,9 +16,22 @@ export const application =
     `target/debug/compuquiet${process.platform === "win32" ? ".exe" : ""}`,
   );
 
+/**
+ * Text that only a fake-platform build contains: the fake machine seeds its
+ * process table under it (crates/cq-platform/src/fake.rs). A real-platform
+ * binary at the same path passes every other check here, and the specs would
+ * then suspend and close the programs of the machine running them.
+ */
+const FAKE_PLATFORM_MARKER = "C:/fake/";
+
 function assertFreshBuild(exe: string): void {
   if (!fs.existsSync(exe)) {
     throw new Error(`no binary at ${exe} — build it with: npm run e2e:build`);
+  }
+  if (!fs.readFileSync(exe).includes(FAKE_PLATFORM_MARKER)) {
+    throw new Error(
+      `${exe} was not built with the fake platform, so the suite would drive this machine for real. Rebuild it with: npm run e2e:build`,
+    );
   }
   const built = fs.statSync(exe).mtimeMs;
   const distIndex = path.resolve(root, "ui/dist/index.html");
@@ -98,6 +111,16 @@ function assertMicrosoftDriver(driver: string): void {
   }
 }
 
+/** What in the data directory explains a failed test: the app's own record. */
+const EVIDENCE_FILES = [
+  "compuquiet.log",
+  "compuquiet.log.1",
+  "journal.json",
+  "settings.json",
+];
+
+let failures = 0;
+
 export const config: WebdriverIO.Config = {
   runner: "local",
   framework: "mocha",
@@ -176,17 +199,37 @@ export const config: WebdriverIO.Config = {
     }
   },
 
-  afterTest: async (_test, _context, { passed }) => {
+  afterTest: async (test, _context, { passed }) => {
     if (passed) return;
-    const evidence = path.join(
-      process.env["RUNNER_TEMP"] ?? process.env["COMPUQUIET_DATA_DIR"]!,
+    const dataDir = process.env[DATA_DIR_ENV]!;
+    const label = (test.fullName ?? test.title)
+      .replace(/[^A-Za-z0-9]+/g, "-")
+      .slice(0, 80);
+    // One folder per failed test, so a later failure cannot overwrite the
+    // first. CI uploads RUNNER_TEMP/compuquiet-failure whole.
+    const folder = path.join(
+      process.env["RUNNER_TEMP"] ?? dataDir,
       "compuquiet-failure",
+      `${++failures}-${label}`,
     );
     try {
-      await browser.saveScreenshot(`${evidence}.png`);
-      const url = await browser.getUrl();
-      const source = (await browser.getPageSource()).length;
-      console.error(`[diagnostic] url=${url} source=${source} chars`);
+      fs.mkdirSync(folder, { recursive: true });
+      for (const name of EVIDENCE_FILES) {
+        const file = path.join(dataDir, name);
+        if (fs.existsSync(file)) fs.copyFileSync(file, path.join(folder, name));
+      }
+    } catch (error) {
+      console.error(`[diagnostic] data files not kept: ${String(error)}`);
+    }
+    try {
+      await browser.saveScreenshot(path.join(folder, "window.png"));
+      fs.writeFileSync(
+        path.join(folder, "page.html"),
+        await browser.getPageSource(),
+      );
+      console.error(
+        `[diagnostic] url=${await browser.getUrl()}; evidence in ${folder}`,
+      );
     } catch (error) {
       console.error(`[diagnostic] no session to capture: ${String(error)}`);
     }

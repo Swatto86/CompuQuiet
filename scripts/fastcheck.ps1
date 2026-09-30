@@ -30,6 +30,8 @@ try {
         Write-Host '== frontend types ==' -ForegroundColor Cyan
         npx --no-install tsc --noEmit
         if ($LASTEXITCODE -ne 0) { throw 'tsc failed' }
+        npx --no-install tsc --noEmit -p e2e
+        if ($LASTEXITCODE -ne 0) { throw 'tsc failed for e2e' }
     }
     Write-Host "`nFAST CHECK PASSED" -ForegroundColor Green
 }
