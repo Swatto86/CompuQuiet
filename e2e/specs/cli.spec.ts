@@ -62,6 +62,9 @@ describe("the command line", () => {
 
     assert.equal(await launchAgain(["--quiet"]), 0);
     await untilJournal(dir, true);
+    // Each step is on record before it happens, so the journal appears while
+    // the run is still going: read it once the run has finished.
+    await waitForPill("Quiet");
     assert.equal(await windowVisible(), false, "the window was brought up");
     const kinds = journalKinds(dir);
     assert.ok(kinds?.includes("process_suspended"), `${kinds}`);
@@ -92,8 +95,10 @@ describe("the command line", () => {
     // Sent one after the other, the last says where it ends.
     assert.equal(await launchAgain(["--quiet"]), 0);
     assert.equal(await launchAgain(["--restore"]), 0);
-    await browser.pause(3_000);
-    assert.equal(journalKinds(dir), undefined, "the restore was lost");
+    await browser.waitUntil(async () => journalKinds(dir) === undefined, {
+      timeout: 20_000,
+      timeoutMsg: "the restore was lost",
+    });
 
     assert.equal(await windowVisible(), false, "the window was brought up");
     assert.deepEqual(requestsLeft(dir), [], "a request was left behind");
@@ -145,9 +150,14 @@ describe("the command line", () => {
       copy.once("exit", () => resolve()),
     );
     try {
-      await untilJournal(dir, true);
-      const kinds = journalKinds(dir);
-      assert.ok(kinds?.includes("process_suspended"), `${kinds}`);
+      // The journal appears with the run's first step; wait for a later one.
+      await browser.waitUntil(
+        async () => journalKinds(dir)?.includes("process_suspended") === true,
+        {
+          timeout: 20_000,
+          timeoutMsg: "the copy never parked a program",
+        },
+      );
       // It is the running copy now: a later launch reaches it.
       assert.equal(await launchAgain(["--restore"], env), 0);
       await untilJournal(dir, false);
