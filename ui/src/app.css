@@ -6,6 +6,8 @@ html,
 body {
   margin: 0;
   height: 100%;
+  /* A desktop window: only the views scroll, never the page itself. */
+  overflow: hidden;
   background: var(--bg);
   color: var(--fg);
   font-family: var(--font);
@@ -250,8 +252,30 @@ button.linkish:hover {
 /* Main layout */
 main {
   flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Each view scrolls on its own. Positioned, so absolutely placed content
+   (the screen-reader labels) stays inside it instead of stretching the
+   page and giving the window a second scrollbar. */
+.view,
+.view-body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
   overflow: auto;
   padding: 20px;
+}
+
+/* A view with an action bar scrolls its body above the bar; the bar sits
+   below the content, never over it. */
+.view.with-actions {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0;
 }
 
 .view[hidden] {
@@ -634,14 +658,11 @@ h3.group {
 
 .actions {
   display: flex;
+  flex: none;
   align-items: center;
   gap: 10px;
-  position: sticky;
-  bottom: 0;
-  z-index: 2;
-  margin-top: 16px;
-  padding: 12px 0;
-  background: color-mix(in srgb, var(--bg) 92%, transparent);
+  padding: 12px 20px;
+  background: var(--bg-elev);
   border-top: 1px solid var(--border);
 }
 
