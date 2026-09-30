@@ -134,6 +134,17 @@ export function fakeHeal(): Promise<void> {
   return invokeCommand("fake_heal", {});
 }
 
+/** Where self-updating stands, and the manual check that asks again. */
+export type UpdateStatus = { kind: string; reason?: string };
+
+export function updateStatus(): Promise<UpdateStatus> {
+  return invokeCommand<UpdateStatus>("update_status", {});
+}
+
+export function checkForUpdates(): Promise<UpdateStatus> {
+  return invokeCommand<UpdateStatus>("check_for_updates", {});
+}
+
 export async function screenshot(name: string): Promise<void> {
   await browser.saveScreenshot(path.join(dataDir(), `${name}.png`));
 }

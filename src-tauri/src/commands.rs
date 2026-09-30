@@ -206,6 +206,19 @@ pub async fn set_autostart(app: AppHandle, enabled: bool) -> Result<AutostartSta
     tauri::async_runtime::spawn_blocking(move || autostart::set(&app, enabled)).await?
 }
 
+/// Where self-updating stands. Changes arrive as `update::EVENT`.
+#[tauri::command]
+pub fn update_status() -> crate::update::Status {
+    crate::update::status()
+}
+
+/// Check for an update now, whatever the cool-down says. Returns at once with
+/// the status; the outcome arrives as `update::EVENT`.
+#[tauri::command]
+pub fn check_for_updates(app: AppHandle) -> crate::update::Status {
+    crate::update::check_now(&app)
+}
+
 fn busy() -> AppError {
     AppError::new("busy", "Wait for the current run to finish")
 }

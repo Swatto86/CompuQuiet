@@ -146,6 +146,16 @@ export interface AutostartStatus {
   reason: string | null;
 }
 
+/** Where self-updating stands; mirrors `update::Status` in src-tauri. */
+export type UpdateStatus =
+  | { kind: "unavailable"; reason: string }
+  | { kind: "idle" }
+  | { kind: "checking" }
+  | { kind: "up_to_date" }
+  | { kind: "downloading"; version: string }
+  | { kind: "ready"; version: string }
+  | { kind: "failed"; error: string };
+
 export interface AppInfo {
   version: string;
   os: Os;
@@ -194,6 +204,8 @@ export const api = {
   getAutostart: () => invoke<AutostartStatus>("get_autostart"),
   setAutostart: (enabled: boolean) =>
     invoke<AutostartStatus>("set_autostart", { enabled }),
+  updateStatus: () => invoke<UpdateStatus>("update_status"),
+  checkForUpdates: () => invoke<UpdateStatus>("check_for_updates"),
   relaunchElevated: () => invoke<void>("relaunch_elevated"),
   quit: (restoreFirst: boolean) => invoke<void>("quit", { restoreFirst }),
 };
@@ -208,6 +220,14 @@ export function onState(
   handler: (state: EngineState) => void,
 ): Promise<UnlistenFn> {
   return listen<EngineState>("quiet-state", (event) => handler(event.payload));
+}
+
+export function onUpdateStatus(
+  handler: (status: UpdateStatus) => void,
+): Promise<UnlistenFn> {
+  return listen<UpdateStatus>("update-status", (event) =>
+    handler(event.payload),
+  );
 }
 
 export function onConfirmQuit(handler: () => void): Promise<UnlistenFn> {

@@ -20,8 +20,7 @@ the decisions and constraints that are not visible in the code.
 - **2026-09-30: an unreadable `settings.json` is never overwritten.** A
   damaged or newer file leaves the engine on the built-in settings, refusing
   every save and Go Quiet. The banner's action moves the file to
-  `settings.json.bad` (then `.bad-2`, never replacing a copy); a file that no
-  longer exists is simply resolved.
+  `settings.json.bad` (then `.bad-2`, never replacing a copy).
   Restore is unaffected. `store.rs` retries the rename and the read for the
   Windows access-denied and sharing errors an antivirus scan causes.
 - **2026-09-30: one copy per data directory, by file lock.** The first copy
@@ -43,7 +42,7 @@ the decisions and constraints that are not visible in the code.
   resume look like "a different program" and dropped it, leaving it stopped. `ProcessInfo.start_time` is now
   seconds since boot on Linux; a recorded value of 10^9 or more is an older
   wall-clock one, still accepted; restore before downgrading to 1.1.7, which
-  would not resume those. Threads are never listed.
+  would not resume those.
 - **Every step is on record before it happens, and every undo is safe to
   repeat.** A crash mid-step or mid-restore strands nothing and repeats
   nothing; restore saves after each step and never relaunches a command line
@@ -51,20 +50,18 @@ the decisions and constraints that are not visible in the code.
 - **Leaving never cuts a run short.** Quit, the tray's Quit, elevated
   relaunch and the updater's install claim the engine
   (`Engine::claim_for_exit`) and wait or refuse while a run is in progress.
-
 - **2026-09-29: a window that never loaded restarts the app once.** The
   elevated logon launch sometimes gets no WebView2; Tauri only logs that, so
   the tray ran with no window behind it. Tray
   actions and a second launch now restart with `--reopen`, and warnings and
   errors go to `compuquiet.log` in the data directory so the cause is kept.
-
 - **2026-09-26: renamed to CompuQuiet.** Product, crate (`compuquiet`),
   identifier (`co.swatto.compuquiet`), data dir and env vars follow the new
   name; a leftover `ComputeQuiet` settings folder / logon task / env override
   is still recognised so upgrades keep state. Tray menu actions run entirely
   in Rust so Quit / Open / toggle work even when the window is hidden.
-- **2026-09-19: rewritten as Rust + Tauri 2, cross-platform.** The previous
-  C#/WPF Windows-only app in this repository's history was replaced in full.
+- **2026-09-19: rewritten as Rust + Tauri 2, cross-platform.** The earlier
+  C#/WPF Windows-only app was replaced in full.
   Vanilla TypeScript + Vite frontend, no framework; three-crate workspace.
 - **Unelevated by default on Windows.** Services and the memory purge need
   administrator rights, but requiring elevation at launch would block a
@@ -83,12 +80,13 @@ the decisions and constraints that are not visible in the code.
   and hosts the releases. Swatto mirrors it to Origin himself; this clone has
   no Origin remote. Push to GitHub (`origin`) only.
 - **2026-09-27: updates install themselves.** `tauri-plugin-updater` checks
-  `latest.json` on the GitHub release when the app is idle (not in Quiet
-  Mode, not mid-transition). The release workflow signs the NSIS installer,
-  the AppImage and the macOS `.app.tar.gz` with the minisign private key in
-  `TAURI_SIGNING_PRIVATE_KEY`; the public half is in `tauri.conf.json`.
-  Debug and fake-platform builds never check. The `.deb` and portable
-  binaries are not updated in place.
+  `latest.json` on the GitHub release when idle, every few hours while
+  resident. The release workflow signs the NSIS installer, AppImage and
+  macOS `.app.tar.gz` with the minisign key in `TAURI_SIGNING_PRIVATE_KEY`
+  (public half in `tauri.conf.json`). Only a copy that can replace itself
+  checks (`update/guard.rs`: Windows beside `uninstall.exe`, Linux with
+  `APPIMAGE`, macOS in a `.app`), never a debug or fake build. The install
+  ends the process, so it waits for idle and a window closed to the tray.
 - **2026-09-19 (1.1.0): the scanner acts on low risk only.** `auto_scan` is
   on by default and parks low-risk finds for that run without editing the
   saved targets; medium-risk finds (browsers, launchers, voice chat, Office)
@@ -121,7 +119,7 @@ the decisions and constraints that are not visible in the code.
   bundle variables), not its original launcher's. A Flatpak, Snap or Store
   app is suspended instead of closed: it cannot be relaunched from here.
 - Programs that respawn themselves (updater schedulers) are suspended, not
-  closed, by default for that reason.
+  closed, by default.
 - The Linux process name from the kernel is 15 bytes; matching also uses the
   executable's file stem and a prefix rule.
 - The e2e suite does not run on macOS (`tauri-driver` has no macOS backend).

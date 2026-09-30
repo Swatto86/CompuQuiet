@@ -79,9 +79,11 @@ configuration folder unless `COMPUQUIET_DATA_DIR` points somewhere else,
 for example a folder beside the executable on a USB stick.
 
 The Windows installer, the Linux AppImage and the macOS app check GitHub for
-a newer signed release when Quiet Mode is off, then download it and restart.
-The `.deb` and the portable copies do not update themselves. A copy built
-before this check existed has to be replaced by hand once; after that, later
+a newer signed release when Quiet Mode is off (at launch, then every few
+hours while CompuQuiet stays running), download it, and install it and
+restart once nothing is running and the window is closed to the tray. The
+`.deb` and the portable copies do not update themselves. A copy built before
+this check existed has to be replaced by hand once; after that, later
 releases install on their own.
 
 Required runtimes (shared platform components, not bundled):

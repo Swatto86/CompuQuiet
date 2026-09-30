@@ -104,6 +104,7 @@ export const config: WebdriverIO.Config = {
   specs: [
     [
       "boot",
+      "update",
       "quiet",
       "scan",
       "persist",

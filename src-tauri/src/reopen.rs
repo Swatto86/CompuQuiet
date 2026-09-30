@@ -58,14 +58,7 @@ pub fn reopen(app: &AppHandle) {
 fn restart_shown(app: &AppHandle) -> ! {
     let mut env = app.env();
     env.args_os = reopen_args(env.args_os);
-    // The old icon would linger until hovered, and the new process must not
-    // find this one's lock and hand itself back to it.
-    if let Some(tray) = app.tray_by_id("main") {
-        let _ = tray.set_visible(false);
-    }
-    crate::single::release();
-    app.cleanup_before_exit();
-    tauri::process::restart(&env)
+    crate::single::restart(app, &env)
 }
 
 /// The restarted process's arguments: never hidden, marked as a reopen.

@@ -153,6 +153,17 @@ exist only with the `fake-platform` feature.
   before the old process is gone and both call `single::release` first. A
   copy that does not answer exits with code 1. The elevated-to-unelevated pair
   is a manual check; the suite runs from one unelevated shell.
+- Updates (`update.rs`, `update/guard.rs`): only a copy that can replace itself
+  checks (Windows with `uninstall.exe` beside it, Linux with `APPIMAGE`, macOS
+  inside a `.app`; never a debug or fake build). A resident copy considers a
+  check every 30 minutes; one that got an answer is repeated after 6 hours, a
+  failed one after 1 hour. The manifest check has a 30 s limit and the download 10
+  minutes, so a stalled connection cannot hold the single attempt slot. A
+  found update is downloaded at once but installed only when no run is going,
+  Quiet Mode is off and the window is hidden (installing ends the process), and
+  the restart goes through `single::restart`, as `reopen` does. `update::Status`
+  (commands `update_status`, `check_for_updates`; event `update-status`) is
+  what the window shows.
 - Autostart: `schtasks` logon task on Windows (elevated when created by an
   elevated process), `tauri-plugin-autostart` elsewhere, always guarded
   against registering a temporary or build-directory executable.

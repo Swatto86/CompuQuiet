@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use cq_core::instance::{self, Command, Lock};
+use tauri::{AppHandle, Env};
 
 static HELD: Mutex<Option<Lock>> = Mutex::new(None);
 
@@ -23,6 +24,19 @@ pub fn keep(lock: Lock) {
 /// to it.
 pub fn release() {
     *held() = None;
+}
+
+/// Replace this process with a new one started from `env`. The old tray icon
+/// would linger until hovered, and the new process must not find this one's
+/// lock and hand itself back to it. Runs on the main thread, which owns the
+/// tray icon.
+pub fn restart(app: &AppHandle, env: &Env) -> ! {
+    if let Some(tray) = app.tray_by_id("main") {
+        let _ = tray.set_visible(false);
+    }
+    release();
+    app.cleanup_before_exit();
+    tauri::process::restart(env)
 }
 
 /// What later launches left for this copy; `None` once it has let go, so a

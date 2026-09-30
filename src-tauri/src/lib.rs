@@ -195,6 +195,8 @@ pub fn run() {
             commands::frontend_ready,
             commands::get_autostart,
             commands::set_autostart,
+            commands::update_status,
+            commands::check_for_updates,
             commands::relaunch_elevated,
             commands::quit,
             commands::show_window,
