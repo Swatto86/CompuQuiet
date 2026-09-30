@@ -37,23 +37,37 @@ pub const ANSWER_WITHIN: Duration = Duration::from_secs(3);
 pub const POLL: Duration = Duration::from_millis(500);
 const ANSWER_POLL: Duration = Duration::from_millis(50);
 
-/// What a second launch can ask the running copy to do.
+/// What a second launch can ask the running copy to do. The three that change
+/// the machine name no target and no setting: the running copy acts on its own
+/// saved settings, as a press in its window would.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Command {
     /// Bring the window up.
     Show,
+    /// Switch Quiet Mode on, unless it is on.
+    Quiet,
+    /// Put everything back, unless nothing is parked.
+    Restore,
+    /// Whichever of the two the running copy is not doing now.
+    Toggle,
 }
 
 impl Command {
     fn word(self) -> &'static str {
         match self {
             Command::Show => "show",
+            Command::Quiet => "quiet",
+            Command::Restore => "restore",
+            Command::Toggle => "toggle",
         }
     }
 
     fn parse(word: &str) -> Option<Command> {
         match word.trim() {
             "show" => Some(Command::Show),
+            "quiet" => Some(Command::Quiet),
+            "restore" => Some(Command::Restore),
+            "toggle" => Some(Command::Toggle),
             _ => None,
         }
     }

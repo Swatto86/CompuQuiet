@@ -91,6 +91,23 @@ Windows, LaunchAgent on macOS, XDG autostart for the Linux AppImage). It
 refuses to register a copy running from Downloads, a temporary folder or a
 build directory.
 
+**From the command line.** `CompuQuiet --quiet` switches Quiet Mode on,
+`--restore` puts everything back and `--toggle` does whichever the machine is
+not in now. Point a game launcher's before-launch command, a script or a
+hotkey tool at them. Each does what one press would (your saved park list, the
+same checks), shows no window, and is skipped when the machine is already as
+asked. Commands are done in the order they arrive, each after any run that is
+going has finished. What happened is said in the window if it is open, and in
+a notification if that is on; a failure is always notified. With CompuQuiet
+running, the command is handed to it and the program exits at once, before the run has finished (exit code 0; 1 if the running copy did
+not take it within three seconds). With none running it starts one in the tray
+and does it there. Anything else on the command line (`--hidden` aside, which
+starts in the tray) exits with 2 and does nothing, so a misspelt flag is not
+taken for a command that ran. The command names no program or setting, so it
+cannot do more than the window can. The Windows release has no console, so
+nothing is printed; use `start /wait "" "C:\Program Files\CompuQuiet\CompuQuiet.exe" --quiet`
+and read `%ERRORLEVEL%`, or `Start-Process -Wait -PassThru`, to see the code.
+
 ## Install
 
 Download from the [GitHub Releases page](https://github.com/Swatto86/CompuQuiet/releases).

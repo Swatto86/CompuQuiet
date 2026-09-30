@@ -238,13 +238,26 @@ the code:
   copy holds an exclusive lock on `instance.lock` for the life of the process.
   A later launch leaves a request in `wake/` (one command word from a fixed
   list, never arguments) and waits up to 3 s for the running copy, which polls
-  twice a second, to take it; the window is then shown (`Command::Show`). The
-  files carry the user's access list, so an unelevated launch reaches an
+  twice a second, to take it; the window is then shown (`Command::Show`), or
+  the command line's `--quiet`, `--restore` or `--toggle` is done
+  (`Command::{Quiet, Restore, Toggle}`, `cli.rs`). The files carry the user's
+  access list, so an unelevated launch reaches an
   elevated copy, which window messages and named objects cannot. A lock freed
   during the wait is taken over: a restart or an elevated relaunch starts
   before the old process is gone and both call `single::release` first. A
   copy that does not answer exits with code 1. The elevated-to-unelevated pair
   is a manual check; the suite runs from one unelevated shell.
+- The command line (`cli.rs`): `parse` runs first and refuses any argument it
+  does not know (exit 2, before the data directory is touched); a command names
+  no target, so the running copy does it from its saved settings through
+  `run_transition`. Commands wait in a queue, are done in the order sent and
+  each waits (up to 3 minutes) for a run that is going; one is skipped when the
+  machine is already as asked. It reports through `announce` and `alert`
+  (`watch.rs`), never bringing the window forward. A launch with a command that finds no copy becomes the running
+  copy, hidden, and does it after the recovery of an earlier sign-in
+  (`cli::start`). The updater relaunches Windows with Tauri's `Env`
+  arguments, so `launch_env` is managed first and lacks the command; a
+  warning in the log says if Tauri stopped keeping it.
 - Updates (`update.rs`, `update/guard.rs`): only a copy that can replace itself
   checks (Windows with `uninstall.exe` beside it, Linux with `APPIMAGE`, macOS
   inside a `.app`; never a debug or fake build). A resident copy considers a

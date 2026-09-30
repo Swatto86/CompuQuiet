@@ -142,6 +142,7 @@ export const config: WebdriverIO.Config = {
       "timed",
       "auto-quiet",
       "tray-failure",
+      "cli",
       "second-launch",
       "exit",
     ].map((name) => path.resolve(here, `specs/${name}.spec.ts`)),

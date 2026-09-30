@@ -106,6 +106,22 @@ fn requests_are_taken_once_in_the_order_they_were_left() {
 }
 
 #[test]
+fn every_command_survives_being_left_and_taken() {
+    let dir = tempfile::tempdir().unwrap();
+    let all = [
+        Command::Show,
+        Command::Quiet,
+        Command::Restore,
+        Command::Toggle,
+    ];
+    for command in all {
+        leave(dir.path(), command).unwrap();
+    }
+
+    assert_eq!(take(dir.path()), all.map(Ok));
+}
+
+#[test]
 fn what_is_not_a_known_request_is_reported_and_removed() {
     let dir = tempfile::tempdir().unwrap();
     let wake = dir.path().join(WAKE_DIR);

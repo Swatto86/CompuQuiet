@@ -3,6 +3,7 @@
 //! The window gets no filesystem, shell or process permission at all.
 
 mod autostart;
+mod cli;
 mod commands;
 mod diagnostics;
 mod engine;
@@ -34,8 +35,8 @@ static REOPENED: OnceLock<bool> = OnceLock::new();
 /// show the window this time, and do not restart again if it fails.
 pub(crate) const REOPEN_ARG: &str = "--reopen";
 
-/// Launched to the tray: `--hidden` (what the autostart entry passes) or the
-/// "start hidden" preference.
+/// Launched to the tray: `--hidden` (what the autostart entry passes), a
+/// command-line command, or the "start hidden" preference.
 pub(crate) fn start_hidden() -> bool {
     *START_HIDDEN.get_or_init(|| false)
 }
@@ -73,23 +74,23 @@ pub(crate) fn platform_for_relaunch() -> Arc<dyn Platform> {
 }
 
 /// Take the data directory for this copy, or leave this launch to the copy
-/// that has it. `false` means this launch is finished.
-fn claim_data_dir(data_dir: &Path) -> bool {
-    let lock_error =
-        match instance::start(data_dir, instance::Command::Show, instance::ANSWER_WITHIN) {
-            Ok(instance::Start::First(lock)) => {
-                single::keep(lock);
-                None
-            }
-            // The running copy has been asked to show its window; this launch
-            // leaves the log alone, which the running copy has open.
-            Ok(instance::Start::HandedOff) => return false,
-            Ok(instance::Start::Stuck(reason)) => {
-                eprintln!("CompuQuiet is already running, so this copy will not start: {reason}");
-                std::process::exit(1);
-            }
-            Err(error) => Some(error),
-        };
+/// that has it, asking it for `command`. `false` means this launch is
+/// finished.
+fn claim_data_dir(data_dir: &Path, command: instance::Command) -> bool {
+    let lock_error = match instance::start(data_dir, command, instance::ANSWER_WITHIN) {
+        Ok(instance::Start::First(lock)) => {
+            single::keep(lock);
+            None
+        }
+        // The running copy has taken the request; this launch leaves the log
+        // alone, which the running copy has open.
+        Ok(instance::Start::HandedOff) => return false,
+        Ok(instance::Start::Stuck(reason)) => {
+            eprintln!("CompuQuiet is already running and did not take the request: {reason}");
+            std::process::exit(1);
+        }
+        Err(error) => Some(error),
+    };
     logfile::install(data_dir);
     if let Some(error) = lock_error {
         log::error!("another copy could run beside this one: {error}");
@@ -118,22 +119,30 @@ fn on_window_event(window: &tauri::Window, event: &tauri::WindowEvent) {
 }
 
 pub fn run() {
+    // Before anything is touched: a launch that is not understood does nothing.
+    // Nothing prints on Windows, whose release build has no console, so the
+    // exit code is what a script sees.
+    let launch = cli::parse(std::env::args_os().skip(1)).unwrap_or_else(|reason| {
+        eprintln!("CompuQuiet: {reason}");
+        std::process::exit(2)
+    });
     let data_dir = cq_core::store::data_dir()
         .unwrap_or_else(|error| panic!("CompuQuiet has nowhere to keep its state: {error}"));
-    if !claim_data_dir(&data_dir) {
+    let asked = launch.command.unwrap_or(instance::Command::Show);
+    if !claim_data_dir(&data_dir, asked) {
         return;
     }
     let engine = Arc::new(Engine::new(build_platform(), data_dir.clone()));
-    let hidden_arg = std::env::args().skip(1).any(|arg| arg == "--hidden");
-    let reopen_arg = std::env::args().skip(1).any(|arg| arg == REOPEN_ARG);
-    let _ = REOPENED.set(reopen_arg);
+    let _ = REOPENED.set(launch.reopen);
+    // A command is given without a window, which would be over the game.
     let _ = START_HIDDEN.set(starts_hidden(
-        hidden_arg,
-        reopen_arg,
+        launch.hidden || launch.command.is_some(),
+        launch.reopen,
         engine.settings().start_hidden,
     ));
 
     let builder = tauri::Builder::default()
+        .manage(cli::launch_env())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::new().build());
 
@@ -152,23 +161,10 @@ pub fn run() {
             watch::schedule(app.handle());
             // The sign-in entry may still start the copy this one replaced.
             tauri::async_runtime::spawn_blocking(autostart::reconcile);
-            let handle = app.handle().clone();
-            single::serve(data_dir, move |command| match command {
-                instance::Command::Show => tray::reveal(&handle),
-            });
-
             engine.resume_awake();
-            // Quiet Mode left on in an earlier sign-in has already lost what
-            // it parked; finish it rather than show it as still on.
-            if engine.quiet_from_an_earlier_sign_in() {
-                let handle = app.handle().clone();
-                let engine = engine.clone();
-                tauri::async_runtime::spawn(async move {
-                    // A failure is in the log already, and the window shows what
-                    // is left when it opens.
-                    let _ = commands::run_transition(handle, engine, commands::Run::Restore).await;
-                });
-            }
+            cli::start(app.handle(), &engine, launch.command);
+            let handle = app.handle().clone();
+            single::serve(data_dir, move |command| cli::handle(&handle, command));
 
             // Safety net: the page reveals the window once it has painted, but
             // if it never boots the user must not be left with a process and

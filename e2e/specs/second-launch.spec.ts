@@ -6,33 +6,13 @@
  * runs from one unelevated shell, so that pairing is a manual check.
  */
 import { strict as assert } from "node:assert";
-import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 
 import { application } from "../wdio.conf.ts";
 import { appPids } from "../workspace.ts";
+import { launchAgain } from "./launch.ts";
 import { dataDir, setWindowVisible, windowVisible } from "./support.ts";
-
-/** Launch the app again with this run's environment; resolves with its exit code. */
-function launchAgain(): Promise<number | null> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(application, [], {
-      stdio: "ignore",
-      windowsHide: true,
-      env: process.env,
-    });
-    const gaveUp = setTimeout(() => {
-      child.kill();
-      reject(new Error("the second launch did not exit within 20 s"));
-    }, 20_000);
-    child.once("error", reject);
-    child.once("exit", (code) => {
-      clearTimeout(gaveUp);
-      resolve(code);
-    });
-  });
-}
 
 describe("a second launch", () => {
   before(async () => {

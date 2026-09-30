@@ -170,7 +170,7 @@ fn still_on(seconds: u64) -> String {
 
 /// Say what the app did by itself: in the window if it is open, and in a
 /// notification if it is hidden and the preference allows.
-fn announce(app: &AppHandle, notifications: bool, text: &str) {
+pub(crate) fn announce(app: &AppHandle, notifications: bool, text: &str) {
     let _ = app.emit(EVENT_NOTICE, text);
     if notifications && window_hidden(app) {
         notify(app, text);
@@ -179,7 +179,7 @@ fn announce(app: &AppHandle, notifications: bool, text: &str) {
 
 /// A failure of something the user did not ask for just now: never left to
 /// the preference, and never by bringing the window forward.
-fn alert(app: &AppHandle, error: &AppError) {
+pub(crate) fn alert(app: &AppHandle, error: &AppError) {
     log::warn!("{} ({})", error.message, error.code);
     let _ = app.emit(EVENT_ERROR, error);
     notify(app, &error.message);

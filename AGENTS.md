@@ -39,18 +39,21 @@ does not show.
   damaged or newer file leaves the engine on the built-in settings, refusing
   every save and Go Quiet; the banner moves it to `settings.json.bad`.
   Restore is unaffected.
-- **2026-09-30: one copy per data directory, by file lock.** The first copy
-  locks `instance.lock`; a later launch leaves a request in `wake/` (a fixed
-  command word, no arguments; `cq_core::instance`) and exits once the running
-  copy takes it (window messages cannot cross the elevation boundary).
+- **2026-09-30: one copy per data directory, by file lock; the command line
+  rides on it.** The first copy locks `instance.lock`; a later launch leaves
+  a request in `wake/` (a fixed word: show, quiet, restore, toggle; no
+  arguments; `cq_core::instance`) and exits once the running copy takes it;
+  it works across elevation, window messages do not. `--quiet`, `--restore`
+  and `--toggle` are a public promise: any other argument exits 2, and a
+  command acts on saved settings only. The copy that does it drops the flag
+  from Tauri's `Env`, or an update would replay it (`cli.rs`).
 - **2026-09-29: a restart or new sign-in ends Quiet Mode.** The journal
   records where Quiet Mode began (optional `began`: uptime and, on Windows,
-  the WTS logon stamp), never compared with the wall clock, which
-  jumps by hours on this dual-boot PC. An earlier sign-in's journal is
-  finished at launch: closed programs are not relaunched, services restart
-  unless uptime shows a reboot, resumes are tried and the power plan is
-  restored. Older journals, and Linux/macOS sign-outs without a
-  reboot, restore everything.
+  the WTS logon stamp), never compared with the wall clock, which jumps by
+  hours on this dual-boot PC. An earlier sign-in's journal is finished at
+  launch: closed programs are not relaunched, services restart unless uptime
+  shows a reboot, resumes are tried and the power plan is restored. Older
+  journals, and Linux/macOS sign-outs without a reboot, restore everything.
 - **2026-09-30: Linux start times are recorded from boot.** A clock step made
   a resume look like another program. `ProcessInfo.start_time` is seconds
   since boot; 10^9 or more is an older wall-clock value, still accepted.
@@ -67,13 +70,11 @@ does not show.
   leaving a tray with nothing behind it. Tray actions and a second launch
   restart with `--reopen`.
 - **2026-09-30: failures are kept.** `compuquiet.log` holds warnings, errors,
-  failed steps (label and code) and panics; a full
-  file becomes `.log.1`.
+  failed steps (label and code) and panics; a full file becomes `.log.1`.
 - **2026-09-26: renamed to CompuQuiet.** A leftover `ComputeQuiet` settings
-  folder, logon task or env override is still recognised. Tray actions run
-  in Rust, so they work with the window hidden.
-- **2026-09-19: rewritten as Rust + Tauri 2** (was C#/WPF), cross-platform;
-  vanilla TypeScript + Vite frontend; three-crate workspace.
+  folder, logon task or env override is still recognised.
+- **2026-09-19: rewritten as Rust + Tauri 2** (was C#/WPF); vanilla
+  TypeScript + Vite frontend.
 - **Unelevated by default on Windows.** Services and the purge need
   administrator rights, but elevation at launch would block a prompt-free
   autostart and the WebDriver suite. The app plans around its capabilities
@@ -82,8 +83,8 @@ does not show.
   keeps a program's state and is fully reversible; closing frees its memory
   but loses unsaved state, so it is per target.
 - **Fake platform behind a cargo feature** for the e2e suite, which drives the
-  real binary with only the OS adapter swapped. `verify.sh` asserts the
-  feature is not a default and not in `tauri.conf.json`.
+  real binary with only the OS adapter swapped; the gate asserts it is never a
+  default.
 - **2026-09-25: GitHub is the only remote.** Origin has no runners or
   releases; `Swatto86/CompuQuiet` on GitHub holds source, workflows and
   releases, and Swatto mirrors it to Origin. Push to `origin` (GitHub) only.
@@ -95,8 +96,8 @@ does not show.
   fake build), idle with the window closed to the tray. With `auto_update`
   off a release is only announced.
 - **2026-09-30: diagnostics stay local.** `diagnostics.rs` hides the home
-  folder as `~` in the whole report, names steps but never arguments, and
-  only reaches the clipboard.
+  folder as `~`, names steps but never arguments, and only reaches the
+  clipboard.
 - **2026-09-19 (1.1.0): the scanner acts on low risk only.** `auto_scan` is
   on by default and parks low-risk finds for that run without editing the
   saved targets; medium-risk finds are shown on the Scan tab and
@@ -129,6 +130,4 @@ does not show.
   app is suspended instead of closed: it cannot be relaunched from here.
 - Programs that respawn themselves (updater schedulers) are suspended, not
   closed, by default.
-- The Linux process name from the kernel is 15 bytes; matching also uses the
-  executable's file stem and a prefix rule.
 - The e2e suite does not run on macOS (`tauri-driver` has no macOS backend).
