@@ -224,6 +224,13 @@ export function onState(
   return listen<EngineState>("quiet-state", (event) => handler(event.payload));
 }
 
+/** A run the page did not start (the tray's) failed. */
+export function onRunError(
+  handler: (error: AppError) => void,
+): Promise<UnlistenFn> {
+  return listen<AppError>("quiet-error", (event) => handler(event.payload));
+}
+
 export function onUpdateStatus(
   handler: (status: UpdateStatus) => void,
 ): Promise<UnlistenFn> {

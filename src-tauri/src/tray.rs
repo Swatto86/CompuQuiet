@@ -17,10 +17,11 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_notification::NotificationExt;
 
 use crate::engine::{Engine, EngineState};
+use crate::error::AppError;
 
 const ICON_IDLE: &[u8] = include_bytes!("../icons/tray-idle.png");
 const ICON_QUIET: &[u8] = include_bytes!("../icons/tray-quiet.png");
@@ -170,18 +171,18 @@ fn toggle_from_tray(app: AppHandle) {
         let quiet = !engine.is_quiet();
         let hidden = crate::commands::window_hidden(&app);
         let outcome = crate::commands::run_transition(app.clone(), engine.clone(), quiet).await;
-        if hidden && engine.settings().notifications {
-            let body = match (&outcome, quiet) {
-                (Ok(state), true) => format!(
+        if let Some(error) = needs_attention(outcome.as_ref().map(|state| state.quiet), quiet) {
+            report_failure(&app, &error);
+        } else if let (true, true, Ok(state)) = (hidden, engine.settings().notifications, &outcome)
+        {
+            let body = if quiet {
+                format!(
                     "Quiet Mode on: {} services stopped, {} processes parked.",
                     state.summary.services_stopped,
                     state.summary.processes_suspended + state.summary.processes_closed
-                ),
-                (Ok(state), false) if !state.quiet => "Everything is back.".to_string(),
-                (Ok(_), false) => {
-                    "Some changes could not be restored. Open the window.".to_string()
-                }
-                (Err(error), _) => error.to_string(),
+                )
+            } else {
+                "Everything is back.".to_string()
             };
             let _ = app
                 .notification()
@@ -191,6 +192,33 @@ fn toggle_from_tray(app: AppHandle) {
                 .show();
         }
     });
+}
+
+/// What a run started from the tray left that the user has to see: its error,
+/// or a restore that stopped part way (`still_quiet`).
+fn needs_attention(outcome: Result<bool, &AppError>, quiet: bool) -> Option<AppError> {
+    match outcome {
+        Err(error) => Some(error.clone()),
+        Ok(true) if !quiet => Some(AppError::new(
+            "restore_incomplete",
+            "Some changes could not be restored. The window shows what is left.",
+        )),
+        Ok(_) => None,
+    }
+}
+
+/// A run started from the tray failed. The click must never look dead, so
+/// this does not depend on the notifications preference: the page shows the
+/// error and the window comes forward.
+fn report_failure(app: &AppHandle, error: &AppError) {
+    let _ = app.emit(crate::commands::EVENT_ERROR, error);
+    reveal(app);
+}
+
+/// Quit's restore ran into another restore, or into one that had just
+/// finished: look again rather than take that for a failure.
+fn retry_quit(error: &AppError) -> bool {
+    matches!(error.code.as_str(), "busy" | "not_quiet")
 }
 
 /// Quit from the tray without asking the webview. Respects the restore-on-quit
@@ -206,14 +234,16 @@ fn quit_from_tray(app: AppHandle) {
                 continue;
             }
             if engine.is_quiet() && engine.settings().restore_on_quit {
-                match crate::commands::run_transition(app.clone(), engine.clone(), false).await {
-                    Ok(state) if !state.quiet => {}
-                    Err(error) if error.code == "busy" => continue,
-                    // Still quiet: restore did not finish. Show the window.
-                    _ => {
-                        reveal(&app);
+                let outcome =
+                    crate::commands::run_transition(app.clone(), engine.clone(), false).await;
+                match needs_attention(outcome.as_ref().map(|state| state.quiet), false) {
+                    Some(error) if retry_quit(&error) => continue,
+                    // The restore did not finish: the user decides in the window.
+                    Some(error) => {
+                        report_failure(&app, &error);
                         return;
                     }
+                    None => {}
                 }
             }
             let left = engine.claim_for_exit(|| {
@@ -284,7 +314,11 @@ fn now_ms() -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use super::{BLUR_GRACE_MS, blurred_recently, click_hides_window, click_opens_menu};
+    use super::{
+        BLUR_GRACE_MS, blurred_recently, click_hides_window, click_opens_menu, needs_attention,
+        retry_quit,
+    };
+    use crate::error::AppError;
     use tauri::tray::{MouseButton, MouseButtonState};
 
     #[test]
@@ -315,6 +349,29 @@ mod tests {
         // Already in the background: bring it forward.
         assert!(!click_hides_window(true, false, false));
         assert!(!click_hides_window(false, false, true));
+    }
+
+    #[test]
+    fn a_tray_run_that_failed_or_stopped_part_way_is_shown_to_the_user() {
+        let refused = AppError::new("journal_unreadable", "the record cannot be read");
+        let shown = needs_attention(Err(&refused), true).unwrap();
+        assert_eq!(shown.code, "journal_unreadable");
+        // A restore that left entries is a failure even though it returned.
+        assert_eq!(
+            needs_attention(Ok(true), false).unwrap().code,
+            "restore_incomplete"
+        );
+        assert!(needs_attention(Ok(false), false).is_none());
+        // Going quiet leaves Quiet Mode on by design.
+        assert!(needs_attention(Ok(true), true).is_none());
+    }
+
+    #[test]
+    fn quit_looks_again_when_the_restore_it_wanted_was_already_running_or_done() {
+        assert!(retry_quit(&AppError::new("busy", "")));
+        assert!(retry_quit(&AppError::new("not_quiet", "")));
+        assert!(!retry_quit(&AppError::new("journal_unreadable", "")));
+        assert!(!retry_quit(&AppError::new("platform", "")));
     }
 
     #[test]

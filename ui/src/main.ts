@@ -5,6 +5,7 @@ import {
   isAppError,
   onConfirmQuit,
   onProgress,
+  onRunError,
   onState,
   type AppInfo,
   type EngineState,
@@ -91,6 +92,7 @@ async function boot(): Promise<void> {
     }
     renderAll();
   });
+  await onRunError((error) => toast(error.message, true));
   await onConfirmQuit(() => void quitFlow());
   // A run that ended between the first fetch and the listeners above would
   // otherwise leave the page on "Working…" until the next click.

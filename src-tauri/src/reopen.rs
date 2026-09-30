@@ -20,19 +20,19 @@ use crate::engine::Engine;
 pub fn reopen(app: &AppHandle) {
     if crate::reopened() {
         log::error!("the window failed to load again after a restart");
+        // Whatever the notifications preference says: with no window, this
+        // is the only way left to say why.
         let engine = app.state::<Arc<Engine>>();
-        if engine.settings().notifications {
-            let log_path = crate::logfile::path(std::path::Path::new(&engine.state().data_dir));
-            let _ = app
-                .notification()
-                .builder()
-                .title("CompuQuiet")
-                .body(format!(
-                    "CompuQuiet could not open its window. The reason is in {}.",
-                    log_path.display()
-                ))
-                .show();
-        }
+        let log_path = crate::logfile::path(std::path::Path::new(&engine.state().data_dir));
+        let _ = app
+            .notification()
+            .builder()
+            .title("CompuQuiet")
+            .body(format!(
+                "CompuQuiet could not open its window. The reason is in {}.",
+                log_path.display()
+            ))
+            .show();
         return;
     }
     log::warn!("the window never loaded; restarting CompuQuiet to open it");

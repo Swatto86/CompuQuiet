@@ -138,9 +138,9 @@ pub fn run() {
                 let handle = app.handle().clone();
                 let engine = engine.clone();
                 tauri::async_runtime::spawn(async move {
-                    if let Err(error) = commands::run_transition(handle, engine, false).await {
-                        log::warn!("finishing Quiet Mode from an earlier sign-in: {error}");
-                    }
+                    // A failure is in the log already, and the window shows what
+                    // is left when it opens.
+                    let _ = commands::run_transition(handle, engine, false).await;
                 });
             }
 

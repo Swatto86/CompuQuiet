@@ -1,7 +1,7 @@
 # CompuQuiet — working context
 
-Every agent loads this file itself. `ARCHITECTURE.md` explains the structure; this file records
-the decisions and constraints that are not visible in the code.
+`ARCHITECTURE.md` explains the structure; this file records the decisions and
+constraints that are not visible in the code.
 
 ## Decisions
 
@@ -38,8 +38,8 @@ the decisions and constraints that are not visible in the code.
   refuses anything else) and the power plan is always restored. Older
   journals, and Linux/macOS sign-outs without a reboot, restore everything.
 - **2026-09-30: Linux start times are recorded from boot; only programs are
-  listed.** A clock step between runs (this PC's jumps by hours) made a
-  resume look like "a different program" and dropped it, leaving it stopped. `ProcessInfo.start_time` is now
+  listed.** A clock step between runs made a
+  resume look like "a different program", so it was dropped and left stopped. `ProcessInfo.start_time` is now
   seconds since boot on Linux; a recorded value of 10^9 or more is an older
   wall-clock one, still accepted; restore before downgrading to 1.1.7, which
   would not resume those.
@@ -51,15 +51,18 @@ the decisions and constraints that are not visible in the code.
   relaunch and the updater's install claim the engine
   (`Engine::claim_for_exit`) and wait or refuse while a run is in progress.
 - **2026-09-29: a window that never loaded restarts the app once.** The
-  elevated logon launch sometimes gets no WebView2; Tauri only logs that, so
-  the tray ran with no window behind it. Tray
-  actions and a second launch now restart with `--reopen`, and warnings and
-  errors go to `compuquiet.log` in the data directory so the cause is kept.
+  elevated logon launch sometimes gets no WebView2, which Tauri only logs,
+  leaving a tray with nothing behind it. Tray actions and a second launch
+  restart with `--reopen`.
+- **2026-09-30: failures are kept; a tray click never looks dead.**
+  `compuquiet.log` holds warnings, errors, failed steps (label and code, never
+  program arguments) and panics; a full file becomes `.log.1`. A failed tray
+  run reveals the window whatever the notifications setting.
 - **2026-09-26: renamed to CompuQuiet.** Product, crate (`compuquiet`),
   identifier (`co.swatto.compuquiet`), data dir and env vars follow the new
   name; a leftover `ComputeQuiet` settings folder / logon task / env override
   is still recognised so upgrades keep state. Tray menu actions run entirely
-  in Rust so Quit / Open / toggle work even when the window is hidden.
+  in Rust, so they work with the window hidden.
 - **2026-09-19: rewritten as Rust + Tauri 2, cross-platform.** The earlier
   C#/WPF Windows-only app was replaced in full.
   Vanilla TypeScript + Vite frontend, no framework; three-crate workspace.
@@ -84,8 +87,7 @@ the decisions and constraints that are not visible in the code.
   resident. The release workflow signs the NSIS installer, AppImage and
   macOS `.app.tar.gz` with the minisign key in `TAURI_SIGNING_PRIVATE_KEY`
   (public half in `tauri.conf.json`). Only a copy that can replace itself
-  checks (`update/guard.rs`: Windows beside `uninstall.exe`, Linux with
-  `APPIMAGE`, macOS in a `.app`), never a debug or fake build. The install
+  checks (`update/guard.rs`), never a debug or fake build. The install
   ends the process, so it waits for idle and a window closed to the tray.
 - **2026-09-19 (1.1.0): the scanner acts on low risk only.** `auto_scan` is
   on by default and parks low-risk finds for that run without editing the

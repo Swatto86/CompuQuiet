@@ -138,10 +138,21 @@ exist only with the `fake-platform` feature.
   stays registered but every query on it fails. `tray::reveal` treats that as
   "no window" and `reopen` restarts the process once with `--reopen` (shown, never
   hidden), waiting for any Quiet Mode run to finish first. A reopen that
-  fails too notifies instead of restarting again.
-- `logfile` sends every crate's `log` warnings and errors to
-  `compuquiet.log` in the data directory; it is the only record of why a
-  window failed to load.
+  fails too notifies instead of restarting again, whatever the notifications
+  preference says.
+- `logfile` sends every crate's `log` warnings and errors, and any panic (a
+  release build aborts on one and has no console), to `compuquiet.log` in the
+  data directory; it is the record of why a window failed to load or a step
+  failed. The engine logs each failed step by label and error code, never a
+  program's arguments, and `run_transition` logs a run that failed outright. At
+  launch a file over 512 KiB becomes `compuquiet.log.1` (replacing any older
+  one) and a new one starts, so the evidence of the last stretch survives.
+- A run started from the tray (`tray::toggle_from_tray`, `quit_from_tray`) that
+  fails, or a restore that leaves entries, is reported by `report_failure`
+  whatever the notifications preference says: the `quiet-error` event carries
+  the `AppError` for the page to toast, and the window comes forward. Only
+  success notices depend on the preference and a hidden window. Tray Quit
+  treats `busy` and `not_quiet` from its restore as "look again".
 - One copy per data directory (`cq_core::instance`, `single.rs`): the first
   copy holds an exclusive lock on `instance.lock` for the life of the process.
   A later launch leaves a request in `wake/` (one command word from a fixed
@@ -166,7 +177,12 @@ exist only with the `fake-platform` feature.
   what the window shows.
 - Autostart: `schtasks` logon task on Windows (elevated when created by an
   elevated process), `tauri-plugin-autostart` elsewhere, always guarded
-  against registering a temporary or build-directory executable.
+  against registering a temporary or build-directory executable (on Linux also
+  an AppImage path a login entry would split or expand: spaces, `%`, quotes).
+  An entry made with administrator rights is `locked` for an unelevated copy,
+  which cannot delete or replace it: `set` refuses (`autostart_locked`) and the
+  switch is disabled with the reason. The task always passes `--hidden`, so a
+  sign-in starts in the tray whatever "Start hidden" says.
 
 ## State
 

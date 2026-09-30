@@ -15,6 +15,9 @@ use crate::tray;
 
 pub const EVENT_PROGRESS: &str = "quiet-progress";
 pub const EVENT_STATE: &str = "quiet-state";
+/// A run the page did not start (the tray's) failed; the payload is the
+/// `AppError`, for the page to show as it would a failed click of its own.
+pub const EVENT_ERROR: &str = "quiet-error";
 
 #[derive(Serialize)]
 pub struct AppInfo {
@@ -172,6 +175,22 @@ pub async fn run_transition(
     })
     .await?;
     let state = publish(&app, &engine);
+    // The page shows the error of a run it started, and the tray reports its
+    // own, but only this record outlasts them. A second click while a run is
+    // going is not a fault.
+    if let Err(error) = &result
+        && error.code != "busy"
+    {
+        log::warn!(
+            "{} failed ({}): {error}",
+            if quiet {
+                "turning Quiet Mode on"
+            } else {
+                "putting everything back"
+            },
+            error.code
+        );
+    }
     result.map(|()| state)
 }
 
