@@ -7,10 +7,47 @@ use std::path::PathBuf;
 
 use cq_core::Journal;
 
-use super::{Engine, LogLine, Unrestored};
+use super::{Engine, Inner, LogLine, Unrestored};
 use crate::error::AppError;
 
 impl Engine {
+    /// Quiet Mode does not start over a record it cannot read, which is the
+    /// only note of what an earlier run parked.
+    pub(super) fn journal_unreadable(&self, error: &str) -> AppError {
+        AppError::new(
+            "journal_unreadable",
+            format!(
+                "The record of an earlier Quiet Mode could not be read ({error}). Update CompuQuiet, or move {} aside if it is damaged.",
+                Journal::path(&self.data_dir).display()
+            ),
+        )
+    }
+
+    /// The file, not this process's copy of it, is the record of what is
+    /// parked. Starting a run over entries this copy has not seen would
+    /// replace the only note of them, so what is on disk is taken up first
+    /// and the run refused. Another copy should never have written it (the
+    /// data directory is locked), so this is the check behind that lock.
+    pub(super) fn adopt_journal_on_disk(&self, inner: &mut Inner) -> Result<(), AppError> {
+        match Journal::load(&self.data_dir) {
+            Ok(Some(journal)) if !journal.done.is_empty() => {
+                inner.journal = Some(journal);
+                inner.recovered = true;
+                Err(AppError::new(
+                    "already_quiet",
+                    "Quiet Mode was already turned on by another copy of CompuQuiet",
+                ))
+            }
+            Ok(_) => Ok(()),
+            Err(error) => {
+                let error = error.to_string();
+                inner.unreadable_journal = Some(error.clone());
+                inner.startup_error = Some(error.clone());
+                Err(self.journal_unreadable(&error))
+            }
+        }
+    }
+
     /// Stop trying to put back what the last restore could not, which ends
     /// Quiet Mode. Only offered once a restore has failed, and only while no
     /// run is going. Returns what was given up.

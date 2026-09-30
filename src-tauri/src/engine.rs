@@ -264,19 +264,14 @@ impl Engine {
     pub fn go_quiet(&self, progress: &dyn Fn(LogLine)) -> Result<Summary, AppError> {
         let _guard = self.begin()?;
         let settings = {
-            let inner = self.lock();
+            let mut inner = self.lock();
             if inner.journal.is_some() {
                 return Err(AppError::new("already_quiet", "Quiet Mode is already on"));
             }
             if let Some(error) = &inner.unreadable_journal {
-                return Err(AppError::new(
-                    "journal_unreadable",
-                    format!(
-                        "The record of an earlier Quiet Mode could not be read ({error}). Update CompuQuiet, or move {} aside if it is damaged.",
-                        Journal::path(&self.data_dir).display()
-                    ),
-                ));
+                return Err(self.journal_unreadable(error));
             }
+            self.adopt_journal_on_disk(&mut inner)?;
             if let Some(error) = &inner.unreadable_settings {
                 return Err(Self::settings_unreadable(error));
             }
@@ -376,5 +371,7 @@ mod failure_tests;
 #[cfg(all(test, feature = "fake-platform"))]
 mod tests;
 
+#[cfg(all(test, feature = "fake-platform"))]
+mod journal_tests;
 #[cfg(all(test, feature = "fake-platform"))]
 mod settings_tests;

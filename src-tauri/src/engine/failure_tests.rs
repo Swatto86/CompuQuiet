@@ -256,8 +256,11 @@ fn a_journal_that_cannot_be_saved_refuses_the_run_before_anything_changes() {
     let dir = tempfile::tempdir().unwrap();
     let fake = Arc::new(Fake::new());
     let engine = engine_with_every_kind_of_target(&fake, dir.path()).unwrap();
-    // A folder where the journal goes: it can never be written.
-    std::fs::create_dir(Journal::path(dir.path())).unwrap();
+    // A folder where the journal's temporary file goes: the journal is
+    // absent, so it reads fine, but it can never be written. (A folder at the
+    // journal's own path is refused earlier, as unreadable.)
+    let temp = format!(".journal.json.tmp-{}", std::process::id());
+    std::fs::create_dir(dir.path().join(temp)).unwrap();
 
     assert_eq!(engine.go_quiet(&|_| {}).unwrap_err().code, "state");
     assert!(!engine.state().quiet);
