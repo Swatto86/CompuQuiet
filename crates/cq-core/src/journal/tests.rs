@@ -192,3 +192,51 @@ fn a_step_is_described_by_name_and_never_by_command_line_or_folder() {
     let text = lines.join("\n");
     assert!(!text.contains("hunter2") && !text.contains("secret") && !text.contains("C:/"));
 }
+
+#[test]
+fn a_journal_from_before_endings_loads_without_one_and_a_new_one_round_trips() {
+    let dir = tempfile::tempdir().unwrap();
+    let old = serde_json::json!({
+        "version": 1,
+        "started_at": 1_700_000_000,
+        "began": { "uptime": 60, "sign_in": null },
+        "done": [{ "kind": "service_stopped", "name": "SysMain" }],
+    });
+    std::fs::write(Journal::path(dir.path()), old.to_string()).unwrap();
+    let mut journal = Journal::load(dir.path()).unwrap().unwrap();
+    assert_eq!(journal.ending, None);
+    assert!(!journal.awake);
+    assert!(!journal.summary().kept_awake);
+
+    journal.ending = Some(Ending::At { uptime: 7_260 });
+    journal.awake = true;
+    journal.save(dir.path()).unwrap();
+    let text = std::fs::read_to_string(Journal::path(dir.path())).unwrap();
+    // Named as a release that does not know them would ignore them.
+    assert!(
+        text.contains(r#""ending""#) && text.contains(r#""awake": true"#),
+        "{text}"
+    );
+    let again = Journal::load(dir.path()).unwrap().unwrap();
+    assert_eq!(again, journal);
+    assert!(again.summary().kept_awake);
+}
+
+#[test]
+fn a_run_with_neither_writes_neither() {
+    let value = serde_json::to_value(Journal::new(1)).unwrap();
+    let object = value.as_object().unwrap();
+    assert!(!object.contains_key("ending") && !object.contains_key("awake"));
+}
+
+#[test]
+fn what_a_restore_leaves_still_ends_and_holds_awake_as_the_run_did() {
+    let mut journal = sample();
+    journal.ending = Some(Ending::ProgramExits {
+        name: "game.exe".into(),
+    });
+    journal.awake = true;
+    let rest = journal.without(&HashSet::new());
+    assert_eq!(rest.ending, journal.ending);
+    assert!(rest.awake);
+}

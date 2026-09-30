@@ -205,116 +205,56 @@ export function fakeBattery(onBattery: boolean | null): Promise<void> {
   return invokeCommand("fake_battery", { onBattery });
 }
 
+/** Open or close a program on the fake machine, as the user would. */
+export function fakeProgram(name: string, running: boolean): Promise<void> {
+  return invokeCommand("fake_program", { name, running });
+}
+
 /**
- * Put a counter and a fault switch in front of the page's own IPC, so a spec
- * can see which commands the page calls and how often, and make one fail as
- * if the backend refused it. Idempotent; lasts until the page reloads.
- *
- * `__TAURI_INTERNALS__.invoke` is locked, so this stands in front of what it
- * sends. Depending on the webview a command goes out as a `fetch` to the
- * `ipc` protocol (an answer marked `Tauri-Response: error` rejects the
- * page's promise) or as a message posted to the host (the error callback it
- * names is run to reject it). WebView2 posts; the other two are written from
- * Tauri's own script and not exercised on this machine.
+ * Let time pass on the fake machine: its uptime moves on by `seconds`. The
+ * wall clock plays no part in a timed run, so this is all the time a spec
+ * has to wait for.
  */
-export async function watchInvokes(): Promise<void> {
-  await browser.execute(() => {
-    interface Host {
-      postMessage: (message: unknown) => void;
-    }
-    const page = window as unknown as {
-      __cq?: { calls: Record<string, number>; failing: Record<string, string> };
-      __TAURI_INTERNALS__: {
-        runCallback: (id: number, data: unknown) => void;
-      };
-      chrome?: { webview?: Host };
-      webkit?: { messageHandlers?: { ipc?: Host } };
-    };
-    if (page.__cq) return;
-    const state = {
-      calls: {} as Record<string, number>,
-      failing: {} as Record<string, string>,
-    };
-    page.__cq = state;
-    /** Count the command; the reason to refuse it, if it is set to fail. */
-    const note = (command: string): string | undefined => {
-      state.calls[command] = (state.calls[command] ?? 0) + 1;
-      return state.failing[command];
-    };
-
-    const original = window.fetch.bind(window);
-    window.fetch = (input, init) => {
-      const url =
-        typeof input === "string"
-          ? input
-          : input instanceof URL
-            ? input.href
-            : input.url;
-      const ipc =
-        /^(?:https?:\/\/ipc\.localhost|ipc:\/\/localhost)\/([^?#]+)/.exec(url);
-      const reason =
-        ipc?.[1] === undefined ? undefined : note(decodeURIComponent(ipc[1]));
-      if (reason === undefined) return original(input, init);
-      return Promise.resolve(
-        new Response(JSON.stringify({ code: "refused", message: reason }), {
-          status: 500,
-          headers: {
-            "Content-Type": "application/json",
-            "Tauri-Response": "error",
-          },
-        }),
-      );
-    };
-
-    for (const host of [
-      page.chrome?.webview,
-      page.webkit?.messageHandlers?.ipc,
-    ]) {
-      if (!host) continue;
-      const post = host.postMessage.bind(host);
-      host.postMessage = (message) => {
-        const sent: { cmd?: string; error?: number } | null =
-          typeof message === "string" && message.startsWith("{")
-            ? JSON.parse(message)
-            : null;
-        const reason = sent?.cmd === undefined ? undefined : note(sent.cmd);
-        if (reason === undefined || sent?.error === undefined)
-          return post(message);
-        page.__TAURI_INTERNALS__.runCallback(sent.error, {
-          code: "refused",
-          message: reason,
-        });
-      };
-    }
-  });
+export function fakeAdvance(seconds: number): Promise<void> {
+  return invokeCommand("fake_advance", { seconds });
 }
 
-/** How many times the page has called `command` since `watchInvokes`. */
-export function invokeCount(command: string): Promise<number> {
-  return browser.execute(
-    (name: string) =>
-      (window as unknown as { __cq: { calls: Record<string, number> } }).__cq
-        .calls[name] ?? 0,
-    command,
-  );
+/** Whether anything is holding the fake machine awake. */
+export function fakeAwake(): Promise<boolean> {
+  return invokeCommand<boolean>("fake_awake", {});
 }
 
-/** Make the page's calls to `command` fail with `message`; null lets them through. */
-export async function failInvokes(
-  command: string,
-  message: string | null,
+/**
+ * Move the fake machine's uptime on by `seconds` at a time until `done`
+ * holds. The app looks at the machine twice a second and counts a program's
+ * absence from the first look that saw it, so one jump can be over before
+ * that look; jumping again after each look cannot miss it.
+ */
+export async function advanceUntil(
+  seconds: number,
+  done: () => Promise<boolean>,
+  what: string,
+  timeout = 20_000,
 ): Promise<void> {
-  await browser.execute(
-    (name: string, reason: string | null) => {
-      const failing = (
-        window as unknown as { __cq: { failing: Record<string, string> } }
-      ).__cq.failing;
-      if (reason === null) delete failing[name];
-      else failing[name] = reason;
+  await browser.waitUntil(
+    async () => {
+      if (await done()) return true;
+      await fakeAdvance(seconds);
+      return false;
     },
-    command,
-    message,
+    { timeout, interval: 700, timeoutMsg: `${what} never happened` },
   );
+}
+
+/** The DOM text of the toast, until it goes. */
+export async function waitForToast(
+  wanted: RegExp,
+  timeout = 10_000,
+): Promise<void> {
+  await browser.waitUntil(async () => wanted.test(await text("#toast")), {
+    timeout,
+    timeoutMsg: `no toast matched ${wanted}`,
+  });
 }
 
 /** Give the element keyboard focus, as a Tab press would. */

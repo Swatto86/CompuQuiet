@@ -116,6 +116,27 @@ export function addKeepAlive(profile: Profile, name: string): EditResult {
   };
 }
 
+/** Programs the auto-quiet list may hold, as the engine allows. */
+export const MOST_PROGRAMS = 32;
+
+export type ProgramsResult =
+  { ok: true; programs: string[] } | { ok: false; reason: string };
+
+/** The auto-quiet list plus `name`, or why it cannot be added. */
+export function addProgram(programs: string[], name: string): ProgramsResult {
+  const problem = checkName(name, "program");
+  if (problem) return { ok: false, reason: problem };
+  const key = normalizeName(name);
+  if (programs.some((listed) => normalizeName(listed) === key))
+    return { ok: false, reason: `${name.trim()} is already on the list` };
+  if (programs.length >= MOST_PROGRAMS)
+    return {
+      ok: false,
+      reason: `The list holds at most ${MOST_PROGRAMS} programs`,
+    };
+  return { ok: true, programs: [...programs, name.trim()] };
+}
+
 /**
  * Removing a row is a decision, not just a deletion: a scan finds a known
  * target that is missing from the list and parks it again on every run. So

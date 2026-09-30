@@ -59,6 +59,26 @@
             </div>
           </section>
           <p id="hero-plan" class="plan"></p>
+          <section id="until" class="until" aria-label="How long Quiet Mode lasts">
+            <div id="until-choose" class="until-row">
+              <label id="until-label" for="until-choice">How long</label>
+              <select id="until-choice">
+                <option value="none">Until I put it back</option>
+                <option value="60">For 1 hour</option>
+                <option value="120">For 2 hours</option>
+                <option value="240">For 4 hours</option>
+                <option value="program">Until a program closes</option>
+              </select>
+              <input id="until-program" list="until-programs" placeholder="Pick a running program" aria-label="Program to wait for" autocomplete="off" hidden />
+              <datalist id="until-programs"></datalist>
+              <button id="until-set" type="button" class="small" hidden>Set</button>
+            </div>
+            <div id="until-now" class="until-row" hidden>
+              <span id="until-text"></span>
+              <button id="until-extend" type="button" class="small" hidden>Add 1 hour</button>
+              <button id="until-clear" type="button" class="small">Keep it on</button>
+            </div>
+          </section>
           <details id="preview" class="preview">
             <summary>Preview what one press would do right now</summary>
             <div class="preview-body">
@@ -184,6 +204,8 @@
               <h3>System</h3>
               <label class="check"><input type="checkbox" id="opt-power" /> <span>Switch to the performance power plan</span></label>
               <label class="check"><input type="checkbox" id="opt-purge" /> <span>Purge cached memory once everything is parked</span></label>
+              <label class="check"><input type="checkbox" id="opt-awake" /> <span>Keep the PC awake while Quiet Mode is on</span></label>
+              <p class="muted" id="awake-hint">Stops sleep and the screen turning off until you put everything back. Closing a laptop's lid still sleeps it. On battery it is left out unless you allow that in Settings.</p>
               <h4>Never touch</h4>
               <p class="muted">The desktop, input, audio, security and terminals are always protected. Add your own programs or services here. Anything you remove from the lists lands here too, so a scan does not park it again; take it off this list to allow that.</p>
               <form id="keep-add" class="row">
@@ -242,6 +264,29 @@
               <label class="choice"><input type="checkbox" id="set-auto-update" />
                 <span>Install updates automatically</span>
                 <span class="choice-help">When a newer release is out and Quiet Mode is off, CompuQuiet downloads it and installs it once you close the window to the tray. Off: it still looks now and then and says under About when a release is out, but installs nothing.</span>
+              </label>
+            </div>
+            <div class="card card-wide">
+              <h3>Ending Quiet Mode by itself</h3>
+              <label class="choice"><input type="checkbox" id="set-auto-quiet" />
+                <span>Go quiet when one of these programs is running</span>
+                <span class="choice-help">Off by default. Ten seconds after one starts, CompuQuiet frees up the PC; thirty seconds after the last one has closed, it puts everything back. Because you did not press the button it suspends rather than closes programs and leaves cached memory alone. A Quiet Mode you started yourself is never ended this way, and these programs are never parked.</span>
+              </label>
+              <form id="auto-quiet-add" class="row">
+                <label class="grow"><span class="sr-only">Program that starts Quiet Mode</span><input id="auto-quiet-name" list="auto-quiet-programs" placeholder="Add a program (name or pick a running one)" autocomplete="off" /></label>
+                <datalist id="auto-quiet-programs"></datalist>
+                <button type="submit" class="small">Add</button>
+              </form>
+              <ul id="auto-quiet-list" class="chips"></ul>
+              <label class="row-label"><span>Say so when Quiet Mode has been on, with nothing to end it, for</span>
+                <select id="set-still-on">
+                  <option value="0">Never</option>
+                  <option value="2">2 hours</option>
+                  <option value="4">4 hours</option>
+                  <option value="8">8 hours</option>
+                  <option value="12">12 hours</option>
+                  <option value="24">24 hours</option>
+                </select>
               </label>
             </div>
             <div class="card">

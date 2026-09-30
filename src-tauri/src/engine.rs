@@ -11,11 +11,11 @@ use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use cq_core::journal::Summary;
-use cq_core::{Capabilities, CoreError, DoneStep, Journal, Os, Settings, Skipped, SystemStats};
+use cq_core::{Capabilities, DoneStep, Journal, Os, Settings, Skipped, SystemStats};
 use cq_platform::Platform;
 use serde::Serialize;
 
-use self::preview::Planned;
+pub use self::ending::{EndingState, Watching};
 pub use self::preview::Preview;
 pub use self::report::{RunReport, notification};
 use crate::error::AppError;
@@ -65,6 +65,8 @@ pub struct EngineState {
     /// What the last restore could not put back; the only time giving up on
     /// the journal is offered. Empty once a restore succeeds.
     pub unrestored: Vec<Unrestored>,
+    /// How Quiet Mode ends by itself, if it does.
+    pub ending: Option<EndingState>,
 }
 
 struct Inner {
@@ -173,6 +175,10 @@ impl Engine {
             startup_error: inner.startup_error.clone(),
             settings_unreadable: inner.unreadable_settings.clone(),
             unrestored: inner.unrestored.clone(),
+            ending: inner
+                .journal
+                .as_ref()
+                .and_then(|journal| self.ending_state(journal)),
         }
     }
 
@@ -280,84 +286,6 @@ impl Engine {
         }
         Ok(BusyGuard(&self.busy))
     }
-
-    pub fn go_quiet(&self, progress: &dyn Fn(LogLine)) -> Result<Summary, AppError> {
-        let _guard = self.begin()?;
-        let settings = self.runnable_settings()?;
-        self.lock().run_report = None;
-        // Planned from the machine as it is now, never from an earlier preview.
-        let Planned {
-            snapshot,
-            plan,
-            added,
-        } = self.plan_now(&settings)?;
-
-        let mut log = Vec::new();
-        if !added.is_empty() {
-            let line = LogLine {
-                label: format!("Scan added {} low-risk target(s)", added.len()),
-                ok: true,
-                detail: Some(
-                    added
-                        .iter()
-                        .map(|r| r.name.as_str())
-                        .collect::<Vec<_>>()
-                        .join(", "),
-                ),
-            };
-            progress(line.clone());
-            log.push(line);
-        }
-        // Read by the engine just before the first step, so the figures are
-        // this run's and not whatever an open window last happened to poll.
-        // A run with nothing to do is not measured.
-        let before = if plan.steps.is_empty() {
-            None
-        } else {
-            self.measure()
-        };
-
-        let mut journal = Journal::new(now());
-        journal.began = Some(self.platform.marker());
-        journal.save(&self.data_dir)?;
-        let mut took_effect = Vec::with_capacity(plan.steps.len());
-        for step in &plan.steps {
-            let line = match self.run_journaled(step, snapshot.power_plan.as_ref(), &mut journal) {
-                Ok(line) => line,
-                Err(error) => return Err(self.stop_unrecorded(journal, log, error)),
-            };
-            took_effect.push(line.ok && line.detail.is_none());
-            progress(line.clone());
-            log.push(line);
-        }
-        let run_report = before.and_then(|before| {
-            let after = self.measure()?;
-            Some(RunReport::measured(
-                &before,
-                &after,
-                &plan.steps,
-                &took_effect,
-                &snapshot.processes,
-            ))
-        });
-        let summary = journal.summary();
-        let mut inner = self.lock();
-        inner.journal = Some(journal);
-        inner.log = log;
-        inner.skipped = plan.skipped;
-        inner.run_report = run_report;
-        inner.recovered = false;
-        Ok(summary)
-    }
-
-    /// A journal save failed mid-run: keep what was done where Restore can
-    /// see it, and change nothing more.
-    fn stop_unrecorded(&self, journal: Journal, log: Vec<LogLine>, error: CoreError) -> AppError {
-        let mut inner = self.lock();
-        inner.journal = (!journal.done.is_empty()).then_some(journal);
-        inner.log = log;
-        error.into()
-    }
 }
 
 struct BusyGuard<'a>(&'a AtomicBool);
@@ -368,12 +296,18 @@ impl Drop for BusyGuard<'_> {
     }
 }
 
+mod ending;
 mod preview;
 mod recovery;
 mod report;
 mod restore;
+mod start;
 mod steps;
 
+#[cfg(all(test, feature = "fake-platform"))]
+mod awake_tests;
+#[cfg(all(test, feature = "fake-platform"))]
+mod ending_tests;
 #[cfg(all(test, feature = "fake-platform"))]
 mod failure_tests;
 #[cfg(all(test, feature = "fake-platform"))]

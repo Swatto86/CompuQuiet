@@ -44,3 +44,32 @@ fn a_full_cycle_is_reflected_in_the_next_snapshot() {
     assert_eq!(after.services[0].state, ServiceState::Running);
     assert_eq!(after.power_plan, Some(previous));
 }
+
+#[test]
+fn programs_come_and_go_time_passes_and_the_hold_shows() {
+    let fake = Fake::new();
+    let named = |name: &str| {
+        fake.processes()
+            .unwrap()
+            .into_iter()
+            .filter(|p| p.name == name)
+            .count()
+    };
+    assert_eq!(named("steam.exe"), 0);
+    fake.start_program("steam.exe");
+    fake.start_program("steam.exe");
+    assert_eq!(named("steam.exe"), 2);
+    fake.stop_program("STEAM.exe");
+    assert_eq!(named("steam.exe"), 0);
+    assert_eq!(named("game.exe"), 1, "the others are untouched");
+
+    let uptime = fake.marker().uptime;
+    fake.advance(90);
+    assert_eq!(fake.marker().uptime, uptime + 90);
+
+    assert!(!fake.awake());
+    fake.keep_awake(true).unwrap();
+    assert!(fake.awake());
+    fake.keep_awake(false).unwrap();
+    assert!(!fake.awake());
+}

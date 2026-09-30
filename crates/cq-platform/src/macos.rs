@@ -8,6 +8,7 @@ use std::time::Duration;
 use cq_core::{Capabilities, PowerPlan, ServiceInfo, ServiceState, Snapshot, SystemStats};
 
 use crate::Platform;
+use crate::awake;
 use crate::error::{PlatformError, Result};
 use crate::procs::Sampler;
 use crate::spawn::{absolute, app_bundle, run_tool, run_tool_within, spawn_detached};
@@ -16,7 +17,11 @@ use crate::unix;
 pub struct MacOs {
     sampler: Sampler,
     uid: u32,
+    awake: awake::Hold,
 }
+
+/// Where macOS keeps `caffeinate`, which holds off idle and display sleep.
+const CAFFEINATE: &str = "/usr/bin/caffeinate";
 
 impl MacOs {
     pub fn new() -> MacOs {
@@ -26,6 +31,7 @@ impl MacOs {
                 nix::unistd::getuid().as_raw(),
                 std::env::var("SUDO_UID").ok().as_deref(),
             ),
+            awake: awake::Hold::default(),
         }
     }
 
@@ -99,6 +105,7 @@ impl Platform for MacOs {
             services: true,
             power: false,
             memory_purge: unix::is_root(),
+            keep_awake: Path::new(CAFFEINATE).is_file(),
             elevated: unix::is_root(),
             can_elevate: false,
         }
@@ -227,6 +234,17 @@ impl Platform for MacOs {
         } else {
             Err(PlatformError::NeedsElevation)
         }
+    }
+
+    /// `-d` holds the display awake and `-i` the system; `-w` ends it with
+    /// this process. Neither stops a closed lid from sleeping the Mac.
+    fn keep_awake(&self, on: bool) -> Result<()> {
+        let args = [
+            "-di".to_string(),
+            "-w".to_string(),
+            std::process::id().to_string(),
+        ];
+        self.awake.set(on, CAFFEINATE, &args)
     }
 
     fn relaunch_elevated(&self, _exe: &Path, _args: &[String]) -> Result<()> {

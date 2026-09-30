@@ -16,6 +16,7 @@ pub mod recommend;
 pub mod settings;
 pub mod snapshot;
 pub mod store;
+pub mod watch;
 
 pub use error::CoreError;
 pub use journal::{DoneStep, Journal, Marker, RestoreStep};

@@ -19,6 +19,7 @@ fn state() -> EngineState {
             services: true,
             power: true,
             memory_purge: false,
+            keep_awake: true,
             elevated: false,
             can_elevate: true,
         },
@@ -28,6 +29,7 @@ fn state() -> EngineState {
         startup_error: None,
         settings_unreadable: None,
         unrestored: Vec::new(),
+        ending: None,
     }
 }
 

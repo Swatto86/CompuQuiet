@@ -5,14 +5,8 @@
  */
 import { strict as assert } from "node:assert";
 
-import {
-  attribute,
-  clickTab,
-  focus,
-  focused,
-  text,
-  watchInvokes,
-} from "./support.ts";
+import { attribute, clickTab, focus, focused, text } from "./support.ts";
+import { watchInvokes } from "./ipc-watch.ts";
 
 describe("the window, by keyboard", () => {
   before(async () => {

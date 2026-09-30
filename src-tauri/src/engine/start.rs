@@ -1,0 +1,185 @@
+//! Switching Quiet Mode on: plan from the machine as it is, write the journal,
+//! then carry out each step.
+
+use cq_core::journal::Summary;
+use cq_core::watch::{Ending, running};
+use cq_core::{CoreError, Journal, Recommendation, Settings, Step};
+
+use super::preview::Planned;
+use super::{Engine, LogLine, RunReport, now};
+use crate::error::AppError;
+
+impl Engine {
+    /// Switch Quiet Mode on. `ending` is how the run ends by itself, if it
+    /// does; a `Trigger` one also means nobody pressed the button, which
+    /// changes what the run is willing to do (see `Plan::unattended`).
+    pub fn go_quiet(
+        &self,
+        progress: &dyn Fn(LogLine),
+        ending: Option<Ending>,
+    ) -> Result<Summary, AppError> {
+        let _guard = self.begin()?;
+        let mut settings = self.runnable_settings()?;
+        self.lock().run_report = None;
+        protect_what_it_waits_for(&mut settings, ending.as_ref());
+        // Planned from the machine as it is now, never from an earlier preview.
+        let Planned {
+            snapshot,
+            mut plan,
+            added,
+        } = self.plan_now(&settings)?;
+        check_it_is_running(ending.as_ref(), &snapshot.processes)?;
+
+        let mut log = Vec::new();
+        let started_by = match &ending {
+            Some(Ending::Trigger { program }) => {
+                plan.unattended();
+                Some(started_because(program))
+            }
+            _ => None,
+        };
+        for line in started_by.into_iter().chain(scan_line(&added)) {
+            progress(line.clone());
+            log.push(line);
+        }
+        // Read by the engine just before the first step, so the figures are
+        // this run's and not whatever an open window last happened to poll.
+        // A run with nothing to do is not measured.
+        let before = if plan.steps.is_empty() {
+            None
+        } else {
+            self.measure()
+        };
+
+        let mut journal = Journal::new(now());
+        journal.began = Some(self.platform.marker());
+        journal.ending = ending;
+        journal.save(&self.data_dir)?;
+        let mut took_effect = Vec::with_capacity(plan.steps.len());
+        for step in &plan.steps {
+            let line = match self.run_journaled(step, snapshot.power_plan.as_ref(), &mut journal) {
+                Ok(line) => line,
+                Err(error) => return Err(self.stop_unrecorded(journal, log, error)),
+            };
+            took_effect.push(line.ok && line.detail.is_none());
+            progress(line.clone());
+            log.push(line);
+        }
+        let run_report = before.and_then(|before| {
+            let after = self.measure()?;
+            Some(RunReport::measured(
+                &before,
+                &after,
+                &plan.steps,
+                &took_effect,
+                &snapshot.processes,
+            ))
+        });
+        let summary = journal.summary();
+        let mut inner = self.lock();
+        inner.journal = Some(journal);
+        inner.log = log;
+        inner.skipped = plan.skipped;
+        inner.run_report = run_report;
+        inner.recovered = false;
+        Ok(summary)
+    }
+
+    /// A journal save failed mid-run: keep what was done where Restore can
+    /// see it, and change nothing more.
+    fn stop_unrecorded(&self, journal: Journal, log: Vec<LogLine>, error: CoreError) -> AppError {
+        let mut inner = self.lock();
+        inner.journal = (!journal.done.is_empty()).then_some(journal);
+        inner.log = log;
+        error.into()
+    }
+
+    /// Hold off sleep. Written to the journal first, like every step, so a
+    /// crash leaves a run that takes it up again; but it is no entry to undo:
+    /// the hold ends with this process, so nothing it does can outlive it.
+    pub(super) fn hold_awake(
+        &self,
+        step: &Step,
+        journal: &mut Journal,
+    ) -> Result<LogLine, CoreError> {
+        journal.awake = true;
+        if let Err(error) = journal.save(&self.data_dir) {
+            journal.awake = false;
+            return Err(error);
+        }
+        Ok(match self.platform.keep_awake(true) {
+            Ok(()) => LogLine {
+                label: step.label(),
+                ok: true,
+                detail: None,
+            },
+            Err(error) => {
+                log::warn!("{} failed: {error}", step.label());
+                journal.awake = false;
+                if let Err(error) = journal.save(&self.data_dir) {
+                    log::warn!("removing a hold that did not happen: {error}");
+                }
+                LogLine {
+                    label: step.label(),
+                    ok: false,
+                    detail: Some(error.to_string()),
+                }
+            }
+        })
+    }
+}
+
+/// The program a run waits for, or was started by, is not parked by it.
+fn protect_what_it_waits_for(settings: &mut Settings, ending: Option<&Ending>) {
+    if let Some(program) = ending.and_then(Ending::program) {
+        settings.profile.protect(program);
+    }
+}
+
+/// A run that waits for a program needs it to be there: one that is not
+/// running would end the run at once.
+fn check_it_is_running(
+    ending: Option<&Ending>,
+    processes: &[cq_core::ProcessInfo],
+) -> Result<(), AppError> {
+    let Some(Ending::ProgramExits { name }) = ending else {
+        return Ok(());
+    };
+    match running(
+        std::slice::from_ref(name),
+        processes,
+        cq_platform::current_pid(),
+    ) {
+        Some(_) => Ok(()),
+        None => Err(AppError::new(
+            "program_not_running",
+            format!("{name} is not running, so there is nothing to wait for"),
+        )),
+    }
+}
+
+/// Said at the top of the log of a run the watch started.
+fn started_because(program: &str) -> LogLine {
+    LogLine {
+        label: format!("Started because {program} is running"),
+        ok: true,
+        detail: Some(
+            "Nothing is closed and cached memory is left alone, because you did not press the button"
+                .to_string(),
+        ),
+    }
+}
+
+fn scan_line(added: &[Recommendation]) -> Option<LogLine> {
+    (!added.is_empty()).then(|| LogLine {
+        label: format!("Scan added {} low-risk target(s)", added.len()),
+        ok: true,
+        detail: Some(
+            added
+                .iter()
+                .map(|r| r.name.as_str())
+                .collect::<Vec<_>>()
+                .join(", "),
+        ),
+    })
+}

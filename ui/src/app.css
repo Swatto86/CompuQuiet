@@ -661,6 +661,23 @@ h3.group {
   max-width: 720px;
 }
 
+.until {
+  margin: 0 8px 8px;
+  max-width: 720px;
+}
+
+.until-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.until [hidden] {
+  display: none;
+}
+
 .tray-hint {
   margin: 0 8px 18px;
   max-width: 720px;

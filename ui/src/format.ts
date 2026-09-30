@@ -65,6 +65,7 @@ export function summaryLines(summary: Summary): string[] {
       `${plural(summary.processes_closed, "process", "processes")} closed (relaunched on restore)`,
     );
   if (summary.power_changed) lines.push("Performance power plan active");
+  if (summary.kept_awake) lines.push("PC kept awake");
   if (summary.memory_purged) lines.push("Cached memory purged");
   return lines;
 }
@@ -138,6 +139,7 @@ export function homePlan(
   if (profile.power === "performance")
     actions.push("switch to the performance power plan");
   if (profile.purge_memory) actions.push("purge cached memory");
+  if (profile.keep_awake) actions.push("keep the PC awake");
   const found = "low-risk programs and services a quick scan finds";
   if (actions.length === 0) {
     return context.autoScan

@@ -6,6 +6,7 @@ import {
   type Settings,
   type Theme,
 } from "./bridge.ts";
+import { AutoQuietView } from "./auto-quiet.ts";
 import { toast } from "./dialog.ts";
 import { byId } from "./dom.ts";
 import { applyTheme } from "./theme.ts";
@@ -17,7 +18,13 @@ export interface SettingsHost {
 }
 
 export class SettingsView {
+  private readonly autoQuiet: AutoQuietView;
+
   constructor(private readonly host: SettingsHost) {
+    this.autoQuiet = new AutoQuietView({
+      current: () => host.current(),
+      persist: (settings) => this.persist(settings),
+    });
     this.bind("set-hidden", (s, on) => ({ ...s, start_hidden: on }));
     this.bind("set-close-tray", (s, on) => ({ ...s, close_to_tray: on }));
     this.bind("set-notify", (s, on) => ({ ...s, notifications: on }));
@@ -50,6 +57,7 @@ export class SettingsView {
     byId<HTMLInputElement>("set-battery").checked = settings.allow_on_battery;
     byId<HTMLInputElement>("set-auto-update").checked = settings.auto_update;
     byId<HTMLSelectElement>("set-theme").value = settings.theme;
+    this.autoQuiet.render(settings);
     byId("data-dir").textContent = info.data_dir;
   }
 

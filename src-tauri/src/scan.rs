@@ -218,7 +218,7 @@ mod tests {
 
         let log = std::cell::RefCell::new(Vec::new());
         let summary = engine
-            .go_quiet(&|line| log.borrow_mut().push(line.label))
+            .go_quiet(&|line| log.borrow_mut().push(line.label), None)
             .unwrap();
         let log = log.into_inner();
         assert!(

@@ -19,6 +19,7 @@ use cq_core::{
 use crate::Platform;
 use crate::error::{PlatformError, Result};
 
+mod controls;
 mod faults;
 pub use faults::{Call, Failure};
 
@@ -48,6 +49,8 @@ struct State {
     faults: Vec<faults::Fault>,
     /// What the machine says about running on battery; `None` is a desktop.
     on_battery: Option<bool>,
+    /// Something is holding the machine awake.
+    awake: bool,
 }
 
 pub struct Fake {
@@ -167,6 +170,7 @@ impl Platform for Fake {
             services: true,
             power: true,
             memory_purge: true,
+            keep_awake: true,
             elevated: true,
             can_elevate: false,
         }
@@ -349,6 +353,13 @@ impl Platform for Fake {
     fn purge_memory(&self) -> Result<()> {
         self.lock().guarded(Call::PurgeMemory, "", |state| {
             state.purges += 1;
+            Ok(())
+        })
+    }
+
+    fn keep_awake(&self, on: bool) -> Result<()> {
+        self.lock().guarded(Call::KeepAwake, "", |state| {
+            state.awake = on;
             Ok(())
         })
     }

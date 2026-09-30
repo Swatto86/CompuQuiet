@@ -53,6 +53,7 @@ test("summary lines only mention what happened", () => {
       processes_closed: 0,
       power_changed: false,
       memory_purged: false,
+      kept_awake: false,
     }),
     [],
   );
@@ -63,12 +64,14 @@ test("summary lines only mention what happened", () => {
       processes_closed: 1,
       power_changed: true,
       memory_purged: true,
+      kept_awake: true,
     }),
     [
       "1 service stopped",
       "3 processes suspended",
       "1 process closed (relaunched on restore)",
       "Performance power plan active",
+      "PC kept awake",
       "Cached memory purged",
     ],
   );
@@ -80,6 +83,7 @@ function profile(partial: Partial<Profile> = {}): Profile {
     services: [],
     power: "leave",
     purge_memory: false,
+    keep_awake: false,
     keep_alive: [],
     ...partial,
   };
@@ -116,6 +120,10 @@ test("the home plan counts only what the button will actually touch", () => {
       }),
     ),
     "One press will park 1 program, stop 1 service, switch to the performance power plan, and purge cached memory. Press again to undo it.",
+  );
+  assert.equal(
+    homePlan(false, profile({ keep_awake: true })),
+    "One press will keep the PC awake. Press again to undo it.",
   );
   assert.match(homePlan(true, profile()), /undo them/);
 });

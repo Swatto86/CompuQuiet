@@ -106,6 +106,13 @@ export class Targets {
       };
       this.updateStatus();
     });
+    byId<HTMLInputElement>("opt-awake").addEventListener("change", (event) => {
+      this.working = {
+        ...this.working,
+        keep_awake: (event.target as HTMLInputElement).checked,
+      };
+      this.updateStatus();
+    });
     byId("targets-save").addEventListener("click", () => void this.save());
     byId("targets-reset").addEventListener("click", () => void this.reset());
     this.render();
@@ -127,6 +134,12 @@ export class Targets {
     else
       hint.textContent =
         "Windows service names, as shown in services.msc." + essential;
+    // One already ticked can still be unticked; one that cannot work cannot be ticked.
+    const awake = byId<HTMLInputElement>("opt-awake");
+    awake.disabled = !caps.keep_awake && !awake.checked;
+    byId("awake-hint").textContent = caps.keep_awake
+      ? "Stops sleep and the screen turning off until you put everything back. Closing a laptop's lid still sleeps it. On battery it is left out unless you allow that in Settings."
+      : "Not available on this system: it has no tool CompuQuiet can ask to hold off sleep (systemd-inhibit on Linux, caffeinate on macOS).";
   }
 
   setProfile(profile: Profile): void {
@@ -232,6 +245,7 @@ export class Targets {
     byId<HTMLInputElement>("opt-power").checked =
       this.working.power === "performance";
     byId<HTMLInputElement>("opt-purge").checked = this.working.purge_memory;
+    byId<HTMLInputElement>("opt-awake").checked = this.working.keep_awake;
     this.host.unsaved(dirty);
   }
 

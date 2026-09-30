@@ -4,6 +4,7 @@ import {
   errorMessage,
   isAppError,
   onConfirmQuit,
+  onNotice,
   onProgress,
   onRunError,
   onState,
@@ -18,6 +19,7 @@ import { byId } from "./dom.ts";
 import { closeHint, homePlan } from "./format.ts";
 import { PreviewPanel } from "./preview.ts";
 import { Recovery } from "./recovery.ts";
+import { RunLength } from "./run-length.ts";
 import { Scan } from "./scan.ts";
 import { SettingsView } from "./settings-view.ts";
 import { wireTabs, type Tabs } from "./tabs.ts";
@@ -38,6 +40,10 @@ let runElsewhere = false;
 
 const dashboard = new Dashboard(() => void toggle());
 const preview = new PreviewPanel();
+const runLength = new RunLength((next) => {
+  engine = next;
+  renderAll();
+});
 const recovery = new Recovery((next) => {
   engine = next;
   renderAll();
@@ -107,6 +113,7 @@ async function boot(): Promise<void> {
     renderAll();
   });
   await onRunError((error) => toast(error.message, true));
+  await onNotice((text) => toast(text));
   await onConfirmQuit(() => void quitFlow());
   new Diagnostics();
   new Updates().start().catch((error: unknown) => {
@@ -124,7 +131,10 @@ async function boot(): Promise<void> {
   await api.frontendReady();
   void pollStats();
   window.setInterval(() => void pollStats(), 2000);
-  window.setInterval(() => dashboard.tick(), 15_000);
+  window.setInterval(() => {
+    dashboard.tick();
+    runLength.tick();
+  }, 15_000);
 }
 
 function renderAll(): void {
@@ -134,6 +144,7 @@ function renderAll(): void {
   dashboard.render(engine);
   preview.setAvailable(!engine.quiet);
   recovery.render(engine);
+  runLength.render(engine);
   targets.describe(engine.capabilities, engine.os);
   settingsView.render(settings, info);
   renderPlan();
@@ -291,10 +302,19 @@ async function pollStats(): Promise<void> {
 
 async function toggle(): Promise<void> {
   if (busy) return;
+  const until = engine.quiet ? null : runLength.request();
+  if (until && !until.ok) {
+    toast(until.reason, true);
+    return;
+  }
   busy = true;
   dashboard.setBusy(true);
   try {
-    engine = engine.quiet ? await api.restore() : await api.goQuiet();
+    engine = engine.quiet
+      ? await api.restore()
+      : await api.goQuiet(until?.until ?? null);
+    // Every timed run is asked for afresh.
+    if (engine.quiet) runLength.reset();
     if (engine.quiet && engine.log.some((line) => !line.ok)) {
       toast("Some steps failed; see Activity.", true);
     }

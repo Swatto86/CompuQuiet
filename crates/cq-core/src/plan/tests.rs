@@ -30,6 +30,7 @@ fn full_caps() -> Capabilities {
         services: true,
         power: true,
         memory_purge: true,
+        keep_awake: true,
         elevated: true,
         can_elevate: true,
     }
@@ -182,6 +183,7 @@ fn unelevated_services_and_purge_are_skipped_with_the_reason_shown() {
         services: false,
         power: true,
         memory_purge: false,
+        keep_awake: false,
         elevated: false,
         can_elevate: true,
     };
@@ -376,6 +378,8 @@ fn a_service_that_running_services_need_is_left_running_and_they_are_named() {
     }
 }
 
+mod awake;
 mod battery;
 mod park;
 mod protect;
+mod unattended;

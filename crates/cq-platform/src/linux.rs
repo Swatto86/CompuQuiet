@@ -9,6 +9,7 @@ use std::time::Duration;
 use cq_core::{Capabilities, PowerPlan, ServiceInfo, ServiceState, Snapshot, SystemStats};
 
 use crate::Platform;
+use crate::awake;
 use crate::error::{PlatformError, Result};
 use crate::procs::Sampler;
 use crate::spawn::{run_tool, run_tool_within, spawn_detached};
@@ -21,6 +22,9 @@ pub struct Linux {
     root: bool,
     power_tool: bool,
     pkexec: bool,
+    /// systemd can be asked to hold off idle sleep.
+    inhibit: bool,
+    awake: awake::Hold,
 }
 
 fn on_path(program: &str) -> bool {
@@ -61,6 +65,8 @@ impl Linux {
             root: unix::is_root(),
             power_tool: power_profiles_usable(),
             pkexec: on_path("pkexec"),
+            inhibit: on_path("systemd-inhibit") && Path::new("/run/systemd/system").is_dir(),
+            awake: awake::Hold::default(),
         }
     }
 }
@@ -69,6 +75,25 @@ impl Default for Linux {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// The lock on idle sleep and screen blanking (never the lid), held by a
+/// shell that ends when `pid` does, so the lock cannot outlive this app.
+fn inhibit_args(pid: u32) -> Vec<String> {
+    [
+        "--what=idle",
+        "--who=CompuQuiet",
+        "--why=Quiet Mode is on",
+        "--mode=block",
+        "sh",
+        "-c",
+        r#"while kill -0 "$1" 2>/dev/null; do sleep 5; done"#,
+        "sh",
+    ]
+    .into_iter()
+    .map(String::from)
+    .chain(std::iter::once(pid.to_string()))
+    .collect()
 }
 
 /// `user:name` selects a user unit. Unit names are validated so they cannot
@@ -174,6 +199,7 @@ impl Platform for Linux {
             services: true,
             power: self.power_tool,
             memory_purge: self.root || self.pkexec,
+            keep_awake: self.inhibit,
             elevated: self.root,
             can_elevate: false,
         }
@@ -190,6 +216,10 @@ impl Platform for Linux {
             services: service_names.iter().map(|name| query(name)).collect(),
             power_plan,
         })
+    }
+
+    fn processes(&self) -> Result<Vec<cq_core::ProcessInfo>> {
+        Ok(self.sampler.processes())
     }
 
     fn stats(&self) -> Result<SystemStats> {
@@ -273,6 +303,16 @@ impl Platform for Linux {
         }
     }
 
+    fn keep_awake(&self, on: bool) -> Result<()> {
+        if on && !self.inhibit {
+            return Err(PlatformError::Unsupported(
+                "systemd-inhibit is not available here".into(),
+            ));
+        }
+        self.awake
+            .set(on, "systemd-inhibit", &inhibit_args(std::process::id()))
+    }
+
     fn relaunch_elevated(&self, _exe: &Path, _args: &[String]) -> Result<()> {
         Err(PlatformError::Unsupported(
             "Linux authenticates each privileged action through polkit instead".into(),
@@ -294,65 +334,4 @@ fn current_profile() -> Result<PowerPlan> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_unit_removed_since_it_was_stopped_is_not_installed() {
-        let failure = |message: &str| PlatformError::Other(message.to_string());
-        let gone = classify_systemctl(
-            "tracker.service",
-            failure(
-                "systemctl start -- tracker.service failed (exit status: 5): Failed to start tracker.service: Unit tracker.service not found.",
-            ),
-        );
-        assert!(matches!(gone, PlatformError::NotInstalled(_)), "{gone}");
-        let denied = classify_systemctl(
-            "tracker.service",
-            failure("systemctl stop failed: Failed to stop tracker.service: Access denied"),
-        );
-        assert!(denied.needs_elevation());
-        let other = classify_systemctl("x.service", failure("systemctl start failed: boom"));
-        assert!(matches!(other, PlatformError::Other(_)));
-    }
-
-    #[test]
-    fn a_power_daemon_without_a_performance_profile_is_not_usable() {
-        let others = "* balanced:\n    CpuDriver:\tintel_pstate\n\n  power-saver:\n    CpuDriver:\tintel_pstate\n";
-        assert!(!offers_performance(others));
-        let all = format!("  performance:\n    Degraded:\tno\n\n{others}");
-        assert!(offers_performance(&all));
-    }
-
-    #[test]
-    fn unit_names_are_validated_and_user_units_recognised() {
-        assert_eq!(
-            split_unit("user:tracker-miner-fs-3").unwrap(),
-            (true, "tracker-miner-fs-3".into())
-        );
-        assert_eq!(split_unit("cups").unwrap(), (false, "cups".into()));
-        assert!(split_unit("--user").is_err());
-        assert!(split_unit("user:").is_err());
-        assert!(split_unit("a b").is_err());
-    }
-
-    #[test]
-    fn systemctl_show_output_maps_to_service_state() {
-        assert_eq!(
-            parse_show("LoadState=loaded\nActiveState=active\nDescription=CUPS\n"),
-            (ServiceState::Running, "CUPS".into())
-        );
-        assert_eq!(
-            parse_show("LoadState=not-found\nActiveState=inactive\n").0,
-            ServiceState::NotInstalled
-        );
-        assert_eq!(
-            parse_show("LoadState=loaded\nActiveState=inactive\n").0,
-            ServiceState::Stopped
-        );
-        assert_eq!(
-            parse_show("LoadState=loaded\nActiveState=activating\n").0,
-            ServiceState::Transitioning
-        );
-    }
-}
+mod tests;

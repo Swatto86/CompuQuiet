@@ -21,6 +21,8 @@ pub struct Capabilities {
     pub services: bool,
     pub power: bool,
     pub memory_purge: bool,
+    /// Whether the system can be told not to sleep while Quiet Mode is on.
+    pub keep_awake: bool,
     pub elevated: bool,
     /// Whether elevation is a thing on this platform that the app can request.
     pub can_elevate: bool,
@@ -30,6 +32,9 @@ pub struct Capabilities {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Step {
     SetPerformancePower,
+    /// Hold off sleep and screen-off. Not a change to the machine that
+    /// outlives this process, so it has no undo entry (see `Journal::awake`).
+    KeepAwake,
     StopService {
         name: String,
     },
@@ -54,6 +59,7 @@ impl Step {
     pub fn label(&self) -> String {
         match self {
             Step::SetPerformancePower => "Switch to the performance power plan".to_string(),
+            Step::KeepAwake => "Keep the PC awake".to_string(),
             Step::StopService { name } => format!("Stop service {name}"),
             Step::SuspendProcess { name, pid, .. } => format!("Suspend {name} (PID {pid})"),
             Step::CloseProcess { name, pid, .. } => format!("Close {name} (PID {pid})"),
@@ -91,6 +97,14 @@ pub fn build_plan(
         }
     }
 
+    if profile.keep_awake {
+        if caps.keep_awake {
+            plan.steps.push(Step::KeepAwake);
+        } else {
+            plan.skip("Keep awake", "not available on this system");
+        }
+    }
+
     plan_services(profile, snapshot, os, caps, &mut plan);
     plan_processes(profile, snapshot, self_pid, os, &mut plan);
 
@@ -107,22 +121,29 @@ pub fn build_plan(
     plan
 }
 
-/// On battery the performance power plan and the memory purge cost charge and
-/// heat for little (the purge only clears a cache the system fills again), so
-/// they are left out and reported, unless `allowed`. Anything but a definite
-/// "on battery" counts as mains: a desktop, a UPS (which some systems list as
-/// a battery) and a machine that cannot say all run the whole plan.
+/// On battery the performance power plan, the memory purge and holding off
+/// sleep cost charge and heat for little (the purge only clears a cache the
+/// system fills again), so they are left out and reported, unless `allowed`.
+/// Anything but a definite "on battery" counts as mains: a desktop, a UPS
+/// (which some systems list as a battery) and a machine that cannot say all
+/// run the whole plan.
 pub fn guard_battery(plan: &mut Plan, on_battery: Option<bool>, allowed: bool) {
     if allowed || on_battery != Some(true) {
         return;
     }
     let (held, kept): (Vec<Step>, Vec<Step>) = std::mem::take(&mut plan.steps)
         .into_iter()
-        .partition(|step| matches!(step, Step::SetPerformancePower | Step::PurgeMemory));
+        .partition(|step| {
+            matches!(
+                step,
+                Step::SetPerformancePower | Step::KeepAwake | Step::PurgeMemory
+            )
+        });
     plan.steps = kept;
     for step in held {
         let name = match step {
             Step::SetPerformancePower => "Power plan",
+            Step::KeepAwake => "Keep awake",
             _ => "Memory purge",
         };
         plan.skip(name, BATTERY_REASON);
@@ -302,6 +323,32 @@ fn unrelaunchable_reason(os: Os) -> &'static str {
 }
 
 impl Plan {
+    /// For a run nobody pressed the button for: a program is suspended, not
+    /// closed (whatever it had open would be lost without the user knowing),
+    /// and the cache is left alone (the game the run started for has just
+    /// loaded into it).
+    pub fn unattended(&mut self) {
+        for step in &mut self.steps {
+            if let Step::CloseProcess {
+                pid,
+                name,
+                start_time,
+                ..
+            } = step
+            {
+                *step = Step::SuspendProcess {
+                    pid: *pid,
+                    name: std::mem::take(name),
+                    start_time: *start_time,
+                };
+            }
+        }
+        if self.steps.contains(&Step::PurgeMemory) {
+            self.steps.retain(|step| *step != Step::PurgeMemory);
+            self.skip("Memory purge", "left alone: this run started by itself");
+        }
+    }
+
     fn skip(&mut self, name: &str, reason: &str) {
         self.skipped.push(Skipped {
             name: name.to_string(),

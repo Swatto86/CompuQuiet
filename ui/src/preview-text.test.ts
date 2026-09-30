@@ -39,6 +39,10 @@ test("a step reads as what it does, with how many processes and how much they ho
     itemLine(item({ action: "purge", name: "", processes: 0 })).text,
     "Purge cached memory",
   );
+  assert.equal(
+    itemLine(item({ action: "keep_awake", name: "", processes: 0 })).text,
+    "Keep the PC awake",
+  );
 });
 
 test("a closed program shows the command line it is opened with, or says it cannot be", () => {

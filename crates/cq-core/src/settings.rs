@@ -11,10 +11,15 @@ use crate::CoreError;
 use crate::policy::is_critical_service;
 use crate::profile::{Os, Profile};
 use crate::store::{read_json, write_json};
+use crate::watch::AutoQuiet;
 
 pub const SETTINGS_FILE: &str = "settings.json";
 const CURRENT_VERSION: u32 = 1;
 const MAX_NAME_LEN: usize = 128;
+/// Programs the auto-quiet list may hold.
+const MAX_TRIGGERS: usize = 32;
+/// A week: longer than any run should go unmentioned.
+const MAX_STILL_ON_HOURS: u32 = 7 * 24;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
@@ -51,10 +56,22 @@ pub struct Settings {
     /// nothing. Absent in files written before it existed.
     #[serde(default = "default_true")]
     pub auto_update: bool,
+    /// Go quiet by itself while a chosen program runs. Off by default.
+    /// Absent in files written before it existed.
+    #[serde(default)]
+    pub auto_quiet: AutoQuiet,
+    /// Say so after this many hours of Quiet Mode that nothing will end;
+    /// 0 never. Absent in files written before it existed.
+    #[serde(default = "default_still_on")]
+    pub still_on_hours: u32,
 }
 
 fn default_true() -> bool {
     true
+}
+
+fn default_still_on() -> u32 {
+    4
 }
 
 impl Settings {
@@ -70,6 +87,8 @@ impl Settings {
             auto_scan: true,
             allow_on_battery: false,
             auto_update: true,
+            auto_quiet: AutoQuiet::default(),
+            still_on_hours: default_still_on(),
         }
     }
 
@@ -136,6 +155,16 @@ impl Settings {
                 self.version
             )));
         }
+        if self.auto_quiet.programs.len() > MAX_TRIGGERS {
+            return Err(CoreError::Invalid(format!(
+                "the auto-quiet list holds at most {MAX_TRIGGERS} programs"
+            )));
+        }
+        if self.still_on_hours > MAX_STILL_ON_HOURS {
+            return Err(CoreError::Invalid(format!(
+                "the still-on reminder is at most {MAX_STILL_ON_HOURS} hours"
+            )));
+        }
         let names = self
             .profile
             .processes
@@ -152,6 +181,12 @@ impl Settings {
                     .keep_alive
                     .iter()
                     .map(|name| ("keep-alive", name.as_str())),
+            )
+            .chain(
+                self.auto_quiet
+                    .programs
+                    .iter()
+                    .map(|name| ("auto-quiet", name.as_str())),
             );
         for (kind, name) in names {
             let trimmed = name.trim();
@@ -172,6 +207,9 @@ impl Settings {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod watch_tests;
 
 #[cfg(test)]
 mod tests {

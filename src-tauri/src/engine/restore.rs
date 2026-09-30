@@ -80,6 +80,13 @@ impl Engine {
         }
         let rest = journal.without(&resolved);
         let remaining = rest.done.len();
+        // Held until Quiet Mode is over: a restore that left entries has not
+        // ended it.
+        if remaining == 0 && journal.awake {
+            let line = self.release_awake();
+            progress(line.clone());
+            log.push(line);
+        }
         {
             let mut inner = self.lock();
             inner.log = log;

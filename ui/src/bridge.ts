@@ -27,7 +27,15 @@ export interface Profile {
   services: ServiceTarget[];
   power: PowerPolicy;
   purge_memory: boolean;
+  /** Hold off sleep and screen-off while Quiet Mode is on. */
+  keep_awake: boolean;
   keep_alive: string[];
+}
+
+/** Go quiet by itself while one of these programs runs. */
+export interface AutoQuiet {
+  enabled: boolean;
+  programs: string[];
 }
 
 export interface Settings {
@@ -43,6 +51,9 @@ export interface Settings {
   allow_on_battery: boolean;
   /** Download and install a newer release without being asked. */
   auto_update: boolean;
+  auto_quiet: AutoQuiet;
+  /** Hours of Quiet Mode nothing will end before it is mentioned; 0 never. */
+  still_on_hours: number;
 }
 
 export type Risk = "low" | "medium";
@@ -75,6 +86,7 @@ export interface Capabilities {
   services: boolean;
   power: boolean;
   memory_purge: boolean;
+  keep_awake: boolean;
   elevated: boolean;
   can_elevate: boolean;
 }
@@ -85,6 +97,7 @@ export interface Summary {
   processes_closed: number;
   power_changed: boolean;
   memory_purged: boolean;
+  kept_awake: boolean;
 }
 
 export interface Skipped {
@@ -111,7 +124,7 @@ export interface RunReport {
 }
 
 export type PreviewAction =
-  "power" | "stop_service" | "suspend" | "close" | "purge";
+  "power" | "keep_awake" | "stop_service" | "suspend" | "close" | "purge";
 
 /** One line of the preview: a service, a program (all its processes), the plan or the purge. */
 export interface PreviewItem {
@@ -149,6 +162,20 @@ export interface Unrestored {
   error: string | null;
 }
 
+/** What the page may ask for as the end of a run. */
+export type Until =
+  | { kind: "minutes"; minutes: number }
+  | { kind: "program_exits"; name: string };
+
+/** How the run in progress ends by itself. */
+export interface EndingState {
+  /** At a time, when a program has closed, or when what started it has. */
+  kind: "timer" | "program" | "trigger";
+  program: string | null;
+  /** By the machine's uptime, 0 once past; only for a timer. */
+  seconds_left: number | null;
+}
+
 export interface EngineState {
   quiet: boolean;
   busy: boolean;
@@ -168,6 +195,7 @@ export interface EngineState {
   settings_unreadable: string | null;
   /** What the last restore could not put back; empty once one succeeds. */
   unrestored: Unrestored[];
+  ending: EndingState | null;
 }
 
 export interface SystemStats {
@@ -255,7 +283,11 @@ export const api = {
   giveUpRestoring: () => invoke<EngineState>("give_up_restoring"),
   setAsideJournal: () => invoke<string | null>("set_aside_journal"),
   previewPlan: () => invoke<Preview>("preview_plan"),
-  goQuiet: () => invoke<EngineState>("go_quiet"),
+  goQuiet: (until: Until | null = null) =>
+    invoke<EngineState>("go_quiet", { until }),
+  /** Change how the run in progress ends; null leaves it to the user. */
+  setEnding: (until: Until | null) =>
+    invoke<EngineState>("set_ending", { until }),
   restore: () => invoke<EngineState>("restore"),
   frontendReady: () => invoke<void>("frontend_ready"),
   getAutostart: () => invoke<AutostartStatus>("get_autostart"),
@@ -279,6 +311,11 @@ export function onState(
   handler: (state: EngineState) => void,
 ): Promise<UnlistenFn> {
   return listen<EngineState>("quiet-state", (event) => handler(event.payload));
+}
+
+/** Something the app did by itself (a timer, an auto-quiet start, a reminder). */
+export function onNotice(handler: (text: string) => void): Promise<UnlistenFn> {
+  return listen<string>("quiet-notice", (event) => handler(event.payload));
 }
 
 /** A run the page did not start (the tray's) failed. */

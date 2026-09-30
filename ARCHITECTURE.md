@@ -6,7 +6,7 @@ effect happens in Rust behind a validated command.
 
 ```
 ui/            vanilla TS + Vite: dashboard, scan, park list editor, settings, about
-src-tauri/     the shell: commands, engine, tray, autostart, window lifecycle
+src-tauri/     the shell: commands, engine, watch, tray, autostart, window lifecycle
 crates/
   cq-core/     domain, no OS calls: profile, policy, planner, journal, settings
   cq-platform/ the Platform trait and its adapters: windows, linux, macos, fake
@@ -22,11 +22,11 @@ Dependencies point inward: `src-tauri` → `cq-platform` → `cq-core`.
    threads), the state of the profile's services, and the active power plan.
 2. **Plan.** `cq_core::build_plan` turns profile + snapshot + capabilities into
    ordered `Step`s and a list of skipped targets with reasons. Order: power
-   plan, services, processes, memory purge. Critical processes and services
+   plan, keep-awake, services, processes, memory purge. Critical processes and services
    (`policy.rs`), keep-alive entries (a process is also spared when only its
    own name matches, as a truncated Linux name does) and the app itself are
    never planned. `cq_core::guard_battery` then drops the performance power
-   plan and the memory purge, listing them as left alone, when
+   plan, keep-awake and the memory purge, listing them as left alone, when
    `Platform::on_battery` says `Some(true)` and `Settings::allow_on_battery`
    is off. Windows answers from `GetSystemPowerStatus`, Linux from the
    machine's own `Battery` supplies in `/sys/class/power_supply` (a
@@ -84,6 +84,28 @@ Dependencies point inward: `src-tauri` → `cq-platform` → `cq-core`.
    deadline, and the C locale on Linux and macOS so their messages can be
    matched. Windows decisions use error codes, never a tool's translated
    text; the forced close is `TerminateProcess`.
+7. **Endings and the watch.** A run may end by itself (`Journal::ending`,
+   `cq_core::watch::Ending`): at a deadline counted in the machine's uptime
+   (`Platform::marker`, never the wall clock), when a program the user named
+   has closed, or, for a run the watch started, when none of the auto-quiet
+   programs has run for a while. `src-tauri/src/watch.rs` looks every five
+   seconds (`Platform::processes`, only when there is something to look for),
+   gives the look to the pure `Watch::poll` (start after 10 s, leave after
+   30 s, in uptime) and does what it says through `run_transition`, so the
+   busy guard, claim, journal and tray are a press's. It acts only when idle,
+   never restores under a game that started meanwhile and never starts twice
+   over one game (`disarmed`). A run it starts is `Plan::unattended` (suspend
+   instead of close, no purge) and spares the program it started for
+   (`Profile::protect` on that run's copy of the profile). `go_quiet` takes an
+   `Until` from the page, checked in `Until::ending`; `Engine::set_ending`
+   changes a run in progress. `Settings::still_on_hours` sets a reminder,
+   said once, for a run nothing will end. Keep-awake (`Profile::keep_awake`,
+   `Step::KeepAwake`) is a hold that ends with the process, so it has no undo
+   entry: `Journal::awake` records it, `Engine::resume_awake` takes it up
+   again for a recovered run, and restore lets go once the run is over.
+   Windows holds `SetThreadExecutionState` on a thread of its own; Linux and
+   macOS start `systemd-inhibit` or `caffeinate` in their own process group,
+   bound to this process's pid (`cq-platform/src/awake.rs`).
 
 Processes are identified by PID plus start time so a reused PID is refused.
 
@@ -121,7 +143,8 @@ module: `NtSuspendProcess`/`NtResumeProcess`, the token elevation check, the
 standby-list purge, the file-cache figure (`GetPerformanceInfo`), a service's
 running dependents, window enumeration, starting a program with the desktop
 shell's token (`CreateProcessWithTokenW`, so an elevated CompuQuiet does not
-hand its rights on) and the `runas` relaunch. Everything else uses safe crates
+hand its rights on), holding off sleep (`SetThreadExecutionState`) and the
+`runas` relaunch. Everything else uses safe crates
 (`windows-service`, `sysinfo`, `nix`) or structured subprocess calls with
 validated arguments (`powercfg`, `taskkill`, `systemctl`, `powerprofilesctl`,
 `launchctl`, `schtasks`).
@@ -135,12 +158,14 @@ suite. It is never a default feature; `scripts/verify.sh` asserts that. It
 can be told to fail (`Fake::fail(Call, target, Failure)`, `Fake::heal`): a
 refusal, a missing-rights error, or a timeout whose effect still lands. The
 e2e build exposes that as the `fake_fail` and `fake_heal` commands, which
-exist only with the `fake-platform` feature.
+exist only with the `fake-platform` feature, as do `fake_program` (open or
+close a program), `fake_advance` (move uptime on) and `fake_awake`, which the
+timed and auto-quiet specs drive.
 
 ## The window (`ui/`)
 
 No framework: one module per view (`dashboard`, `scan`, `targets`,
-`settings-view`, `updates`, `diagnostics`), `main.ts` for boot and the flows that span views,
+`settings-view`, `run-length`, `auto-quiet`, `updates`, `diagnostics`), `main.ts` for boot and the flows that span views,
 `tabs.ts` for the tab bar, and pure helpers with `node --test` tests
 (`format`, `scan-select`, `profile-edit`). Conventions that are not visible in
 the code:
@@ -167,6 +192,11 @@ the code:
   fetched when opened, on Look again and when Home is shown while open, only
   while Quiet Mode is off. The freed figure and the run lines come from
   `EngineState::run_report`, not from the page's own polling.
+- Home's *How long* (`run-length.ts`, wording in `ending-text.ts`) asks for a
+  timed or until-a-program run and goes back to *Until I put it back* after
+  every start, so each timed run is asked for afresh. While Quiet Mode is on
+  it shows the ending the engine reports, counting a timer down between
+  reports, and can add an hour or drop the ending.
 - The page's permissions are the three calls it makes itself (`listen`,
   `isVisible`, `setTheme`), listed in `src-tauri/capabilities/main.json`; add
   one only with the `ui/src` call that needs it. The e2e build adds four for

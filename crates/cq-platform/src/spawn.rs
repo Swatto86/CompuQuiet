@@ -127,7 +127,7 @@ pub(crate) fn run_tool_within(program: &str, args: &[&str], timeout: Duration) -
 /// those instead of the system's own and could crash or lose its theme, so
 /// the entries that point into the bundle are dropped for it.
 #[cfg(unix)]
-fn leave_the_bundle(command: &mut Command) {
+pub(crate) fn leave_the_bundle(command: &mut Command) {
     let Some(appdir) = std::env::var_os("APPIMAGE").and_then(|_| std::env::var_os("APPDIR")) else {
         return;
     };

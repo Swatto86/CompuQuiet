@@ -15,6 +15,7 @@ function state(over: Partial<EngineState>): EngineState {
       processes_closed: 0,
       power_changed: false,
       memory_purged: false,
+      kept_awake: false,
     },
     run_report: null,
     skipped: [],
@@ -23,6 +24,7 @@ function state(over: Partial<EngineState>): EngineState {
       services: true,
       power: true,
       memory_purge: true,
+      keep_awake: true,
       elevated: true,
       can_elevate: false,
     },
@@ -32,6 +34,7 @@ function state(over: Partial<EngineState>): EngineState {
     startup_error: null,
     settings_unreadable: null,
     unrestored: [],
+    ending: null,
     ...over,
   };
 }

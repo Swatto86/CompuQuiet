@@ -12,17 +12,15 @@ import {
   attribute,
   clickTab,
   emitEvent,
-  failInvokes,
   focus,
   focused,
-  invokeCount,
   readJson,
   setWindowVisible,
   text,
   waitForPill,
-  watchInvokes,
   windowTheme,
 } from "./support.ts";
+import { failInvokes, invokeCount, watchInvokes } from "./ipc-watch.ts";
 
 interface SavedSettings {
   close_to_tray: boolean;

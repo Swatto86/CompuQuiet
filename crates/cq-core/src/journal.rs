@@ -20,6 +20,7 @@ use crate::CoreError;
 use crate::plan::Step;
 use crate::snapshot::PowerPlan;
 use crate::store::{read_json, write_json};
+use crate::watch::Ending;
 
 pub const JOURNAL_FILE: &str = "journal.json";
 const CURRENT_VERSION: u32 = 1;
@@ -177,7 +178,7 @@ impl DoneStep {
                 args: args.clone(),
                 cwd: cwd.clone(),
             },
-            Step::PurgeMemory => return None,
+            Step::PurgeMemory | Step::KeepAwake => return None,
         })
     }
 
@@ -239,6 +240,7 @@ pub struct Summary {
     pub processes_closed: usize,
     pub power_changed: bool,
     pub memory_purged: bool,
+    pub kept_awake: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -249,6 +251,15 @@ pub struct Journal {
     /// Absent in journals from 1.1.4 and earlier, which restore everything.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub began: Option<Marker>,
+    /// How this run ends by itself, if it does. Journals from 1.1.7 and
+    /// earlier neither have it nor mind it: the user ends such a run.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ending: Option<Ending>,
+    /// The PC is being kept awake for this run. The hold ends with the
+    /// process, so it is not a step to undo; it is recorded so that a
+    /// recovered run takes it up again.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub awake: bool,
     pub done: Vec<DoneStep>,
 }
 
@@ -258,6 +269,8 @@ impl Journal {
             version: CURRENT_VERSION,
             started_at,
             began: None,
+            ending: None,
+            awake: false,
             done: Vec::new(),
         }
     }
@@ -358,7 +371,10 @@ impl Journal {
     }
 
     pub fn summary(&self) -> Summary {
-        let mut summary = Summary::default();
+        let mut summary = Summary {
+            kept_awake: self.awake,
+            ..Summary::default()
+        };
         for done in &self.done {
             match done {
                 DoneStep::PowerPlanChanged { .. } => summary.power_changed = true,

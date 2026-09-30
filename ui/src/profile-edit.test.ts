@@ -3,7 +3,9 @@ import { test } from "node:test";
 
 import type { Profile } from "./bridge.ts";
 import {
+  MOST_PROGRAMS,
   addKeepAlive,
+  addProgram,
   addProcess,
   addService,
   normalizeName,
@@ -22,6 +24,7 @@ function profile(): Profile {
     services: [{ name: "SysMain", enabled: true }],
     power: "performance",
     purge_memory: true,
+    keep_awake: false,
     keep_alive: [],
   };
 }
@@ -145,4 +148,21 @@ test("finds saved from Scan join unsaved edits instead of replacing them", () =>
   assert.ok(typed.ok);
   if (typed.ok)
     assert.equal(rebase(typed.profile, saved, after).processes.length, 2);
+});
+
+test("a program joins the auto-quiet list once, whatever its spelling, up to the limit", () => {
+  const added = addProgram([], " Steam.exe ");
+  assert.deepEqual(added, { ok: true, programs: ["Steam.exe"] });
+  const again = addProgram(["Steam.exe"], "steam");
+  assert.equal(again.ok, false);
+  assert.equal(again.ok ? "" : again.reason, "steam is already on the list");
+  assert.equal(addProgram([], "   ").ok, false);
+  assert.equal(addProgram([], "x".repeat(129)).ok, false);
+  const full = Array.from({ length: MOST_PROGRAMS }, (_, i) => `game-${i}`);
+  const over = addProgram(full, "one-more");
+  assert.equal(over.ok, false);
+  assert.equal(
+    over.ok ? "" : over.reason,
+    `The list holds at most ${MOST_PROGRAMS} programs`,
+  );
 });

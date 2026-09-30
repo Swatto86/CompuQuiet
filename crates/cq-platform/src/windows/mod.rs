@@ -7,11 +7,13 @@
 //! standby-list purge (`NtSetSystemInformation`, what RAMMap uses), the
 //! file-cache figure (`GetPerformanceInfo`), the service dependents list
 //! (`EnumDependentServicesW`), window enumeration, starting a program with
-//! the desktop shell's token (`CreateProcessWithTokenW`), and the UAC
-//! relaunch through `ShellExecuteW` with the `runas` verb.
+//! the desktop shell's token (`CreateProcessWithTokenW`), holding off sleep
+//! (`SetThreadExecutionState`), and the UAC relaunch through `ShellExecuteW`
+//! with the `runas` verb.
 #![allow(unsafe_code)]
 
 mod activity;
+mod awake;
 mod launch;
 mod memory;
 mod power;
@@ -47,6 +49,7 @@ const ERROR_NOT_ALL_ASSIGNED: u32 = 1300;
 pub struct Windows {
     sampler: Sampler,
     elevated: bool,
+    awake: awake::Hold,
 }
 
 impl Windows {
@@ -54,6 +57,7 @@ impl Windows {
         Windows {
             sampler: Sampler::new(),
             elevated: is_elevated(),
+            awake: awake::Hold::default(),
         }
     }
 }
@@ -74,6 +78,7 @@ impl Platform for Windows {
             services: self.elevated,
             power: true,
             memory_purge: self.elevated,
+            keep_awake: true,
             elevated: self.elevated,
             can_elevate: !self.elevated,
         }
@@ -89,6 +94,10 @@ impl Platform for Windows {
             services,
             power_plan: power::active().ok(),
         })
+    }
+
+    fn processes(&self) -> Result<Vec<cq_core::ProcessInfo>> {
+        Ok(self.sampler.processes())
     }
 
     fn stats(&self) -> Result<SystemStats> {
@@ -191,6 +200,10 @@ impl Platform for Windows {
             return Err(PlatformError::NeedsElevation);
         }
         memory::purge_standby_list()
+    }
+
+    fn keep_awake(&self, on: bool) -> Result<()> {
+        self.awake.set(on)
     }
 
     fn relaunch_elevated(&self, exe: &Path, args: &[String]) -> Result<()> {

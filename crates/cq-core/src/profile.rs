@@ -73,6 +73,10 @@ pub struct Profile {
     /// Opt-in: a new profile leaves the cache alone, and a saved value is
     /// kept as it is.
     pub purge_memory: bool,
+    /// Opt-in: hold off sleep and screen-off while Quiet Mode is on. Absent
+    /// in files written before it existed.
+    #[serde(default)]
+    pub keep_awake: bool,
     /// Names the user has promised never to touch, on top of the built-ins.
     pub keep_alive: Vec<String>,
 }
@@ -83,6 +87,14 @@ impl Profile {
     pub fn keeps_alive(&self, name: &str) -> bool {
         let wanted = normalize(name);
         self.keep_alive.iter().any(|kept| normalize(kept) == wanted)
+    }
+
+    /// Put `name` on the never-touch list unless it is there. For the copy of
+    /// the profile one run plans from, never the saved one.
+    pub fn protect(&mut self, name: &str) {
+        if !self.keeps_alive(name) {
+            self.keep_alive.push(name.to_string());
+        }
     }
 
     pub fn default_for(os: Os) -> Profile {
@@ -109,6 +121,7 @@ impl Profile {
                 .collect(),
             power: PowerPolicy::Performance,
             purge_memory: false,
+            keep_awake: false,
             keep_alive: Vec::new(),
         }
     }

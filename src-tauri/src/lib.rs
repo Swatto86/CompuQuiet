@@ -14,6 +14,7 @@ mod scan;
 mod single;
 mod tray;
 mod update;
+mod watch;
 
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -51,7 +52,7 @@ fn starts_hidden(hidden_arg: bool, reopen_arg: bool, start_hidden_setting: bool)
 }
 
 /// The fake machine the engine runs on, kept so the acceptance suite can make
-/// its calls fail (`commands::fake_fail`).
+/// its calls fail (`commands::fake::fake_fail`).
 #[cfg(feature = "fake-platform")]
 static FAKE: OnceLock<Arc<cq_platform::fake::Fake>> = OnceLock::new();
 
@@ -148,6 +149,7 @@ pub fn run() {
             tray::install(app.handle())?;
             tray::refresh(app.handle(), &engine.state());
             update::schedule(app.handle());
+            watch::schedule(app.handle());
             // The sign-in entry may still start the copy this one replaced.
             tauri::async_runtime::spawn_blocking(autostart::reconcile);
             let handle = app.handle().clone();
@@ -155,6 +157,7 @@ pub fn run() {
                 instance::Command::Show => tray::reveal(&handle),
             });
 
+            engine.resume_awake();
             // Quiet Mode left on in an earlier sign-in has already lost what
             // it parked; finish it rather than show it as still on.
             if engine.quiet_from_an_earlier_sign_in() {
@@ -163,7 +166,7 @@ pub fn run() {
                 tauri::async_runtime::spawn(async move {
                     // A failure is in the log already, and the window shows what
                     // is left when it opens.
-                    let _ = commands::run_transition(handle, engine, false).await;
+                    let _ = commands::run_transition(handle, engine, commands::Run::Restore).await;
                 });
             }
 
@@ -198,6 +201,7 @@ pub fn run() {
             commands::preview_plan,
             commands::go_quiet,
             commands::restore,
+            commands::set_ending,
             commands::frontend_ready,
             commands::get_autostart,
             commands::set_autostart,
@@ -208,13 +212,19 @@ pub fn run() {
             commands::quit,
             commands::show_window,
             #[cfg(feature = "fake-platform")]
-            commands::simulate_tray_menu,
+            commands::fake::simulate_tray_menu,
             #[cfg(feature = "fake-platform")]
-            commands::fake_fail,
+            commands::fake::fake_fail,
             #[cfg(feature = "fake-platform")]
-            commands::fake_heal,
+            commands::fake::fake_heal,
             #[cfg(feature = "fake-platform")]
-            commands::fake_battery,
+            commands::fake::fake_battery,
+            #[cfg(feature = "fake-platform")]
+            commands::fake::fake_program,
+            #[cfg(feature = "fake-platform")]
+            commands::fake::fake_advance,
+            #[cfg(feature = "fake-platform")]
+            commands::fake::fake_awake,
         ])
         .run(tauri::generate_context!())
         .unwrap_or_else(|error| panic!("CompuQuiet could not start its window: {error}"));

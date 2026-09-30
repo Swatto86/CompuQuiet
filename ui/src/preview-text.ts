@@ -17,6 +17,8 @@ export function itemLine(item: PreviewItem): PreviewLine {
   switch (item.action) {
     case "power":
       return { text: "Switch to the performance power plan", command: null };
+    case "keep_awake":
+      return { text: "Keep the PC awake", command: null };
     case "purge":
       return { text: "Purge cached memory", command: null };
     case "stop_service":

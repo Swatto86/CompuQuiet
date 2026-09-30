@@ -3,7 +3,7 @@
 //! The fake platform is told what to refuse; nothing here touches a real
 //! service or program.
 
-use cq_core::{DoneStep, PowerPlan, ServiceState};
+use cq_core::{CoreError, DoneStep, PowerPlan, ServiceState};
 use cq_platform::fake::{Call, Failure, Fake};
 
 use super::tests::{engine_with_every_kind_of_target, quiet_with_every_kind_of_step, sysmain};
@@ -149,7 +149,7 @@ fn giving_up_keeps_the_record_ends_quiet_mode_and_lets_it_start_again() {
     );
 
     fake.heal();
-    engine.go_quiet(&|_| {}).unwrap();
+    engine.go_quiet(&|_| {}, None).unwrap();
     assert!(engine.state().quiet);
 }
 
@@ -186,7 +186,7 @@ fn an_unreadable_journal_can_be_set_aside_and_only_then() {
     let engine = self::tests::engine(dir.path());
     assert!(engine.state().startup_error.is_some());
     assert_eq!(
-        engine.go_quiet(&|_| {}).unwrap_err().code,
+        engine.go_quiet(&|_| {}, None).unwrap_err().code,
         "journal_unreadable"
     );
 
@@ -194,7 +194,7 @@ fn an_unreadable_journal_can_be_set_aside_and_only_then() {
     assert_eq!(std::fs::read_to_string(kept).unwrap(), "{ not a journal");
     assert!(!path.exists());
     assert!(engine.state().startup_error.is_none());
-    engine.go_quiet(&|_| {}).unwrap();
+    engine.go_quiet(&|_| {}, None).unwrap();
     assert!(engine.state().quiet);
 }
 
@@ -234,11 +234,14 @@ fn a_program_that_ended_by_itself_is_not_a_failure() {
     // Dropbox ends on its own after the plan was made, as a helper does when
     // the program that started it is closed first.
     let summary = engine
-        .go_quiet(&|line| {
-            if line.label == "Stop service SysMain" {
-                fake.close(101, 1_700_000_101).unwrap();
-            }
-        })
+        .go_quiet(
+            &|line| {
+                if line.label == "Stop service SysMain" {
+                    fake.close(101, 1_700_000_101).unwrap();
+                }
+            },
+            None,
+        )
         .unwrap();
 
     assert_eq!(summary.processes_closed, 0, "nothing to relaunch later");
@@ -262,7 +265,7 @@ fn a_journal_that_cannot_be_saved_refuses_the_run_before_anything_changes() {
     let temp = format!(".journal.json.tmp-{}", std::process::id());
     std::fs::create_dir(dir.path().join(temp)).unwrap();
 
-    assert_eq!(engine.go_quiet(&|_| {}).unwrap_err().code, "state");
+    assert_eq!(engine.go_quiet(&|_| {}, None).unwrap_err().code, "state");
     assert!(!engine.state().quiet);
     assert_eq!(sysmain(&fake), Some(ServiceState::Running));
     assert!(running(&fake, "Dropbox.exe").unwrap());
@@ -281,12 +284,15 @@ fn a_journal_that_stops_saving_mid_run_stops_the_run_and_keeps_what_was_done() {
 
     // Once the service is stopped, the journal's place is taken by a folder.
     let error = engine
-        .go_quiet(&|line| {
-            if line.label == "Stop service SysMain" && path.is_file() {
-                std::fs::remove_file(&path).unwrap();
-                std::fs::create_dir(&path).unwrap();
-            }
-        })
+        .go_quiet(
+            &|line| {
+                if line.label == "Stop service SysMain" && path.is_file() {
+                    std::fs::remove_file(&path).unwrap();
+                    std::fs::create_dir(&path).unwrap();
+                }
+            },
+            None,
+        )
         .unwrap_err();
 
     assert_eq!(error.code, "state");

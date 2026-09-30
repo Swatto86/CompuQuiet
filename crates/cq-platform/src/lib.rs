@@ -8,6 +8,8 @@ pub mod error;
 mod procs;
 mod spawn;
 
+#[cfg(unix)]
+mod awake;
 #[cfg(feature = "fake")]
 pub mod fake;
 #[cfg(target_os = "linux")]
@@ -25,7 +27,7 @@ use std::time::Duration;
 pub use error::{PlatformError, Result};
 pub use spawn::run_tool;
 
-use cq_core::{Activity, Capabilities, Marker, Os, PowerPlan, Snapshot, SystemStats};
+use cq_core::{Activity, Capabilities, Marker, Os, PowerPlan, ProcessInfo, Snapshot, SystemStats};
 
 pub trait Platform: Send + Sync {
     /// The operating system this adapter models. The native adapters answer
@@ -40,6 +42,12 @@ pub trait Platform: Send + Sync {
     /// power plan. Service names are the profile's; unknown ones come back as
     /// not installed.
     fn snapshot(&self, service_names: &[String]) -> Result<Snapshot>;
+
+    /// The running programs alone, for a look every few seconds: no service
+    /// query and no power plan, which can start tools of their own.
+    fn processes(&self) -> Result<Vec<ProcessInfo>> {
+        Ok(self.snapshot(&[])?.processes)
+    }
 
     fn stats(&self) -> Result<SystemStats>;
 
@@ -98,6 +106,15 @@ pub trait Platform: Send + Sync {
     fn restore_power(&self, plan: &PowerPlan) -> Result<PowerPlan>;
 
     fn purge_memory(&self) -> Result<()>;
+
+    /// Hold off sleep and screen-off (`true`), or stop doing so. Either is a
+    /// no-op when it is already so. The hold ends with this process, whatever
+    /// happens to it. Never the lid: closing it still sleeps a laptop.
+    fn keep_awake(&self, _on: bool) -> Result<()> {
+        Err(PlatformError::Unsupported(
+            "keeping the PC awake is not available on this system".to_string(),
+        ))
+    }
 
     /// Start a copy of this executable with administrator rights. The caller
     /// exits afterwards; the platform reports whether the request was accepted.

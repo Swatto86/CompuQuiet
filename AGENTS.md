@@ -1,25 +1,30 @@
 # CompuQuiet — working context
 
-`ARCHITECTURE.md` explains the structure; this file records the decisions and
-constraints that are not visible in the code.
+`ARCHITECTURE.md` explains the structure; this file records what the code
+does not show.
 
 ## Decisions
 
-- **2026-09-30: a preview is a look, a run measures itself, battery holds
-  back power.** `Engine::plan_now` serves the run and the read-only preview;
-  a press always plans afresh. `RunReport` (memory only) is read by the
-  engine around a run. On battery (`Platform::on_battery`; unknown, a desktop
-  and a UPS count as mains) the power plan and purge are skipped unless
+- **2026-09-30: a preview is a look; battery holds back power.**
+  `Engine::plan_now` serves the run and the read-only preview; a press always
+  plans afresh. On battery (`Platform::on_battery`; unknown, a desktop or a
+  UPS is mains) the power plan, keep-awake and purge are skipped unless
   `allow_on_battery`.
+- **2026-09-30: Quiet Mode can start or end by itself, safely.** Journal
+  `ending` (uptime deadline, program to wait for, or auto-quiet trigger) and
+  `awake` are optional: 1.1.7 ignores them and the user ends the run. Never
+  the wall clock. Auto-quiet is off by default, suspends instead of closing,
+  skips the purge, spares its programs, and never ends or restarts over a run
+  the user pressed for. Keep-awake dies with the process, so it has no undo
+  entry.
 - **2026-09-30: the Windows setup is per-machine (Program Files).** The
   elevated logon task must start a program ordinary processes cannot replace:
-  it is HIGHEST only for an exe under `%ProgramFiles%` made by an elevated
-  process, else unelevated with the reason shown. `src-tauri/windows/hooks.nsh`
-  removes a 1.1.x per-user copy (`%LOCALAPPDATA%\CompuQuiet`; data is
-  untouched), re-points the task and deletes it on uninstall;
-  an installed copy re-points a stale task at start-up. An unelevated copy's
-  update raises UAC, announced. Rollback: uninstall, install a 1.1.7 setup;
-  settings and journal are unchanged.
+  HIGHEST only for an exe under `%ProgramFiles%` made by an elevated process,
+  else unelevated with the reason shown. `src-tauri/windows/hooks.nsh` removes
+  a 1.1.x per-user copy (data untouched), re-points the task and deletes it on
+  uninstall; an installed copy re-points a stale task at start-up. An
+  unelevated copy's update raises UAC, announced. Rollback: uninstall, install
+  1.1.7; settings and journal are unchanged.
 - **2026-09-30: a step that times out stays on record, and a stuck restore
   can be given up.** A timeout (`PlatformError::TimedOut`) does not prove the
   step failed (a busy service stops late), so its entry stays and Restore
@@ -38,14 +43,13 @@ constraints that are not visible in the code.
   locks `instance.lock`; a later launch leaves a request in `wake/` (a fixed
   command word, no arguments; `cq_core::instance`) and exits once the running
   copy takes it (window messages cannot cross the elevation boundary).
-  `go_quiet` re-reads `journal.json` and adopts it.
 - **2026-09-29: a restart or new sign-in ends Quiet Mode.** The journal
   records where Quiet Mode began (optional `began`: uptime and, on Windows,
-  the WTS sign-in's logon stamp), never compared with the wall clock, which
+  the WTS logon stamp), never compared with the wall clock, which
   jumps by hours on this dual-boot PC. An earlier sign-in's journal is
   finished at launch: closed programs are not relaunched, services restart
-  unless uptime shows a reboot, resumes are always tried and the power plan
-  is always restored. Older journals, and Linux/macOS sign-outs without a
+  unless uptime shows a reboot, resumes are tried and the power plan is
+  restored. Older journals, and Linux/macOS sign-outs without a
   reboot, restore everything.
 - **2026-09-30: Linux start times are recorded from boot.** A clock step made
   a resume look like another program. `ProcessInfo.start_time` is seconds
@@ -63,7 +67,7 @@ constraints that are not visible in the code.
   leaving a tray with nothing behind it. Tray actions and a second launch
   restart with `--reopen`.
 - **2026-09-30: failures are kept.** `compuquiet.log` holds warnings, errors,
-  failed steps (label and code, never program arguments) and panics; a full
+  failed steps (label and code) and panics; a full
   file becomes `.log.1`.
 - **2026-09-26: renamed to CompuQuiet.** A leftover `ComputeQuiet` settings
   folder, logon task or env override is still recognised. Tray actions run
@@ -81,23 +85,22 @@ constraints that are not visible in the code.
   real binary with only the OS adapter swapped. `verify.sh` asserts the
   feature is not a default and not in `tauri.conf.json`.
 - **2026-09-25: GitHub is the only remote.** Origin has no runners or
-  releases, so `Swatto86/CompuQuiet` on GitHub is the source of truth,
-  workflows and releases. Swatto mirrors it to Origin; this clone has no
-  Origin remote. Push to `origin` (GitHub) only.
+  releases; `Swatto86/CompuQuiet` on GitHub holds source, workflows and
+  releases, and Swatto mirrors it to Origin. Push to `origin` (GitHub) only.
 - **2026-09-27: updates install themselves.** `tauri-plugin-updater` checks
   `latest.json` on the GitHub release when idle. The release workflow signs
-  the NSIS installer, AppImage and macOS `.app.tar.gz` with the minisign key
+  each updater bundle with the minisign key
   in `TAURI_SIGNING_PRIVATE_KEY` (public half in `tauri.conf.json`). Only a
   copy that can replace itself checks (`update/guard.rs`; never a debug or
-  fake build), once idle with the window closed to the tray. With
-  `auto_update` off a release is only announced, never fetched.
+  fake build), idle with the window closed to the tray. With `auto_update`
+  off a release is only announced.
 - **2026-09-30: diagnostics stay local.** `diagnostics.rs` hides the home
   folder as `~` in the whole report, names steps but never arguments, and
   only reaches the clipboard.
 - **2026-09-19 (1.1.0): the scanner acts on low risk only.** `auto_scan` is
   on by default and parks low-risk finds for that run without editing the
-  saved targets; medium-risk finds (browsers, launchers, voice chat, Office)
-  are shown on the Scan tab and never applied unasked. Unknown programs are
+  saved targets; medium-risk finds are shown on the Scan tab and
+  never applied unasked. Unknown programs are
   suggested only where the platform can prove they own no window (Windows).
   Catalogue: `crates/cq-core/src/catalogue.rs`; an entry needs a reason and a risk.
 - **Linux elevation is per action through polkit** (`systemctl` for system
@@ -109,8 +112,8 @@ constraints that are not visible in the code.
 
 - Single branch `main`; commit and push verified units.
 - Inner loop: `npx tauri dev`; `scripts/fastcheck.ps1` / `.sh`.
-- Full gate: `scripts/verify.ps1` / `.sh` (fmt, clippy, tests, frontend, debug
-  build with the fake platform, WebDriver suite). Windows needs
+- Full gate: `scripts/verify.ps1` / `.sh` (fmt, clippy, tests, frontend, fake
+  platform build, WebDriver suite). Windows needs
   `scripts/setup-e2e.ps1` once per WebView2 update.
 - Release: bump the version in `Cargo.toml`, `src-tauri/tauri.conf.json` and
   `package.json` (the gate checks agreement), `AGENT_RELEASE=1 npx tauri build`

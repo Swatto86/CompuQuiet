@@ -3,6 +3,7 @@
 
 use std::sync::Arc;
 
+use cq_core::watch::{Ending, Until};
 use cq_core::{Settings, SystemStats};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -13,11 +14,36 @@ use crate::error::AppError;
 use crate::rows::ProcessRow;
 use crate::tray;
 
+#[cfg(feature = "fake-platform")]
+pub mod fake;
+
 pub const EVENT_PROGRESS: &str = "quiet-progress";
 pub const EVENT_STATE: &str = "quiet-state";
 /// A run the page did not start (the tray's) failed; the payload is the
 /// `AppError`, for the page to show as it would a failed click of its own.
 pub const EVENT_ERROR: &str = "quiet-error";
+/// Something the app did by itself (a timer, an auto-quiet start, a reminder);
+/// the payload is the sentence, for the page to show while it is open.
+pub const EVENT_NOTICE: &str = "quiet-notice";
+
+/// What one run does.
+pub enum Run {
+    /// Switch Quiet Mode on, ending by itself as given.
+    Quiet(Option<Ending>),
+    /// Put everything back.
+    Restore,
+}
+
+impl Run {
+    /// What a toggle does: on, ending only when the user says so, or off.
+    pub fn toggle(quiet: bool) -> Run {
+        if quiet {
+            Run::Quiet(None)
+        } else {
+            Run::Restore
+        }
+    }
+}
 
 #[derive(Serialize)]
 pub struct AppInfo {
@@ -147,12 +173,17 @@ pub async fn preview_plan(engine: State<'_, Arc<Engine>>) -> Result<Preview, App
 }
 
 /// Switch Quiet Mode on. Progress lines stream to the window as they happen.
+/// `until` is how it ends by itself, if the page asked for that; it is
+/// checked here, and a refused one changes nothing.
 #[tauri::command]
 pub async fn go_quiet(
     app: AppHandle,
     engine: State<'_, Arc<Engine>>,
+    until: Option<Until>,
 ) -> Result<EngineState, AppError> {
-    run_transition(app, engine.inner().clone(), true).await
+    let engine = engine.inner().clone();
+    let ending = until.map(|until| engine.ending_from(until)).transpose()?;
+    run_transition(app, engine, Run::Quiet(ending)).await
 }
 
 #[tauri::command]
@@ -160,14 +191,30 @@ pub async fn restore(
     app: AppHandle,
     engine: State<'_, Arc<Engine>>,
 ) -> Result<EngineState, AppError> {
-    run_transition(app, engine.inner().clone(), false).await
+    run_transition(app, engine.inner().clone(), Run::Restore).await
+}
+
+/// Change how the run in progress ends by itself, or (`None`) leave it to the
+/// user. The same request as `go_quiet`'s, checked the same way.
+#[tauri::command]
+pub async fn set_ending(
+    app: AppHandle,
+    engine: State<'_, Arc<Engine>>,
+    until: Option<Until>,
+) -> Result<EngineState, AppError> {
+    let engine = engine.inner().clone();
+    let ending = until.map(|until| engine.ending_from(until)).transpose()?;
+    let worker = engine.clone();
+    tauri::async_runtime::spawn_blocking(move || worker.set_ending(ending)).await??;
+    Ok(publish(&app, &engine))
 }
 
 pub async fn run_transition(
     app: AppHandle,
     engine: Arc<Engine>,
-    quiet: bool,
+    run: Run,
 ) -> Result<EngineState, AppError> {
+    let quiet = matches!(run, Run::Quiet(_));
     // The window and tray show the run as soon as it is asked for, not at its
     // first step, which can be a slow service stop away. Not when another run
     // is already going: its own log would be wiped.
@@ -186,12 +233,9 @@ pub async fn run_transition(
         let _ = progress_app.emit(EVENT_PROGRESS, &line);
     };
     let worker = engine.clone();
-    let result = tauri::async_runtime::spawn_blocking(move || {
-        if quiet {
-            worker.go_quiet(&progress).map(|_| ())
-        } else {
-            worker.restore(&progress).map(|_| ())
-        }
+    let result = tauri::async_runtime::spawn_blocking(move || match run {
+        Run::Quiet(ending) => worker.go_quiet(&progress, ending).map(|_| ()),
+        Run::Restore => worker.restore(&progress).map(|_| ()),
     })
     .await?;
     let state = publish(&app, &engine);
@@ -297,7 +341,7 @@ pub async fn quit(
 ) -> Result<(), AppError> {
     let engine = engine.inner().clone();
     if restore_first && engine.is_quiet() {
-        let state = run_transition(app.clone(), engine.clone(), false).await?;
+        let state = run_transition(app.clone(), engine.clone(), Run::Restore).await?;
         if state.quiet {
             return Err(AppError::new(
                 "restore_incomplete",
@@ -312,56 +356,6 @@ pub async fn quit(
             Ok(())
         })
         .unwrap_or_else(|| Err(busy()))
-}
-
-/// Drive a tray menu action from the acceptance suite (fake platform only).
-/// The real tray cannot be clicked through WebDriver; this exercises the same
-/// Rust dispatch the right-click menu uses.
-#[cfg(feature = "fake-platform")]
-#[tauri::command]
-pub fn simulate_tray_menu(app: AppHandle, id: String) {
-    tray::dispatch_menu(&app, &id);
-}
-
-/// Make a call on the fake machine fail until `fake_heal`, so the acceptance
-/// suite can drive the engine's failure paths (fake platform only). `call`,
-/// `target` and `failure` are spelled as in `cq_platform::fake`.
-#[cfg(feature = "fake-platform")]
-#[tauri::command]
-pub fn fake_fail(call: String, target: Option<String>, failure: String) -> Result<(), AppError> {
-    use cq_platform::fake::{Call, Failure};
-    let call = Call::parse(&call)
-        .ok_or_else(|| AppError::new("fake_call", format!("unknown call {call}")))?;
-    let failure = Failure::parse(&failure)
-        .ok_or_else(|| AppError::new("fake_failure", format!("unknown failure {failure}")))?;
-    let fake = crate::FAKE
-        .get()
-        .ok_or_else(|| AppError::new("fake_missing", "the fake machine is not running"))?;
-    fake.fail(call, target.as_deref(), failure);
-    Ok(())
-}
-
-/// Make the fake machine run on battery, on mains or (`None`) have no battery,
-/// so the acceptance suite can drive the battery guard (fake platform only).
-#[cfg(feature = "fake-platform")]
-#[tauri::command]
-pub fn fake_battery(on_battery: Option<bool>) -> Result<(), AppError> {
-    let fake = crate::FAKE
-        .get()
-        .ok_or_else(|| AppError::new("fake_missing", "the fake machine is not running"))?;
-    fake.set_on_battery(on_battery);
-    Ok(())
-}
-
-/// Undo every `fake_fail` (fake platform only).
-#[cfg(feature = "fake-platform")]
-#[tauri::command]
-pub fn fake_heal() -> Result<(), AppError> {
-    let fake = crate::FAKE
-        .get()
-        .ok_or_else(|| AppError::new("fake_missing", "the fake machine is not running"))?;
-    fake.heal();
-    Ok(())
 }
 
 #[tauri::command]

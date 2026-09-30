@@ -62,6 +62,7 @@ impl Engine {
         }
         let kept = cq_core::store::move_aside(&Journal::path(&self.data_dir))?;
         let given_up = std::mem::take(&mut inner.unrestored);
+        let was_awake = inner.journal.as_ref().is_some_and(|journal| journal.awake);
         inner.journal = None;
         inner.recovered = false;
         inner.skipped.clear();
@@ -74,6 +75,10 @@ impl Engine {
             ok: true,
             detail: Some(format!("{}{record}", names.join("; "))),
         });
+        if was_awake {
+            let line = self.release_awake();
+            inner.log.push(line);
+        }
         Ok(given_up)
     }
 

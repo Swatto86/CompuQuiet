@@ -111,7 +111,11 @@ pub fn refresh(app: &AppHandle, state: &EngineState) {
     let (bytes, tooltip, label) = if state.quiet {
         (
             ICON_QUIET,
-            "CompuQuiet — Quiet Mode on",
+            if state.summary.kept_awake {
+                "CompuQuiet — Quiet Mode on, keeping the PC awake"
+            } else {
+                "CompuQuiet — Quiet Mode on"
+            },
             "Put everything back",
         )
     } else {
@@ -170,7 +174,12 @@ fn toggle_from_tray(app: AppHandle) {
         let engine = app.state::<Arc<Engine>>().inner().clone();
         let quiet = !engine.is_quiet();
         let hidden = crate::commands::window_hidden(&app);
-        let outcome = crate::commands::run_transition(app.clone(), engine.clone(), quiet).await;
+        let outcome = crate::commands::run_transition(
+            app.clone(),
+            engine.clone(),
+            crate::commands::Run::toggle(quiet),
+        )
+        .await;
         if let Some(error) = needs_attention(outcome.as_ref().map(|state| state.quiet), quiet) {
             report_failure(&app, &error);
         } else if let (true, true, Ok(state)) = (hidden, engine.settings().notifications, &outcome)
@@ -230,8 +239,12 @@ fn quit_from_tray(app: AppHandle) {
                 continue;
             }
             if engine.is_quiet() && engine.settings().restore_on_quit {
-                let outcome =
-                    crate::commands::run_transition(app.clone(), engine.clone(), false).await;
+                let outcome = crate::commands::run_transition(
+                    app.clone(),
+                    engine.clone(),
+                    crate::commands::Run::Restore,
+                )
+                .await;
                 match needs_attention(outcome.as_ref().map(|state| state.quiet), false) {
                     Some(error) if retry_quit(&error) => continue,
                     // The restore did not finish: the user decides in the window.

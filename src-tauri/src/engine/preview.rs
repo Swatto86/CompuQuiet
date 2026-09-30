@@ -28,6 +28,7 @@ pub(super) struct Planned {
 #[serde(rename_all = "snake_case")]
 pub enum PreviewAction {
     Power,
+    KeepAwake,
     StopService,
     Suspend,
     Close,
@@ -78,7 +79,15 @@ impl Engine {
         if let Some(error) = &inner.unreadable_settings {
             return Err(Self::settings_unreadable(error));
         }
-        Ok(inner.settings.clone())
+        let mut settings = inner.settings.clone();
+        // A program the watch starts Quiet Mode for is not parked by it, or
+        // by a press while it runs: it would freeze the game itself.
+        if settings.auto_quiet.active() {
+            for program in &settings.auto_quiet.programs {
+                settings.profile.protect(program);
+            }
+        }
+        Ok(settings)
     }
 
     /// Look at the machine now and decide what a run does: the snapshot, the
@@ -161,6 +170,7 @@ pub(super) fn fold(steps: &[Step], processes: &[ProcessInfo]) -> Vec<PreviewItem
     for step in steps {
         let item = match step {
             Step::SetPerformancePower => whole(PreviewAction::Power, ""),
+            Step::KeepAwake => whole(PreviewAction::KeepAwake, ""),
             Step::PurgeMemory => whole(PreviewAction::Purge, ""),
             Step::StopService { name } => whole(PreviewAction::StopService, name),
             Step::SuspendProcess { pid, name, .. } => PreviewItem {

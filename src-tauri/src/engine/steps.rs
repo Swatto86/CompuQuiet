@@ -16,6 +16,9 @@ impl Engine {
         active_plan: Option<&PowerPlan>,
         journal: &mut Journal,
     ) -> Result<LogLine, CoreError> {
+        if matches!(step, Step::KeepAwake) {
+            return self.hold_awake(step, journal);
+        }
         let intended = DoneStep::intended(step, active_plan);
         if let Some(entry) = &intended {
             journal.record(entry.clone());
@@ -133,6 +136,13 @@ impl Engine {
             Step::PurgeMemory => {
                 self.platform.purge_memory()?;
                 DoneStep::MemoryPurged
+            }
+            // Held by `hold_awake` before it can get here.
+            Step::KeepAwake => {
+                return Err(AppError::new(
+                    "app",
+                    "keeping awake is not a journaled step",
+                ));
             }
         })
     }

@@ -21,6 +21,7 @@ reboot cannot lose the list of what to put back.
 | Stop a service and start it again | Service Control Manager (administrator) | `systemctl` (polkit for system units, `user:` prefix for user units) | `launchctl` user agents |
 | Performance power plan | `powercfg` (Ultimate or High performance) | `powerprofilesctl` | not available |
 | Purge cached memory (opt-in) | standby list (administrator) | `drop_caches` via polkit | not available |
+| Keep the PC awake while quiet (opt-in) | `SetThreadExecutionState` | `systemd-inhibit` | `caffeinate` |
 
 The desktop shell, compositor, input, audio, security software, terminals
 and CompuQuiet itself are always protected and cannot be added as targets.
@@ -55,6 +56,22 @@ Your own "never touch" list sits on top of that.
    purge are skipped and listed as left alone, unless Settings allows them.
 5. Press it again, or right-click the tray icon, to restore. Quitting while
    quiet can put everything back first.
+6. **How long** on Home, beside the button, lets one press end by itself:
+   after 1, 2 or 4 hours, or once a running program you pick has closed. Time
+   is counted in the machine's uptime, so a clock change does not shift it. While
+   quiet, Home shows the countdown and can add an hour or leave it on.
+   Settings > *Ending Quiet Mode by itself* can also say so, once, when Quiet
+   Mode has been on for a chosen number of hours with nothing to end it.
+7. **Go quiet by itself** (Settings, off until you turn it on) starts Quiet
+   Mode ten seconds after one of a list of programs (a game, a local AI
+   server) starts and puts everything back thirty seconds after the last has
+   closed. Because you did not press the button it suspends instead of
+   closing programs, leaves cached memory alone, never parks the programs on
+   the list, and never ends or restarts a Quiet Mode you pressed for.
+8. **Keep the PC awake** (Park list > System, off by default) holds off sleep
+   and the screen turning off while Quiet Mode is on and lets go when it ends
+   or CompuQuiet exits. A closed laptop lid still sleeps it, and on battery it
+   is skipped unless Settings allows it.
 
 ![The Scan tab](docs/scan.png)
 
