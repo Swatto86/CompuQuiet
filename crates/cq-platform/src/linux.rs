@@ -14,6 +14,8 @@ use crate::procs::Sampler;
 use crate::spawn::{run_tool, run_tool_within, spawn_detached};
 use crate::unix;
 
+mod battery;
+
 pub struct Linux {
     sampler: Sampler,
     root: bool,
@@ -192,6 +194,10 @@ impl Platform for Linux {
 
     fn stats(&self) -> Result<SystemStats> {
         Ok(self.sampler.stats())
+    }
+
+    fn on_battery(&self) -> Option<bool> {
+        battery::on_battery()
     }
 
     fn suspend(&self, pid: u32, start_time: u64) -> Result<()> {

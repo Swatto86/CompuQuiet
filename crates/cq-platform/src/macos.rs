@@ -3,13 +3,14 @@
 //! needs root, so both are reported as unavailable rather than half-done.
 
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use cq_core::{Capabilities, PowerPlan, ServiceInfo, ServiceState, Snapshot, SystemStats};
 
 use crate::Platform;
 use crate::error::{PlatformError, Result};
 use crate::procs::Sampler;
-use crate::spawn::{absolute, app_bundle, run_tool, spawn_detached};
+use crate::spawn::{absolute, app_bundle, run_tool, run_tool_within, spawn_detached};
 use crate::unix;
 
 pub struct MacOs {
@@ -134,6 +135,13 @@ impl Platform for MacOs {
         Ok(self.sampler.stats())
     }
 
+    fn on_battery(&self) -> Option<bool> {
+        // Asked at the start of every run, so a stuck tool must not hold it.
+        run_tool_within("pmset", &["-g", "batt"], Duration::from_secs(3))
+            .ok()
+            .and_then(|report| parse_pmset(&report))
+    }
+
     fn suspend(&self, pid: u32, start_time: u64) -> Result<()> {
         unix::suspend(&self.sampler, pid, start_time)
     }
@@ -228,9 +236,34 @@ impl Platform for MacOs {
     }
 }
 
+/// `pmset -g batt` opens with `Now drawing from 'Battery Power'`, `'AC
+/// Power'` or `'UPS Power'`. Only the first is the machine's own battery: a
+/// UPS keeps the Mac running for as long as it lasts, which is not a reason to
+/// hold back.
+fn parse_pmset(report: &str) -> Option<bool> {
+    let source = report
+        .lines()
+        .find_map(|line| line.trim().strip_prefix("Now drawing from"))?;
+    Some(source.contains("Battery Power"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pmset_names_the_source_the_mac_is_drawing_from() {
+        let report = |source: &str| {
+            format!(
+                "Now drawing from '{source}'\n -InternalBattery-0 (id=1)\t83%; discharging; 4:12 remaining present: true\n"
+            )
+        };
+        assert_eq!(parse_pmset(&report("Battery Power")), Some(true));
+        assert_eq!(parse_pmset(&report("AC Power")), Some(false));
+        assert_eq!(parse_pmset(&report("UPS Power")), Some(false));
+        assert_eq!(parse_pmset(""), None);
+        assert_eq!(parse_pmset("pmset: no such thing"), None);
+    }
 
     #[test]
     fn labels_are_validated_and_launchctl_print_is_parsed() {

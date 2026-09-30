@@ -19,7 +19,7 @@ pub mod store;
 
 pub use error::CoreError;
 pub use journal::{DoneStep, Journal, Marker, RestoreStep};
-pub use plan::{Capabilities, Plan, Skipped, Step, build_plan};
+pub use plan::{Capabilities, Plan, Skipped, Step, build_plan, guard_battery};
 pub use profile::{Os, PowerPolicy, ProcessAction, ProcessTarget, Profile, ServiceTarget};
 pub use recommend::{Recommendation, RecommendationKind, Risk, recommend};
 pub use settings::{Settings, Theme};

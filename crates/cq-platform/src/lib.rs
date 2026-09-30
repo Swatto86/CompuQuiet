@@ -20,6 +20,7 @@ mod unix;
 mod windows;
 
 use std::path::Path;
+use std::time::Duration;
 
 pub use error::{PlatformError, Result};
 pub use spawn::run_tool;
@@ -41,6 +42,21 @@ pub trait Platform: Send + Sync {
     fn snapshot(&self, service_names: &[String]) -> Result<Snapshot>;
 
     fn stats(&self) -> Result<SystemStats>;
+
+    /// Whether the machine is running on its own battery right now. `None`
+    /// where that cannot be told or there is no battery to speak of, which
+    /// callers treat as mains. A UPS is not the machine's battery: it counts
+    /// only where the system itself reports the mains as gone.
+    fn on_battery(&self) -> Option<bool> {
+        None
+    }
+
+    /// How long after a change the figures from [`Self::stats`] show it: the
+    /// wait before a run's effect on memory and CPU is read, and the interval
+    /// the CPU share is measured over (it must exceed the sampler's minimum).
+    fn settle(&self) -> Duration {
+        Duration::from_millis(500)
+    }
 
     /// Where the machine is now, so a journal can tell later whether it has
     /// booted or the user has signed in again since. Uptime, never the wall

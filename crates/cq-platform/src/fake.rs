@@ -9,6 +9,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
+use std::time::Duration;
 
 use cq_core::{
     Activity, Capabilities, Marker, PowerPlan, ProcessInfo, ServiceInfo, ServiceState, Snapshot,
@@ -45,6 +46,8 @@ struct State {
     crash_on_service: Option<String>,
     /// Calls made to fail, see [`Fake::fail`].
     faults: Vec<faults::Fault>,
+    /// What the machine says about running on battery; `None` is a desktop.
+    on_battery: Option<bool>,
 }
 
 pub struct Fake {
@@ -126,6 +129,11 @@ impl Fake {
         self.lock().marker = marker;
     }
 
+    /// Pretend the machine is on battery, on mains, or has no battery.
+    pub fn set_on_battery(&self, on_battery: Option<bool>) {
+        self.lock().on_battery = on_battery;
+    }
+
     /// Programs launched so far, in order.
     pub fn launched(&self) -> Vec<PathBuf> {
         self.lock().launched.clone()
@@ -188,14 +196,11 @@ impl Platform for Fake {
 
     fn stats(&self) -> Result<SystemStats> {
         let state = self.lock();
-        let live: u64 = state
-            .processes
-            .iter()
-            .filter(|p| !state.suspended.contains(&p.pid))
-            .map(|p| p.memory_bytes)
-            .sum();
+        // A suspended program is frozen, not gone: it keeps its memory, and
+        // only closing it gives that back.
+        let held: u64 = state.processes.iter().map(|p| p.memory_bytes).sum();
         let baseline = 6 * GIB;
-        let used = baseline + live;
+        let used = baseline + held;
         Ok(SystemStats {
             cpu_percent: if state.suspended.is_empty() {
                 23.0
@@ -209,6 +214,15 @@ impl Platform for Fake {
             memory_free: 30 * GIB - used,
             process_count: state.processes.len(),
         })
+    }
+
+    fn on_battery(&self) -> Option<bool> {
+        self.lock().on_battery
+    }
+
+    /// Nothing on the fake machine takes time to show.
+    fn settle(&self) -> Duration {
+        Duration::ZERO
     }
 
     fn marker(&self) -> Marker {
@@ -347,46 +361,4 @@ impl Platform for Fake {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_full_cycle_is_reflected_in_the_next_snapshot() {
-        let fake = Fake::new();
-        let names = vec!["SysMain".to_string(), "Missing".to_string()];
-        let before = fake.snapshot(&names).unwrap();
-        assert_eq!(before.services[0].state, ServiceState::Running);
-        assert_eq!(before.services[1].state, ServiceState::NotInstalled);
-
-        fake.suspend(100, 1_700_000_100).unwrap();
-        fake.close(101, 1_700_000_101).unwrap();
-        fake.stop_service("sysmain").unwrap();
-        let previous = fake.set_performance_power().unwrap();
-        assert_eq!(previous.name, "Balanced");
-        assert!(fake.stats().unwrap().memory_used < before_used(&fake));
-
-        assert!(
-            fake.suspend(100, 1).is_err(),
-            "wrong start time must not match"
-        );
-        fake.resume(100, 1_700_000_100).unwrap();
-        fake.launch(
-            Path::new("C:/fake/Dropbox.exe"),
-            &["Dropbox.exe".into()],
-            None,
-        )
-        .unwrap();
-        fake.start_service("SysMain").unwrap();
-        fake.restore_power(&previous).unwrap();
-
-        let after = fake.snapshot(&names).unwrap();
-        assert!(after.processes.iter().any(|p| p.name == "Dropbox.exe"));
-        assert_eq!(after.services[0].state, ServiceState::Running);
-        assert_eq!(after.power_plan, Some(previous));
-    }
-
-    fn before_used(fake: &Fake) -> u64 {
-        let state = fake.lock();
-        6 * GIB + state.processes.iter().map(|p| p.memory_bytes).sum::<u64>()
-    }
-}
+mod tests;

@@ -103,6 +103,10 @@ impl Platform for Windows {
         Ok(stats)
     }
 
+    fn on_battery(&self) -> Option<bool> {
+        power::on_battery()
+    }
+
     fn activity(&self) -> Activity {
         activity::current()
     }

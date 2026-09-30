@@ -376,5 +376,6 @@ fn a_service_that_running_services_need_is_left_running_and_they_are_named() {
     }
 }
 
+mod battery;
 mod park;
 mod protect;

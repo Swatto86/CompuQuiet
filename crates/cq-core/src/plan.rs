@@ -107,6 +107,30 @@ pub fn build_plan(
     plan
 }
 
+/// On battery the performance power plan and the memory purge cost charge and
+/// heat for little (the purge only clears a cache the system fills again), so
+/// they are left out and reported, unless `allowed`. Anything but a definite
+/// "on battery" counts as mains: a desktop, a UPS (which some systems list as
+/// a battery) and a machine that cannot say all run the whole plan.
+pub fn guard_battery(plan: &mut Plan, on_battery: Option<bool>, allowed: bool) {
+    if allowed || on_battery != Some(true) {
+        return;
+    }
+    let (held, kept): (Vec<Step>, Vec<Step>) = std::mem::take(&mut plan.steps)
+        .into_iter()
+        .partition(|step| matches!(step, Step::SetPerformancePower | Step::PurgeMemory));
+    plan.steps = kept;
+    for step in held {
+        let name = match step {
+            Step::SetPerformancePower => "Power plan",
+            _ => "Memory purge",
+        };
+        plan.skip(name, BATTERY_REASON);
+    }
+}
+
+const BATTERY_REASON: &str = "on battery, so it is skipped to save charge (Settings can allow it)";
+
 fn plan_services(
     profile: &Profile,
     snapshot: &Snapshot,

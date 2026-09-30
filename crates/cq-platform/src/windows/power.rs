@@ -5,6 +5,7 @@
 //! reaching the command line, including the one read back from the journal.
 
 use cq_core::PowerPlan;
+use windows_sys::Win32::System::Power::{GetSystemPowerStatus, SYSTEM_POWER_STATUS};
 
 use crate::error::{PlatformError, Result};
 use crate::spawn::run_tool;
@@ -38,6 +39,37 @@ pub(crate) fn is_guid(text: &str) -> bool {
             .iter()
             .zip(&parts)
             .all(|(len, part)| part.len() == *len && part.chars().all(|c| c.is_ascii_hexdigit()))
+}
+
+/// Whether Windows says the machine runs on battery, as the battery icon does.
+/// A UPS on a desktop is listed as a battery, and counts only once the mains
+/// are really off: while they are on, this answers "mains".
+pub fn on_battery() -> Option<bool> {
+    let (ac_line, battery_flag) = power_status()?;
+    on_battery_from(ac_line, battery_flag)
+}
+
+/// `(ACLineStatus, BatteryFlag)` as Windows reports them.
+fn power_status() -> Option<(u8, u8)> {
+    let mut status = SYSTEM_POWER_STATUS::default();
+    // SAFETY: `status` is a writable SYSTEM_POWER_STATUS, all the call writes.
+    if unsafe { GetSystemPowerStatus(&raw mut status) } == 0 {
+        return None;
+    }
+    Some((status.ACLineStatus, status.BatteryFlag))
+}
+
+/// `ACLineStatus` is 0 offline, 1 online, 255 unknown; `BatteryFlag` has bit
+/// 128 set when there is no system battery and is 255 when unknown.
+pub(crate) fn on_battery_from(ac_line: u8, battery_flag: u8) -> Option<bool> {
+    if battery_flag == 255 || battery_flag & 128 != 0 {
+        return None;
+    }
+    match ac_line {
+        0 => Some(true),
+        1 => Some(false),
+        _ => None,
+    }
 }
 
 pub fn active() -> Result<PowerPlan> {
@@ -113,6 +145,28 @@ pub(crate) fn choose(available: &[PowerPlan]) -> Option<&PowerPlan> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn battery_needs_a_battery_and_no_mains() {
+        // Mains off with a battery present (bit 1 high, 2 low, 4 critical).
+        assert_eq!(on_battery_from(0, 1), Some(true));
+        assert_eq!(on_battery_from(0, 9), Some(true));
+        assert_eq!(on_battery_from(1, 1), Some(false));
+        assert_eq!(on_battery_from(1, 8), Some(false), "charging");
+        // A desktop: no system battery, whatever the mains say.
+        assert_eq!(on_battery_from(0, 128), None);
+        assert_eq!(on_battery_from(1, 128), None);
+        // Windows cannot tell.
+        assert_eq!(on_battery_from(255, 1), None);
+        assert_eq!(on_battery_from(0, 255), None);
+    }
+
+    #[test]
+    fn windows_reports_a_power_status_on_this_machine() {
+        // Whatever this machine is (desktop, laptop, plugged in or not).
+        let (ac_line, _) = power_status().unwrap();
+        assert!(matches!(ac_line, 0 | 1 | 255), "ACLineStatus {ac_line}");
+    }
 
     #[test]
     fn powercfg_lines_parse_and_junk_does_not() {

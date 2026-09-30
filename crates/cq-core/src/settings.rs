@@ -41,6 +41,11 @@ pub struct Settings {
     /// changing the saved targets. Absent in files written before it existed.
     #[serde(default = "default_true")]
     pub auto_scan: bool,
+    /// Run the performance power plan and the memory purge while the machine
+    /// is on battery too; off, they are skipped there. Absent in files
+    /// written before it existed.
+    #[serde(default)]
+    pub allow_on_battery: bool,
 }
 
 fn default_true() -> bool {
@@ -58,6 +63,7 @@ impl Settings {
             notifications: true,
             restore_on_quit: true,
             auto_scan: true,
+            allow_on_battery: false,
         }
     }
 
@@ -239,6 +245,25 @@ mod tests {
         assert!(value.as_object_mut().unwrap().remove("auto_scan").is_some());
         std::fs::write(Settings::path(dir.path()), value.to_string()).unwrap();
         assert!(Settings::load(dir.path(), Os::Linux).unwrap().auto_scan);
+    }
+
+    #[test]
+    fn a_file_from_before_the_battery_guard_loads_with_it_on() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut value = serde_json::to_value(Settings::default_for(Os::Linux)).unwrap();
+        assert!(
+            value
+                .as_object_mut()
+                .unwrap()
+                .remove("allow_on_battery")
+                .is_some()
+        );
+        std::fs::write(Settings::path(dir.path()), value.to_string()).unwrap();
+        assert!(
+            !Settings::load(dir.path(), Os::Linux)
+                .unwrap()
+                .allow_on_battery
+        );
     }
 
     #[test]
