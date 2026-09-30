@@ -29,6 +29,8 @@ export interface Profile {
   purge_memory: boolean;
   /** Hold off sleep and screen-off while Quiet Mode is on. */
   keep_awake: boolean;
+  /** Ask Ollama and LM Studio to unload the models they hold in memory. */
+  unload_ai_models: boolean;
   keep_alive: string[];
 }
 
@@ -124,12 +126,18 @@ export interface RunReport {
 }
 
 export type PreviewAction =
-  "power" | "keep_awake" | "stop_service" | "suspend" | "close" | "purge";
+  | "power"
+  | "keep_awake"
+  | "stop_service"
+  | "suspend"
+  | "close"
+  | "purge"
+  | "unload_model";
 
-/** One line of the preview: a service, a program (all its processes), the plan or the purge. */
+/** One line of the preview: a service, a program (all its processes), a model, the plan or the purge. */
 export interface PreviewItem {
   action: PreviewAction;
-  /** Empty for the power plan and the purge. */
+  /** Empty for the power plan and the purge; a model reads "llama3:8b (Ollama)". */
   name: string;
   processes: number;
   memory_bytes: number;

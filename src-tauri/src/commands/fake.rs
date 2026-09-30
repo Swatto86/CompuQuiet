@@ -2,7 +2,7 @@
 //! plays the user and the passing of time on the fake machine with them, and
 //! makes its calls fail; the real engine, tray and window are what it drives.
 
-use cq_core::GpuInfo;
+use cq_core::{GpuInfo, LoadedModel};
 use cq_platform::fake::{Call, Failure, Fake};
 use tauri::AppHandle;
 
@@ -51,6 +51,18 @@ pub fn fake_battery(on_battery: Option<bool>) -> Result<(), AppError> {
 pub fn fake_gpu(adapters: Option<Vec<GpuInfo>>) -> Result<(), AppError> {
     machine()?.set_gpu(adapters);
     Ok(())
+}
+
+/// Say which models the fake machine's AI servers hold in memory (`Some`), and
+/// return which they hold now, so the acceptance suite can drive the unload
+/// step and see what it left.
+#[tauri::command]
+pub fn fake_models(models: Option<Vec<LoadedModel>>) -> Result<Vec<LoadedModel>, AppError> {
+    let fake = machine()?;
+    if let Some(models) = models {
+        fake.set_models(models);
+    }
+    Ok(fake.models())
 }
 
 /// Open or close a program on the fake machine, as the user would.

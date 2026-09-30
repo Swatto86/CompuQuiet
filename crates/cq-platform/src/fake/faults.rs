@@ -18,9 +18,10 @@ pub enum Call {
     RestorePower,
     PurgeMemory,
     KeepAwake,
+    UnloadModel,
 }
 
-const CALLS: [(&str, Call); 10] = [
+const CALLS: [(&str, Call); 11] = [
     ("stop_service", Call::StopService),
     ("start_service", Call::StartService),
     ("suspend", Call::Suspend),
@@ -31,6 +32,7 @@ const CALLS: [(&str, Call); 10] = [
     ("restore_power", Call::RestorePower),
     ("purge_memory", Call::PurgeMemory),
     ("keep_awake", Call::KeepAwake),
+    ("unload_model", Call::UnloadModel),
 ];
 
 impl Call {

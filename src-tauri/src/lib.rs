@@ -220,6 +220,8 @@ pub fn run() {
             #[cfg(feature = "fake-platform")]
             commands::fake::fake_gpu,
             #[cfg(feature = "fake-platform")]
+            commands::fake::fake_models,
+            #[cfg(feature = "fake-platform")]
             commands::fake::fake_program,
             #[cfg(feature = "fake-platform")]
             commands::fake::fake_advance,

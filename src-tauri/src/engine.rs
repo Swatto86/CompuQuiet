@@ -327,4 +327,6 @@ mod tests;
 #[cfg(all(test, feature = "fake-platform"))]
 mod journal_tests;
 #[cfg(all(test, feature = "fake-platform"))]
+mod models_tests;
+#[cfg(all(test, feature = "fake-platform"))]
 mod settings_tests;

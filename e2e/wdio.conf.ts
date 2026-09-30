@@ -133,6 +133,7 @@ export const config: WebdriverIO.Config = {
       "quiet",
       "preview",
       "run-report",
+      "ai-models",
       "scan",
       "scan-actions",
       "park-list",

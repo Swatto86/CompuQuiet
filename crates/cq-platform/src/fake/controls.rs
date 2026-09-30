@@ -2,9 +2,9 @@
 //! engine: time passing, the user opening and closing programs, and a look at
 //! whether something holds it awake, and how it looks to the dashboard.
 
-use cq_core::{GpuInfo, Marker};
+use cq_core::{GpuInfo, LoadedModel, Marker, ModelServer, ModelServers};
 
-use super::{Fake, GIB, PlatformError, Result, process};
+use super::{Call, Fake, GIB, PlatformError, Result, process};
 
 /// The graphics card the fake machine starts with.
 pub(super) fn seeded_gpu() -> Vec<GpuInfo> {
@@ -15,7 +15,58 @@ pub(super) fn seeded_gpu() -> Vec<GpuInfo> {
     }]
 }
 
+/// The model the fake machine's Ollama starts with in memory.
+pub(super) fn seeded_models() -> Vec<LoadedModel> {
+    vec![LoadedModel {
+        server: ModelServer::Ollama,
+        name: "llama3:8b".to_string(),
+        bytes: 5 * GIB,
+    }]
+}
+
 impl Fake {
+    /// Make stopping or starting `service` crash, or stop doing so.
+    pub fn crash_on_service(&self, service: Option<&str>) {
+        self.lock().crash_on_service = service.map(str::to_ascii_lowercase);
+    }
+
+    pub(super) fn crash_if_asked(&self, name: &str) {
+        let crash = self.lock().crash_on_service.as_deref() == Some(&*name.to_ascii_lowercase());
+        assert!(!crash, "the fake machine crashed while handling {name}");
+    }
+
+    /// Pretend the AI servers hold exactly these models.
+    pub fn set_models(&self, models: Vec<LoadedModel>) {
+        self.lock().models = models;
+    }
+
+    /// The models the AI servers hold now.
+    pub fn models(&self) -> Vec<LoadedModel> {
+        self.lock().models.clone()
+    }
+
+    pub(super) fn models_found(&self) -> ModelServers {
+        ModelServers {
+            loaded: self.models(),
+            skipped: Vec::new(),
+        }
+    }
+
+    /// A server lets go of a model, or says it has none by that name.
+    pub(super) fn unload(&self, model: &LoadedModel) -> Result<()> {
+        self.lock()
+            .guarded(Call::UnloadModel, &model.name, |state| {
+                let held = state.models.len();
+                state
+                    .models
+                    .retain(|other| (other.server, &other.name) != (model.server, &model.name));
+                if state.models.len() == held {
+                    return Err(PlatformError::NotRunning(model.name.clone()));
+                }
+                Ok(())
+            })
+    }
+
     /// Pretend the machine restarted or the user signed in again.
     pub fn set_marker(&self, marker: Marker) {
         self.lock().marker = marker;

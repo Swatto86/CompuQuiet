@@ -215,6 +215,21 @@ export function fakeGpu(
   return invokeCommand("fake_gpu", { adapters });
 }
 
+export interface FakeModel {
+  server: "ollama" | "lm_studio";
+  name: string;
+  bytes: number;
+}
+
+/**
+ * Say which models the fake machine's AI servers hold in memory, and get back
+ * which they hold now. It starts with one: Ollama's "llama3:8b", 5 GiB. Call
+ * with no argument to only look.
+ */
+export function fakeModels(models?: FakeModel[]): Promise<FakeModel[]> {
+  return invokeCommand<FakeModel[]>("fake_models", { models: models ?? null });
+}
+
 /** Open or close a program on the fake machine, as the user would. */
 export function fakeProgram(name: string, running: boolean): Promise<void> {
   return invokeCommand("fake_program", { name, running });

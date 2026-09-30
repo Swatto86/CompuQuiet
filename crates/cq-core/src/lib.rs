@@ -9,6 +9,7 @@ pub mod catalogue;
 pub mod error;
 pub mod instance;
 pub mod journal;
+pub mod models;
 pub mod plan;
 pub mod policy;
 pub mod profile;
@@ -20,6 +21,7 @@ pub mod watch;
 
 pub use error::CoreError;
 pub use journal::{DoneStep, Journal, Marker, RestoreStep};
+pub use models::{LoadedModel, ModelServer, ModelServers, plan_unloads};
 pub use plan::{Capabilities, Plan, Skipped, Step, build_plan, guard_battery};
 pub use profile::{Os, PowerPolicy, ProcessAction, ProcessTarget, Profile, ServiceTarget};
 pub use recommend::{Recommendation, RecommendationKind, Risk, recommend};

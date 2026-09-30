@@ -11,6 +11,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+use crate::models::ModelServer;
 use crate::policy::{is_critical, is_critical_service, is_helper_of, matches, normalize};
 use crate::profile::{Os, PowerPolicy, ProcessAction, Profile};
 use crate::snapshot::{ProcessInfo, ServiceState, Snapshot};
@@ -52,6 +53,14 @@ pub enum Step {
         start_time: u64,
     },
     PurgeMemory,
+    /// Ask a local AI server to let go of a model it holds. It loads again
+    /// when next used, so there is no undo entry (see `models`).
+    UnloadModel {
+        server: ModelServer,
+        name: String,
+        /// What it holds, for the preview.
+        bytes: u64,
+    },
 }
 
 impl Step {
@@ -64,6 +73,9 @@ impl Step {
             Step::SuspendProcess { name, pid, .. } => format!("Suspend {name} (PID {pid})"),
             Step::CloseProcess { name, pid, .. } => format!("Close {name} (PID {pid})"),
             Step::PurgeMemory => "Purge cached memory".to_string(),
+            Step::UnloadModel { server, name, .. } => {
+                format!("Unload {name} from {}", server.label())
+            }
         }
     }
 }
@@ -349,7 +361,7 @@ impl Plan {
         }
     }
 
-    fn skip(&mut self, name: &str, reason: &str) {
+    pub(crate) fn skip(&mut self, name: &str, reason: &str) {
         self.skipped.push(Skipped {
             name: name.to_string(),
             reason: reason.to_string(),

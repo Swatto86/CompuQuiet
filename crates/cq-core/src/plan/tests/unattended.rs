@@ -86,6 +86,7 @@ fn a_plan_with_neither_is_unchanged_and_says_nothing() {
         power: PowerPolicy::Leave,
         purge_memory: false,
         keep_awake: false,
+        unload_ai_models: false,
         keep_alive: vec![],
     };
     let mut plan = build_plan(&profile, &Snapshot::default(), 1, Os::Windows, &full_caps());

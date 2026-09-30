@@ -33,6 +33,11 @@ Dependencies point inward: `src-tauri` → `cq-platform` → `cq-core`.
    peripheral's, `scope` Device, and a `UPS` never count) and macOS from
    `pmset -g batt` (`UPS Power` is not battery); `None`, a desktop, and a UPS
    on mains all mean mains.
+   With `Profile::unload_ai_models` on, `cq_core::plan_unloads` then adds a
+   `Step::UnloadModel` for each model `Platform::loaded_models` finds, before
+   the purge, and says what was left alone (none loaded; LM Studio's tool not
+   run). The step has no undo (a model loads again when used) and so no
+   `DoneStep`: a journal never names it, and 1.1.7 reads every journal.
    `Engine::plan_now` runs steps 1 and 2 and the guard for both a run and the
    read-only `Engine::preview`, so a preview cannot differ from what a press
    plans; the run always plans afresh and never uses an earlier preview.
@@ -166,6 +171,18 @@ that reason instead of a gauge. `get_gpu` returns a `GpuReading` (adapters, or
 `unavailable`); one adapter failing leaves the others. Per-adapter, because a
 model must fit in one card, and reading only, so nothing here changes the
 machine. Which programs hold the memory is not read.
+
+`Platform::loaded_models` and `unload_model` (`ai.rs`, shared as the trait's
+defaults) talk to local model servers. Ollama is reached over HTTP/1.0 on
+127.0.0.1 alone (only the port of `OLLAMA_HOST` is taken): `GET /api/ps`, then
+`POST /api/generate` with `keep_alive` 0, as `ollama stop` does, all within
+deadlines. LM Studio's REST API needs a key, so its `lms` tool is run
+(`ps --json`, `unload <identifier>`), but only from `~/.lmstudio/bin` (never
+found on the search path), only while an LM Studio process is in the snapshot
+(the tool can start the app), and never when this process is elevated: the
+folder is the user's, so an elevated run would hand its executable those
+rights. A model's name is checked before it becomes an argument or JSON. The
+fake keeps a model list (`fake_models`, `Call::UnloadModel`).
 
 `Capabilities` reports what this process can do at its privilege level; the
 planner skips what it cannot with the reason shown ("needs administrator

@@ -178,7 +178,7 @@ fn machine(facts: &Facts) -> Vec<String> {
             None => "Settings file: readable".into(),
         },
         format!(
-            "Park list: programs {}, services {}, power plan {:?}, memory purge {}",
+            "Park list: programs {}, services {}, power plan {:?}, memory purge {}, AI model unload {}",
             on(
                 profile.processes.len(),
                 profile.processes.iter().filter(|p| p.enabled).count()
@@ -188,7 +188,8 @@ fn machine(facts: &Facts) -> Vec<String> {
                 profile.services.iter().filter(|s| s.enabled).count()
             ),
             profile.power,
-            yes(profile.purge_memory)
+            yes(profile.purge_memory),
+            yes(profile.unload_ai_models)
         ),
         format!(
             "Options: quick scan {}, plan and purge on battery {}, automatic updates {}",

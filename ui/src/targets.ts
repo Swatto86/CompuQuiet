@@ -112,6 +112,13 @@ export class Targets {
       };
       this.updateStatus();
     });
+    byId<HTMLInputElement>("opt-unload").addEventListener("change", (event) => {
+      this.working = {
+        ...this.working,
+        unload_ai_models: (event.target as HTMLInputElement).checked,
+      };
+      this.updateStatus();
+    });
     byId<HTMLInputElement>("opt-awake").addEventListener("change", (event) => {
       this.working = {
         ...this.working,
@@ -226,6 +233,8 @@ export class Targets {
       this.working.power === "performance";
     byId<HTMLInputElement>("opt-purge").checked = this.working.purge_memory;
     byId<HTMLInputElement>("opt-awake").checked = this.working.keep_awake;
+    byId<HTMLInputElement>("opt-unload").checked =
+      this.working.unload_ai_models;
     this.host.unsaved(dirty);
   }
 

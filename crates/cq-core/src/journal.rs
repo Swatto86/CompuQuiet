@@ -150,7 +150,8 @@ impl DoneStep {
     /// The entry to journal before carrying `step` out. The power plan's is
     /// known in advance only when the active plan could be read first
     /// (`active_plan`); without it, and for the memory purge (nothing to
-    /// undo), the entry is written once the step has happened.
+    /// undo), the entry is written once the step has happened. Holding the
+    /// PC awake and unloading a model leave none.
     pub fn intended(step: &Step, active_plan: Option<&PowerPlan>) -> Option<DoneStep> {
         Some(match step {
             Step::SetPerformancePower => DoneStep::PowerPlanChanged {
@@ -178,7 +179,7 @@ impl DoneStep {
                 args: args.clone(),
                 cwd: cwd.clone(),
             },
-            Step::PurgeMemory | Step::KeepAwake => return None,
+            Step::PurgeMemory | Step::KeepAwake | Step::UnloadModel { .. } => return None,
         })
     }
 

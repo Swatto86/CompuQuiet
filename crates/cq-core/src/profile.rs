@@ -77,6 +77,10 @@ pub struct Profile {
     /// in files written before it existed.
     #[serde(default)]
     pub keep_awake: bool,
+    /// Opt-in: ask Ollama and LM Studio to unload the models they hold in
+    /// memory. Absent in files written before it existed.
+    #[serde(default)]
+    pub unload_ai_models: bool,
     /// Names the user has promised never to touch, on top of the built-ins.
     pub keep_alive: Vec<String>,
 }
@@ -122,6 +126,7 @@ impl Profile {
             power: PowerPolicy::Performance,
             purge_memory: false,
             keep_awake: false,
+            unload_ai_models: false,
             keep_alive: Vec::new(),
         }
     }
@@ -251,6 +256,23 @@ mod tests {
         assert!(profile.keeps_alive("onedrive"));
         assert!(profile.keeps_alive(" WSearch "));
         assert!(!profile.keeps_alive("SysMain"));
+    }
+
+    #[test]
+    fn unloading_ai_models_is_off_for_a_new_profile_and_for_one_saved_before_it() {
+        for os in [Os::Windows, Os::Linux, Os::MacOs] {
+            assert!(!Profile::default_for(os).unload_ai_models, "{os:?}");
+        }
+        let mut value = serde_json::to_value(Profile::default_for(Os::Windows)).unwrap();
+        assert!(
+            value
+                .as_object_mut()
+                .unwrap()
+                .remove("unload_ai_models")
+                .is_some()
+        );
+        let old: Profile = serde_json::from_value(value).unwrap();
+        assert!(!old.unload_ai_models);
     }
 
     #[test]

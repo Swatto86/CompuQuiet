@@ -4,6 +4,7 @@
 //! `fake` (behind a feature) is an in-memory one for the acceptance suite, so
 //! the real binary can be driven end to end without freezing anything real.
 
+mod ai;
 pub mod error;
 mod gpu;
 mod procs;
@@ -29,8 +30,8 @@ pub use error::{PlatformError, Result};
 pub use spawn::run_tool;
 
 use cq_core::{
-    Activity, Capabilities, GpuInfo, Marker, Os, PowerPlan, ProcessInfo, ServiceInfo, Snapshot,
-    SystemStats,
+    Activity, Capabilities, GpuInfo, LoadedModel, Marker, ModelServers, Os, PowerPlan, ProcessInfo,
+    ServiceInfo, Snapshot, SystemStats,
 };
 
 pub trait Platform: Send + Sync {
@@ -122,6 +123,19 @@ pub trait Platform: Send + Sync {
     fn restore_power(&self, plan: &PowerPlan) -> Result<PowerPlan>;
 
     fn purge_memory(&self) -> Result<()>;
+
+    /// The models the local AI servers (Ollama, LM Studio) hold in memory, and
+    /// any server that is running but could not be asked. `processes` is the
+    /// table the plan is made from: LM Studio's tool is run only while it runs.
+    fn loaded_models(&self, processes: &[ProcessInfo]) -> ModelServers {
+        ai::loaded(processes, self.capabilities().elevated)
+    }
+
+    /// Ask a server to let go of a model. Nothing to undo: the model loads
+    /// again when something next uses it.
+    fn unload_model(&self, model: &LoadedModel) -> Result<()> {
+        ai::unload(model, self.capabilities().elevated)
+    }
 
     /// Hold off sleep and screen-off (`true`), or stop doing so. Either is a
     /// no-op when it is already so. The hold ends with this process, whatever

@@ -1,6 +1,6 @@
 //! One journaled step against the platform, and its undo.
 
-use cq_core::{CoreError, DoneStep, Journal, PowerPlan, RestoreStep, Step};
+use cq_core::{CoreError, DoneStep, Journal, LoadedModel, PowerPlan, RestoreStep, Step};
 
 use super::{Engine, LogLine};
 use crate::error::AppError;
@@ -31,12 +31,14 @@ impl Engine {
             Ok(done) => {
                 // What happened can differ from what was written down: the
                 // plan the platform actually replaced, say.
-                let changed = intended.as_ref() != Some(&done);
+                let changed = intended != done;
                 if intended.is_some() {
                     journal.done.pop();
                 }
-                let undoable = done.restore().is_some();
-                journal.record(done);
+                let undoable = done.as_ref().is_some_and(|done| done.restore().is_some());
+                if let Some(done) = done {
+                    journal.record(done);
+                }
                 if changed {
                     match journal.save(&self.data_dir) {
                         Err(error) if undoable => return Err(error),
@@ -59,7 +61,9 @@ impl Engine {
                 // stays, so Restore puts it back (harmless if it never
                 // happened). Any other error means it did not happen, and the
                 // entry comes back out.
-                let unknown = error.code == "timed_out";
+                // (A model asked to unload has no record to keep.)
+                let unknown =
+                    error.code == "timed_out" && !matches!(step, Step::UnloadModel { .. });
                 if intended.is_some() && !unknown {
                     journal.done.pop();
                     if let Err(error) = journal.save(&self.data_dir) {
@@ -67,11 +71,14 @@ impl Engine {
                     }
                 }
                 // A program that ended on its own, or with the one that
-                // started it, needs no parking: nothing failed.
+                // started it, needs no parking, and a model that a server
+                // has unloaded since needs no unloading: nothing failed.
                 let gone = error.code == "not_running"
                     && matches!(
                         step,
-                        Step::SuspendProcess { .. } | Step::CloseProcess { .. }
+                        Step::SuspendProcess { .. }
+                            | Step::CloseProcess { .. }
+                            | Step::UnloadModel { .. }
                     );
                 // The run's own log is gone once the app restarts; this stays.
                 // Only the label and the error: never a program's arguments.
@@ -96,8 +103,9 @@ impl Engine {
         })
     }
 
-    pub(super) fn execute(&self, step: &Step) -> Result<DoneStep, AppError> {
-        Ok(match step {
+    /// What was done, when there is an entry for it.
+    pub(super) fn execute(&self, step: &Step) -> Result<Option<DoneStep>, AppError> {
+        Ok(Some(match step {
             Step::SetPerformancePower => DoneStep::PowerPlanChanged {
                 previous: self.platform.set_performance_power()?,
             },
@@ -144,7 +152,20 @@ impl Engine {
                     "keeping awake is not a journaled step",
                 ));
             }
-        })
+            // Loads again when next used: nothing to undo, so no entry.
+            Step::UnloadModel {
+                server,
+                name,
+                bytes,
+            } => {
+                self.platform.unload_model(&LoadedModel {
+                    server: *server,
+                    name: name.clone(),
+                    bytes: *bytes,
+                })?;
+                return Ok(None);
+            }
+        }))
     }
 
     /// Put one step back. `Some` is a note for the log: the step is done,

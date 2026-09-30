@@ -25,6 +25,7 @@ function profile(): Profile {
     power: "performance",
     purge_memory: true,
     keep_awake: false,
+    unload_ai_models: false,
     keep_alive: [],
   };
 }

@@ -8,7 +8,8 @@ use std::path::Path;
 use std::sync::atomic::Ordering;
 
 use cq_core::{
-    Plan, ProcessInfo, Recommendation, Settings, Skipped, Snapshot, Step, build_plan, guard_battery,
+    Plan, ProcessInfo, Recommendation, Settings, Skipped, Snapshot, Step, build_plan,
+    guard_battery, plan_unloads,
 };
 use serde::Serialize;
 
@@ -33,18 +34,20 @@ pub enum PreviewAction {
     Suspend,
     Close,
     Purge,
+    UnloadModel,
 }
 
-/// One line of the preview: a service, a program (all its processes) or the
-/// power plan or purge.
+/// One line of the preview: a service, a program (all its processes), an AI
+/// model or the power plan or purge.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct PreviewItem {
     pub action: PreviewAction,
-    /// The service or program; empty for the power plan and the purge.
+    /// The service or program, or a model with its server ("llama3:8b
+    /// (Ollama)"); empty for the power plan and the purge.
     pub name: String,
     /// How many processes of the program.
     pub processes: usize,
-    /// What those processes hold now.
+    /// What those processes, or that model, hold now.
     pub memory_bytes: u64,
     /// For a program that is closed: the command line it is opened with again
     /// on restore. `None` means its path was not readable, so it could not be
@@ -128,6 +131,11 @@ impl Engine {
             self.platform.on_battery(),
             settings.allow_on_battery,
         );
+        // Asked of the servers only when the option is on, so a machine that
+        // does not use it is never spoken to.
+        if profile.unload_ai_models {
+            plan_unloads(&mut plan, self.platform.loaded_models(&snapshot.processes));
+        }
         Ok(Planned {
             snapshot,
             plan,
@@ -173,6 +181,17 @@ pub(super) fn fold(steps: &[Step], processes: &[ProcessInfo]) -> Vec<PreviewItem
             Step::KeepAwake => whole(PreviewAction::KeepAwake, ""),
             Step::PurgeMemory => whole(PreviewAction::Purge, ""),
             Step::StopService { name } => whole(PreviewAction::StopService, name),
+            Step::UnloadModel {
+                server,
+                name,
+                bytes,
+            } => PreviewItem {
+                memory_bytes: *bytes,
+                ..whole(
+                    PreviewAction::UnloadModel,
+                    &format!("{name} ({})", server.label()),
+                )
+            },
             Step::SuspendProcess { pid, name, .. } => PreviewItem {
                 action: PreviewAction::Suspend,
                 name: name.clone(),

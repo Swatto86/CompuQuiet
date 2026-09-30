@@ -21,6 +21,11 @@ export function itemLine(item: PreviewItem): PreviewLine {
       return { text: "Keep the PC awake", command: null };
     case "purge":
       return { text: "Purge cached memory", command: null };
+    case "unload_model":
+      return {
+        text: `Unload ${item.name}${item.memory_bytes > 0 ? `, ${formatBytes(item.memory_bytes)}` : ""}. It loads again when it is next used`,
+        command: null,
+      };
     case "stop_service":
       return { text: `Stop service ${item.name}`, command: null };
     case "suspend":

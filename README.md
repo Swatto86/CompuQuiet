@@ -22,6 +22,7 @@ reboot cannot lose the list of what to put back.
 | Performance power plan | `powercfg` (Ultimate or High performance) | `powerprofilesctl` | not available |
 | Purge cached memory (opt-in) | standby list (administrator) | `drop_caches` via polkit | not available |
 | Keep the PC awake while quiet (opt-in) | `SetThreadExecutionState` | `systemd-inhibit` | `caffeinate` |
+| Unload local AI models (opt-in) | Ollama's local API; LM Studio's `lms` tool | same | same |
 
 The desktop shell, compositor, input, audio, security software, terminals
 and CompuQuiet itself are always protected and cannot be added as targets.
@@ -79,6 +80,15 @@ Your own "never touch" list sits on top of that.
    and the screen turning off while Quiet Mode is on and lets go when it ends
    or CompuQuiet exits. A closed laptop lid still sleeps it, and on battery it
    is skipped unless Settings allows it.
+9. **Unload local AI models** (Park list > System, off by default) asks Ollama
+   and LM Studio to unload the models they hold in memory, which frees graphics
+   memory for a game. A model loads again the next time something uses it, so
+   there is nothing to put back, but a reply being written stops. The preview
+   lists each model. Ollama is asked over its own local API, never over the
+   network. LM Studio's `lms` tool is run only from `~/.lmstudio/bin`, only
+   while LM Studio is running, and not when CompuQuiet has administrator rights
+   (the tool sits in your user folder), which the preview says. A run that
+   starts by itself unloads them too.
 
 ![The Scan tab](docs/scan.png)
 

@@ -14,9 +14,8 @@ does not show.
   `ending` (uptime deadline, program to wait for, or auto-quiet trigger) and
   `awake` are optional: 1.1.7 ignores them and the user ends the run. Never
   the wall clock. Auto-quiet is off by default, suspends instead of closing,
-  skips the purge, spares its programs, and never ends or restarts over a run
-  the user pressed for. Keep-awake dies with the process, so it has no undo
-  entry.
+  skips the purge, spares its programs, and never ends or restarts a run the
+  user pressed for. Keep-awake dies with the process: no undo entry.
 - **2026-09-30: the Windows setup is per-machine (Program Files).** The
   elevated logon task must start a program ordinary processes cannot replace:
   HIGHEST only for an exe under `%ProgramFiles%` made by an elevated process,
@@ -29,56 +28,52 @@ does not show.
   can be given up.** A timeout (`PlatformError::TimedOut`) does not prove the
   step failed (a busy service stops late), so its entry stays and Restore
   undoes it harmlessly. Only what a restore could not undo
-  (`EngineState::unrestored`) is offered to give up, after a confirmation
-  naming each entry; `journal.json` moves to `journal.json.bad`, never
-  deleted, as an unreadable journal does.
+  (`EngineState::unrestored`) can be given up, after a confirmation naming
+  each entry; `journal.json` moves to `journal.json.bad`, never deleted.
 - **2026-09-30: the memory purge is opt-in.** A new profile defaults to no
-  purge on every platform; a saved setting is kept as it is. Scan may suggest
-  it; auto-scan never switches it on.
+  purge; a saved setting is kept. Scan may suggest it; auto-scan never
+  switches it on.
 - **2026-09-30: an unreadable `settings.json` is never overwritten.** A
   damaged or newer file leaves the engine on the built-in settings, refusing
   every save and Go Quiet; the banner moves it to `settings.json.bad`.
   Restore is unaffected.
 - **2026-09-30: one copy per data directory, by file lock; the command line
   rides on it.** The first copy locks `instance.lock`; a later launch leaves
-  a request in `wake/` (a fixed word: show, quiet, restore, toggle; no
-  arguments; `cq_core::instance`) and exits once the running copy takes it;
-  it works across elevation, window messages do not. `--quiet`, `--restore`
-  and `--toggle` are a public promise: any other argument exits 2, and a
-  command acts on saved settings only. The copy that does it drops the flag
-  from Tauri's `Env`, or an update would replay it (`cli.rs`).
+  a request in `wake/` (`cq_core::instance`: a fixed word, no arguments) and
+  exits once the running copy takes it; unlike window messages it crosses
+  elevation. `--quiet`, `--restore` and `--toggle` are a public promise: any
+  other argument exits 2, and a command acts on saved settings only. The
+  copy that does it drops the flag from Tauri's `Env`, or an update would
+  replay it (`cli.rs`).
 - **2026-09-29: a restart or new sign-in ends Quiet Mode.** The journal
   records where Quiet Mode began (optional `began`: uptime and, on Windows,
   the WTS logon stamp), never compared with the wall clock, which jumps by
   hours on this dual-boot PC. An earlier sign-in's journal is finished at
   launch: closed programs are not relaunched, services restart unless uptime
-  shows a reboot, resumes are tried and the power plan is restored. Older
+  shows a reboot, resumes are tried, the power plan is restored. Older
   journals, and Linux/macOS sign-outs without a reboot, restore everything.
-- **2026-09-30: Linux start times are recorded from boot.** A clock step made
-  a resume look like another program. `ProcessInfo.start_time` is seconds
+- **2026-09-30: Linux start times are recorded from boot** (a clock step made
+  a resume look like another program): `ProcessInfo.start_time` is seconds
   since boot; 10^9 or more is an older wall-clock value, still accepted.
   Restore before downgrading to 1.1.7, which would not resume those.
 - **Every step is on record before it happens, and every undo is safe to
   repeat.** A crash mid-step or mid-restore strands nothing and repeats
   nothing; restore saves after each step and never relaunches a command line
   that is already running.
-- **Leaving never cuts a run short.** Quit, the tray's Quit, elevated
-  relaunch and the updater's install claim the engine
-  (`Engine::claim_for_exit`) and wait or refuse while a run is in progress.
+- **Leaving never cuts a run short.** Quit, elevated relaunch and the
+  updater's install claim the engine (`Engine::claim_for_exit`) and wait or
+  refuse during a run.
 - **2026-09-29: a window that never loaded restarts the app once.** The
-  elevated logon launch sometimes gets no WebView2, which Tauri only logs,
-  leaving a tray with nothing behind it. Tray actions and a second launch
-  restart with `--reopen`.
+  elevated logon launch sometimes gets no WebView2, leaving a tray with
+  nothing behind it. Tray actions and a second launch restart with
+  `--reopen`.
 - **2026-09-30: failures are kept.** `compuquiet.log` holds warnings, errors,
   failed steps (label and code) and panics; a full file becomes `.log.1`.
 - **2026-09-26: renamed to CompuQuiet.** A leftover `ComputeQuiet` settings
   folder, logon task or env override is still recognised.
-- **2026-09-19: rewritten as Rust + Tauri 2** (was C#/WPF); vanilla
-  TypeScript + Vite frontend.
 - **Unelevated by default on Windows.** Services and the purge need
   administrator rights, but elevation at launch would block a prompt-free
-  autostart and the WebDriver suite. The app plans around its capabilities
-  and offers *Relaunch as administrator*.
+  autostart and the WebDriver suite. It offers *Relaunch as administrator*.
 - **Suspend is the default process action; Close is opt-in.** Suspending
   keeps a program's state and is fully reversible; closing frees its memory
   but loses unsaved state, so it is per target.
@@ -90,11 +85,15 @@ does not show.
   releases, and Swatto mirrors it to Origin. Push to `origin` (GitHub) only.
 - **2026-09-27: updates install themselves.** `tauri-plugin-updater` checks
   `latest.json` on the GitHub release when idle. The release workflow signs
-  each updater bundle with the minisign key
-  in `TAURI_SIGNING_PRIVATE_KEY` (public half in `tauri.conf.json`). Only a
-  copy that can replace itself checks (`update/guard.rs`; never a debug or
-  fake build), idle with the window closed to the tray. With `auto_update`
-  off a release is only announced.
+  each updater bundle with the minisign key in `TAURI_SIGNING_PRIVATE_KEY`
+  (public half in `tauri.conf.json`). Only a copy that can replace itself
+  checks (`update/guard.rs`; never a debug or fake build), idle with the
+  window closed to the tray. With `auto_update` off a release is announced.
+- **2026-09-30: unloading local AI models is opt-in and local.**
+  `Step::UnloadModel` has no `DoneStep` (a model reloads when used), so 1.1.7
+  reads every journal. Ollama is reached on 127.0.0.1 only. LM Studio's `lms`
+  runs only from `~/.lmstudio/bin`, while LM Studio runs, and never elevated
+  (the folder is the user's, so it would gain administrator rights).
 - **2026-09-30: diagnostics stay local.** `diagnostics.rs` hides the home
   folder as `~`, names steps but never arguments, and only reaches the
   clipboard.
@@ -103,11 +102,10 @@ does not show.
   saved targets; medium-risk finds are shown on the Scan tab and
   never applied unasked. Unknown programs are
   suggested only where the platform can prove they own no window (Windows).
-  Catalogue: `crates/cq-core/src/catalogue.rs`; an entry needs a reason and a risk.
+  Catalogue entries (`catalogue.rs`) need a reason and a risk.
 - **Linux elevation is per action through polkit** (`systemctl` for system
   units, `pkexec` for the cache drop), never a root relaunch of the GUI.
-  macOS reports power and memory actions as unavailable rather than
-  half-doing them.
+  macOS reports power and memory actions as unavailable.
 
 ## Workflow
 
@@ -128,6 +126,5 @@ does not show.
 - A relaunched program gets CompuQuiet's environment (minus an AppImage's
   bundle variables), not its original launcher's. A Flatpak, Snap or Store
   app is suspended instead of closed: it cannot be relaunched from here.
-- Programs that respawn themselves (updater schedulers) are suspended, not
-  closed, by default.
+- Programs that respawn themselves (updaters) are suspended, not closed.
 - The e2e suite does not run on macOS (`tauri-driver` has no macOS backend).

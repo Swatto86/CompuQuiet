@@ -159,6 +159,7 @@ export function homePlan(
     actions.push("switch to the performance power plan");
   if (profile.purge_memory) actions.push("purge cached memory");
   if (profile.keep_awake) actions.push("keep the PC awake");
+  if (profile.unload_ai_models) actions.push("unload local AI models");
   const found = "low-risk programs and services a quick scan finds";
   if (actions.length === 0) {
     return context.autoScan

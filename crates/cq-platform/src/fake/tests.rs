@@ -113,3 +113,30 @@ fn the_graphics_card_keeps_its_memory_through_a_run_and_can_be_made_unreadable()
     fake.set_gpu(Some(seeded.clone()));
     assert_eq!(fake.gpu().unwrap(), seeded);
 }
+
+#[test]
+fn a_model_is_unloaded_once_and_a_second_ask_finds_it_gone() {
+    let fake = Fake::new();
+    let seeded = fake.loaded_models(&[]);
+    assert_eq!(seeded.loaded.len(), 1);
+    assert!(seeded.skipped.is_empty());
+    let model = seeded.loaded[0].clone();
+
+    fake.fail(Call::UnloadModel, Some("LLAMA3:8B"), Failure::Refused);
+    assert!(fake.unload_model(&model).is_err());
+    assert_eq!(
+        fake.models(),
+        seeded.loaded,
+        "a refused unload changes nothing"
+    );
+    fake.heal();
+
+    fake.unload_model(&model).unwrap();
+    assert!(fake.loaded_models(&[]).loaded.is_empty());
+    assert!(matches!(
+        fake.unload_model(&model),
+        Err(PlatformError::NotRunning(_))
+    ));
+    fake.set_models(vec![model.clone()]);
+    assert_eq!(fake.models(), vec![model]);
+}

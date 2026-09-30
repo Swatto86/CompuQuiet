@@ -94,6 +94,7 @@ function profile(partial: Partial<Profile> = {}): Profile {
     power: "leave",
     purge_memory: false,
     keep_awake: false,
+    unload_ai_models: false,
     keep_alive: [],
     ...partial,
   };
@@ -134,6 +135,10 @@ test("the home plan counts only what the button will actually touch", () => {
   assert.equal(
     homePlan(false, profile({ keep_awake: true })),
     "One press will keep the PC awake. Press again to undo it.",
+  );
+  assert.equal(
+    homePlan(false, profile({ unload_ai_models: true })),
+    "One press will unload local AI models. Press again to undo it.",
   );
   assert.match(homePlan(true, profile()), /undo them/);
 });

@@ -45,6 +45,34 @@ test("a step reads as what it does, with how many processes and how much they ho
   );
 });
 
+test("a model says which server holds it and how much, and that it loads again", () => {
+  assert.deepEqual(
+    itemLine(
+      item({
+        action: "unload_model",
+        name: "llama3:8b (Ollama)",
+        processes: 0,
+        memory_bytes: 5 * 1024 * MIB,
+      }),
+    ),
+    {
+      text: "Unload llama3:8b (Ollama), 5.0 GB. It loads again when it is next used",
+      command: null,
+    },
+  );
+  assert.equal(
+    itemLine(
+      item({
+        action: "unload_model",
+        name: "qwen (LM Studio)",
+        processes: 0,
+        memory_bytes: 0,
+      }),
+    ).text,
+    "Unload qwen (LM Studio). It loads again when it is next used",
+  );
+});
+
 test("a closed program shows the command line it is opened with, or says it cannot be", () => {
   const closed = itemLine(
     item({

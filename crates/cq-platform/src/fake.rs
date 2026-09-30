@@ -12,8 +12,8 @@ use std::sync::Mutex;
 use std::time::Duration;
 
 use cq_core::{
-    Activity, Capabilities, GpuInfo, Marker, PowerPlan, ProcessInfo, ServiceInfo, ServiceState,
-    Snapshot, SystemStats,
+    Activity, Capabilities, GpuInfo, LoadedModel, Marker, ModelServers, PowerPlan, ProcessInfo,
+    ServiceInfo, ServiceState, Snapshot, SystemStats,
 };
 
 use crate::Platform;
@@ -68,6 +68,8 @@ struct State {
     awake: bool,
     /// The graphics adapters it reports; `None` is one whose memory cannot be read.
     gpu: Option<Vec<GpuInfo>>,
+    /// The models its AI servers hold in memory.
+    models: Vec<LoadedModel>,
 }
 
 pub struct Fake {
@@ -121,6 +123,7 @@ impl Fake {
                 }),
                 next_pid: 1000,
                 gpu: Some(controls::seeded_gpu()),
+                models: controls::seeded_models(),
                 marker: Marker {
                     uptime: 3_600,
                     sign_in: Some(1),
@@ -128,16 +131,6 @@ impl Fake {
                 ..State::default()
             }),
         }
-    }
-
-    /// Make stopping or starting `service` crash, or stop doing so.
-    pub fn crash_on_service(&self, service: Option<&str>) {
-        self.lock().crash_on_service = service.map(str::to_ascii_lowercase);
-    }
-
-    fn crash_if_asked(&self, name: &str) {
-        let crash = self.lock().crash_on_service.as_deref() == Some(&*name.to_ascii_lowercase());
-        assert!(!crash, "the fake machine crashed while handling {name}");
     }
 
     /// Programs launched so far, in order.
@@ -375,6 +368,14 @@ impl Platform for Fake {
             state.purges += 1;
             Ok(())
         })
+    }
+
+    fn loaded_models(&self, _processes: &[ProcessInfo]) -> ModelServers {
+        self.models_found()
+    }
+
+    fn unload_model(&self, model: &LoadedModel) -> Result<()> {
+        self.unload(model)
     }
 
     fn keep_awake(&self, on: bool) -> Result<()> {
