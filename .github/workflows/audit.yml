@@ -1,0 +1,37 @@
+# A weekly check of the dependencies that ship in the app against the public
+# advisory databases. It only reports: a red run (GitHub emails the owner) is
+# the report, and the fix is an ordinary commit on main. It opens no pull
+# requests and changes no setting.
+name: audit
+
+on:
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      # A prebuilt binary with a verified checksum; compiling it would take
+      # longer than the audit.
+      - uses: taiki-e/install-action@83ac0ad63c0167e6f06796fab0fce28db1bf3db0 # v2.87.22
+        with:
+          tool: cargo-audit
+
+      # Known vulnerabilities fail the run. Unmaintained-crate notices (Tauri's
+      # Linux toolkit has several) are printed as warnings and do not.
+      - name: Rust dependencies
+        run: cargo audit
+
+      # Only what reaches the shipped window: the build tools are not in it.
+      - name: JavaScript dependencies
+        run: npm audit --omit=dev --audit-level=high

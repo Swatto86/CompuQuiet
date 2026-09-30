@@ -13,6 +13,7 @@ permissions:
 
 jobs:
   build:
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -32,6 +33,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: Verify release tag matches app version
         shell: bash
@@ -43,7 +46,11 @@ jobs:
           cache: npm
       - run: npm ci
 
-      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+      # Exactly the compiler rust-toolchain.toml pins, so the gate here is the
+      # one a developer runs, and a new stable release changes nothing.
+      - name: Install the pinned Rust toolchain
+        shell: bash
+        run: rustup toolchain install --profile minimal --no-self-update
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           key: release-${{ matrix.os }}
@@ -97,6 +104,13 @@ jobs:
           CARGO_PROFILE_RELEASE_DEBUG: "0"
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
 
+      # The bundles were signed with the secret; installed copies trust only
+      # the public key in tauri.conf.json. If the two are not a pair, this
+      # release would publish cleanly and every installed copy would refuse it.
+      - name: Check the signatures match the app's update key
+        shell: bash
+        run: node scripts/check-update-key.mjs src-tauri/tauri.conf.json target/release/bundle
+
       - name: Collect artifacts
         shell: bash
         run: |
@@ -127,14 +141,26 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+      # The gate above records one folder per failed WebDriver test here.
+      - name: Failed desktop evidence
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: desktop-failure-release-${{ matrix.os }}
+          path: ${{ runner.temp }}/compuquiet-failure
+          retention-days: 3
+
   publish:
     needs: build
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: write
     steps:
       - name: Checkout the manifest script
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: Download release artifacts
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0

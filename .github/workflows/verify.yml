@@ -8,12 +8,19 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+# A newer push to a pull request supersedes its older runs. Every commit on
+# main keeps its own run: a cancelled one would leave that commit without the
+# verdict a release waits for.
 concurrency:
-  group: verify-${{ github.ref }}
-  cancel-in-progress: true
+  group: verify-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   gate:
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -24,6 +31,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
@@ -31,7 +40,11 @@ jobs:
           cache: npm
       - run: npm ci
 
-      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+      # Exactly the compiler rust-toolchain.toml pins, so the gate here is the
+      # one a developer runs, and a new stable release changes nothing.
+      - name: Install the pinned Rust toolchain
+        shell: bash
+        run: rustup toolchain install --profile minimal --no-self-update
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           key: ${{ matrix.os }}
@@ -61,10 +74,12 @@ jobs:
         shell: bash
         run: ./scripts/verify.sh
 
+      # One folder per failed WebDriver test: screenshot, page source and the
+      # app's own log, journal and settings.
       - name: Failed desktop evidence
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: desktop-failure-${{ matrix.os }}
-          path: ${{ runner.temp }}/compuquiet-failure.*
+          path: ${{ runner.temp }}/compuquiet-failure
           retention-days: 3

@@ -262,3 +262,16 @@ banner's action moves the file to `settings.json.bad`.
   `scripts/verify.sh`. WebView2 posts IPC as host messages and
   `__TAURI_INTERNALS__.invoke` is locked, so `watchInvokes` (in `support.ts`)
   stands in front of the transport to count calls or make one fail.
+- The suite refuses a binary that lacks the fake platform (it looks for the
+  fake machine's `C:/fake/` paths in the executable), so a real-platform build
+  at `target/debug` is never driven; `tsc -p e2e` type-checks the specs in the
+  gate. A failed test leaves its own folder (screenshot, page source and the
+  data directory's log, journal and settings) in `$RUNNER_TEMP/compuquiet-failure`,
+  which both workflows upload.
+- CI (`.github/workflows/`): `verify` runs the gate on all three systems for
+  every commit on main (only pull requests cancel superseded runs); `release`
+  repeats it on the tag, then checks that the `.sig` files were made by the
+  key in `plugins.updater.pubkey` (`scripts/check-update-key.mjs`, key IDs
+  only) before anything is published; `audit` runs `cargo audit` and
+  `npm audit --omit=dev` weekly and only reports. `verify` and `release`
+  install exactly the compiler `rust-toolchain.toml` pins.
