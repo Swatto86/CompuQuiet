@@ -33,6 +33,13 @@ the decisions and constraints that are not visible in the code.
   sign-out keep them stopped), resumes are always tried (the PID check
   refuses anything else) and the power plan is always restored. Older
   journals, and Linux/macOS sign-outs without a reboot, restore everything.
+- **2026-09-30: Linux start times are recorded from boot; only programs are
+  listed.** sysinfo reads Linux's boot time once per run, so a clock step
+  between runs (this PC's jumps by hours) made a resume look like "a different
+  program" and dropped it, leaving it stopped. `ProcessInfo.start_time` is now
+  seconds since boot on Linux; a recorded value of 10^9 or more is an older
+  wall-clock one, still accepted; restore before downgrading to 1.1.7, which
+  would not resume those. Threads are never listed.
 - **Every step is on record before it happens, and every undo is safe to
   repeat.** A crash mid-step or mid-restore strands nothing and repeats
   nothing; restore saves after each step and never relaunches a command line
@@ -107,6 +114,9 @@ the decisions and constraints that are not visible in the code.
 
 - A program closed and relaunched inherits CompuQuiet's elevation if it was
   relaunched from an elevated instance.
+- A relaunched program gets CompuQuiet's environment (minus an AppImage's
+  bundle variables), not its original launcher's. A Flatpak or Snap app is
+  suspended instead of closed: it cannot be relaunched from here.
 - Programs that respawn themselves (updater schedulers) are suspended, not
   closed, by default for that reason.
 - The Linux process name from the kernel is 15 bytes; matching also uses the

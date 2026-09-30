@@ -18,8 +18,8 @@ Dependencies point inward: `src-tauri` → `cq-platform` → `cq-core`.
 
 ## The flow
 
-1. **Snapshot.** `Platform::snapshot` lists processes (via `sysinfo`), the
-   state of the profile's services, and the active power plan.
+1. **Snapshot.** `Platform::snapshot` lists programs (via `sysinfo`; never
+   threads), the state of the profile's services, and the active power plan.
 2. **Plan.** `cq_core::build_plan` turns profile + snapshot + capabilities into
    ordered `Step`s and a list of skipped targets with reasons. Order: power
    plan, services, processes, memory purge. Critical processes, keep-alive

@@ -236,3 +236,52 @@ fn a_custom_plan_named_for_performance_is_not_a_saving() {
     ));
     assert!(!is_performance_plan("power-saver", "power-saver"));
 }
+
+#[test]
+fn a_page_cache_purge_is_suggested_only_where_it_helps() {
+    let purge = |os: Os| {
+        let profile = Profile::default_for(os);
+        recommend(
+            &profile,
+            &Snapshot::default(),
+            &stats(8),
+            &Activity::default(),
+            1,
+            os,
+            &caps(),
+        )
+        .iter()
+        .any(|item| item.kind == RecommendationKind::MemoryPurge)
+    };
+    assert!(purge(Os::Windows));
+    assert!(purge(Os::MacOs));
+    // Linux gives its cache up on demand; dropping it only slows the next reads.
+    assert!(!purge(Os::Linux));
+}
+
+#[test]
+fn the_catalogue_knows_each_platforms_own_names() {
+    let names = |os: Os| -> Vec<String> {
+        catalogue::processes(os)
+            .map(|known| known.name.to_ascii_lowercase())
+            .collect()
+    };
+    for name in [
+        "google chrome",
+        "microsoft edge",
+        "brave browser",
+        "zoom.us",
+        "msteams",
+    ] {
+        assert!(names(Os::MacOs).contains(&name.to_string()), "{name}");
+    }
+    for name in ["signal-desktop", "telegram-desktop", "vivaldi-bin"] {
+        assert!(names(Os::Linux).contains(&name.to_string()), "{name}");
+    }
+    let units: Vec<_> = catalogue::services(Os::Linux)
+        .iter()
+        .map(|known| known.name)
+        .collect();
+    assert!(units.contains(&"user:localsearch-3"));
+    assert!(units.contains(&"user:tracker-miner-fs-3"));
+}

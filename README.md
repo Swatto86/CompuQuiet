@@ -33,7 +33,7 @@ Your own "never touch" list sits on top of that.
 2. Open **Scan** to see what is using resources right now: recognised
    background software that is not yet on the park list, large programs with no
    window, stoppable services that are running, a non-performance power plan
-   and a large file cache. Each row shows its cost, why it is safe and a risk
+   and (not on Linux, which gives its cache up on demand) a large file cache. Each row shows its cost, why it is safe and a risk
    level. Low risk starts ticked; medium risk stays off until you tick it.
    *Add and free up this PC* adds the ticked finds and parks them.
 3. Review **Park list**: the built-in list of background hogs for your platform,
@@ -85,7 +85,7 @@ releases install on their own.
 Required runtimes (shared platform components, not bundled):
 
 - **Windows:** the [WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/), present on Windows 11 and updated Windows 10.
-- **Linux:** `libwebkit2gtk-4.1` and GTK 3 (the `.deb` declares them; the AppImage expects them installed). `powerprofilesctl` and `pkexec` are optional and enable the power and memory actions.
+- **Linux:** `libwebkit2gtk-4.1` and GTK 3 (the `.deb` declares them; the AppImage expects them installed). `powerprofilesctl` (with the power-profiles daemon running and offering a performance profile) and `pkexec` are optional and enable the power and memory actions.
 - **macOS:** nothing beyond macOS 12 or later.
 
 State lives in `%APPDATA%\CompuQuiet` (Windows), `~/.config/CompuQuiet`

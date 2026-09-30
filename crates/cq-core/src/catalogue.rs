@@ -121,6 +121,9 @@ const WINDOWS_PROCESSES: &[KnownProcess] = &[
 
 const LINUX_PROCESSES: &[KnownProcess] = &[
     p("teams-for-linux", CHAT, Risk::Low),
+    p("signal-desktop", CHAT, Risk::Low),
+    p("telegram-desktop", CHAT, Risk::Low),
+    p("vivaldi-bin", BROWSER, Risk::Medium),
     p("baloo_file", "KDE file indexer", Risk::Low),
     p("baloo_file_extractor", "KDE file indexer", Risk::Low),
     p("gnome-software", UPDATER, Risk::Low),
@@ -129,8 +132,15 @@ const LINUX_PROCESSES: &[KnownProcess] = &[
     p("evolution-alarm-notify", "calendar reminders", Risk::Low),
 ];
 
+// The shared names above are the Windows ones; macOS names its browsers, Zoom
+// and the new Teams differently.
 const MACOS_PROCESSES: &[KnownProcess] = &[
     p("Microsoft Teams", CHAT, Risk::Low),
+    p("MSTeams", CHAT, Risk::Low),
+    p("zoom.us", CHAT, Risk::Medium),
+    p("Google Chrome", BROWSER, Risk::Medium),
+    p("Microsoft Edge", BROWSER, Risk::Medium),
+    p("Brave Browser", BROWSER, Risk::Medium),
     p("Microsoft Update Assistant", UPDATER, Risk::Low),
     p("Google Software Update", UPDATER, Risk::Low),
 ];
@@ -219,6 +229,18 @@ const LINUX_SERVICES: &[KnownService] = &[
     s(
         "user:tracker-extract-3",
         "GNOME metadata extractor",
+        Risk::Low,
+    ),
+    // GNOME 47 renamed Tracker's miners; a machine has one pair or the other,
+    // and the pair it lacks reads as not installed.
+    s(
+        "user:localsearch-3",
+        "GNOME file indexer (GNOME 47 and later)",
+        Risk::Low,
+    ),
+    s(
+        "user:localsearch-extractor-3",
+        "GNOME metadata extractor (GNOME 47 and later)",
         Risk::Low,
     ),
     s(

@@ -88,8 +88,12 @@ pub fn recommend(
         });
     }
 
+    // Linux counts its file cache as available memory and gives it up the
+    // instant something needs it, so dropping it helps no game or model load
+    // and only makes the next file reads slower. It stays an explicit opt-in
+    // there, never a suggestion.
     let cached = stats.memory_available.saturating_sub(stats.memory_free);
-    if caps.memory_purge && cached >= CACHE_WORTH_PURGING {
+    if caps.memory_purge && os != Os::Linux && cached >= CACHE_WORTH_PURGING {
         out.push(Recommendation {
             kind: RecommendationKind::MemoryPurge,
             name: "Cached memory".to_string(),

@@ -39,6 +39,19 @@ pub fn matches(target: &str, process_name: &str, exe_stem: Option<&str>) -> bool
     name.len() == 15 && target.len() > 15 && target.starts_with(&name)
 }
 
+/// Is `process_name` a helper an app starts under its own name, as macOS
+/// Electron apps do for their renderers and GPU process ("Slack Helper
+/// (Renderer)")? Windows and Linux helpers share the app's executable and
+/// match by name already.
+pub fn is_helper_of(target: &str, process_name: &str) -> bool {
+    let target = normalize(target);
+    !target.is_empty()
+        && normalize(process_name)
+            .strip_prefix(&target)
+            .and_then(|rest| rest.strip_prefix(" helper"))
+            .is_some_and(|rest| rest.is_empty() || rest.starts_with(' '))
+}
+
 /// Never suspend, close or otherwise disturb.
 pub fn is_critical(process_name: &str, os: Os) -> bool {
     let name = normalize(process_name);
@@ -148,6 +161,11 @@ const LINUX_CRITICAL: &[&str] = &[
     "xdg-desktop-portal",
     "gnome-terminal-",
     "gnome-terminal-server",
+    // WebKitGTK's helpers, in the 15-byte form the kernel reports. This
+    // app's own window runs in them, and so does every other WebKit app's.
+    "WebKitWebProces",
+    "WebKitNetworkPr",
+    "WebKitGPUProces",
     "konsole",
     "alacritty",
     "kitty",
@@ -171,6 +189,11 @@ const MACOS_CRITICAL: &[&str] = &[
     "securityd",
     "cfprefsd",
     "distnoted",
+    // WebKit's helpers: this app's window runs in them, and so does every
+    // other WebKit app's.
+    "com.apple.WebKit.WebContent",
+    "com.apple.WebKit.Networking",
+    "com.apple.WebKit.GPU",
     "Terminal",
     "iTerm2",
     "zsh",
@@ -204,6 +227,28 @@ mod tests {
         ));
         assert!(matches("tracker-miner-fs-3", "tracker-miner-f", None));
         assert!(!matches("tracker-miner-fs-3", "tracker-miner", None));
+    }
+
+    #[test]
+    fn a_macos_apps_helpers_are_matched_by_their_prefix_and_nothing_looser() {
+        assert!(is_helper_of("Slack", "Slack Helper"));
+        assert!(is_helper_of("Slack", "Slack Helper (Renderer)"));
+        assert!(is_helper_of(
+            "microsoft teams",
+            "Microsoft Teams Helper (GPU)"
+        ));
+        assert!(!is_helper_of("Slack", "Slack"));
+        assert!(!is_helper_of("Slack", "Slack Helperd"));
+        assert!(!is_helper_of("Slack", "Slackware Helper"));
+        assert!(!is_helper_of("", " Helper"));
+    }
+
+    #[test]
+    fn the_webkit_helpers_this_apps_window_runs_in_are_critical() {
+        assert!(is_critical("WebKitWebProces", Os::Linux));
+        assert!(is_critical("WebKitNetworkPr", Os::Linux));
+        assert!(is_critical("com.apple.WebKit.WebContent", Os::MacOs));
+        assert!(is_critical("msedgewebview2.exe", Os::Windows));
     }
 
     #[test]

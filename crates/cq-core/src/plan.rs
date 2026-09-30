@@ -11,7 +11,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use crate::policy::{is_critical, matches, normalize};
+use crate::policy::{is_critical, is_helper_of, matches, normalize};
 use crate::profile::{Os, PowerPolicy, ProcessAction, Profile};
 use crate::snapshot::{ProcessInfo, ServiceState, Snapshot};
 
@@ -145,13 +145,19 @@ fn plan_processes(profile: &Profile, snapshot: &Snapshot, self_pid: u32, os: Os,
             plan.skip(&target.name, "on your keep-alive list");
             continue;
         }
+        // A macOS app's renderers and GPU process are executables of their
+        // own, named after it: parking the app parks those too. Closing it
+        // ends them with it.
+        let with_helpers = os == Os::MacOs && target.action == ProcessAction::Suspend;
         let mut matched: Vec<&ProcessInfo> = Vec::new();
         for process in &snapshot.processes {
             if process.pid == self_pid || claimed.contains(&process.pid) {
                 continue;
             }
             let stem = process.exe_stem();
-            if !matches(&target.name, &process.name, stem.as_deref()) {
+            if !matches(&target.name, &process.name, stem.as_deref())
+                && !(with_helpers && is_helper_of(&target.name, &process.name))
+            {
                 continue;
             }
             if is_critical(&process.name, os) {
@@ -164,32 +170,59 @@ fn plan_processes(profile: &Profile, snapshot: &Snapshot, self_pid: u32, os: Os,
         // helper met before it has no window to close politely, so it would
         // wait out the whole grace period before being forced.
         matched.sort_by_key(|process| process.program_root(&snapshot.processes).pid != process.pid);
-        for process in &matched {
-            plan.steps.push(match target.action {
-                ProcessAction::Suspend => Step::SuspendProcess {
-                    pid: process.pid,
-                    name: process.name.clone(),
-                    start_time: process.start_time,
-                },
-                ProcessAction::Close => {
-                    // Undone by relaunching the program, which brings its
-                    // helpers back with it.
-                    let origin = process.program_root(&snapshot.processes);
-                    Step::CloseProcess {
-                        pid: process.pid,
-                        name: process.name.clone(),
-                        exe: origin.exe.clone(),
-                        args: origin.args.clone(),
-                        cwd: origin.cwd.clone(),
-                        start_time: process.start_time,
-                    }
-                }
-            });
+        let steps: Vec<Step> = matched
+            .iter()
+            .map(|process| park_step(process, target.action, &snapshot.processes, os))
+            .collect();
+        if target.action == ProcessAction::Close
+            && steps
+                .iter()
+                .any(|step| matches!(step, Step::SuspendProcess { .. }))
+        {
+            plan.skip(
+                &target.name,
+                "a Flatpak or Snap app cannot be started again from outside its sandbox, so it is suspended instead of closed",
+            );
         }
+        plan.steps.extend(steps);
         if matched.is_empty() {
             plan.skip(&target.name, "not running");
         }
     }
+}
+
+/// The step that parks `process` as `action` asks. Closing is undone by
+/// relaunching the program, which brings its helpers back with it; a program
+/// that could not be relaunched is suspended instead, so nothing is closed
+/// that Restore could not bring back.
+fn park_step(process: &ProcessInfo, action: ProcessAction, all: &[ProcessInfo], os: Os) -> Step {
+    let origin = process.program_root(all);
+    if action == ProcessAction::Close && !sandboxed(origin, os) {
+        return Step::CloseProcess {
+            pid: process.pid,
+            name: process.name.clone(),
+            exe: origin.exe.clone(),
+            args: origin.args.clone(),
+            cwd: origin.cwd.clone(),
+            start_time: process.start_time,
+        };
+    }
+    Step::SuspendProcess {
+        pid: process.pid,
+        name: process.name.clone(),
+        start_time: process.start_time,
+    }
+}
+
+/// A Flatpak app's path is inside its sandbox and does not exist outside it;
+/// a Snap's runs without its confinement unless started through `snap run`.
+/// Either way the recorded command line cannot bring the program back.
+fn sandboxed(origin: &ProcessInfo, os: Os) -> bool {
+    os == Os::Linux
+        && origin
+            .exe
+            .as_deref()
+            .is_some_and(|exe| exe.starts_with("/app") || exe.starts_with("/snap"))
 }
 
 impl Plan {
