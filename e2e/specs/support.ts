@@ -73,18 +73,18 @@ export async function clickDialogButton(label: string): Promise<void> {
 
 /**
  * Call a Tauri command straight through the webview's IPC, as the page's own
- * code does. For commands the UI has no control for: the fake machine's fault
- * injection.
+ * code does, and return what it returns. For commands the UI has no control
+ * for: the fake machine's fault injection, and the window's own visibility.
  */
-async function invokeCommand(
+async function invokeCommand<T = void>(
   command: string,
   args: Record<string, unknown>,
-): Promise<void> {
-  const failure = await browser.executeAsync(
+): Promise<T> {
+  const outcome = await browser.executeAsync(
     (
       name: string,
       payload: Record<string, unknown>,
-      done: (failure: string | null) => void,
+      done: (outcome?: { value?: unknown; failure?: string }) => void,
     ) => {
       const internals = (
         window as unknown as {
@@ -94,14 +94,27 @@ async function invokeCommand(
         }
       ).__TAURI_INTERNALS__;
       internals.invoke(name, payload).then(
-        () => done(null),
-        (error: unknown) => done(JSON.stringify(error)),
+        (value: unknown) => done({ value }),
+        (error: unknown) => done({ failure: JSON.stringify(error) }),
       );
     },
     command,
     args,
   );
-  if (failure !== null) throw new Error(`${command} failed: ${failure}`);
+  if (outcome?.failure !== undefined)
+    throw new Error(`${command} failed: ${outcome.failure}`);
+  return outcome?.value as T;
+}
+
+/** Hide or show the main window, and read whether it is showing. */
+export async function setWindowVisible(visible: boolean): Promise<void> {
+  await invokeCommand(`plugin:window|${visible ? "show" : "hide"}`, {
+    label: "main",
+  });
+}
+
+export function windowVisible(): Promise<boolean> {
+  return invokeCommand<boolean>("plugin:window|is_visible", { label: "main" });
 }
 
 /**

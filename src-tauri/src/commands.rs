@@ -228,9 +228,9 @@ pub async fn relaunch_elevated(
     })
     .await?;
     launched.ok_or_else(busy)??;
-    // The elevated copy must not find this one's single-instance lock and
-    // hand itself back to a process that is leaving.
-    tauri_plugin_single_instance::destroy(&app);
+    // The elevated copy must not find this one's lock and hand itself back
+    // to a process that is leaving.
+    crate::single::release();
     app.exit(0);
     Ok(())
 }

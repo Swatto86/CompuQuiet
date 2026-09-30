@@ -12,31 +12,35 @@ the decisions and constraints that are not visible in the code.
   What a restore could not undo (`EngineState::unrestored`) is the only thing
   Home offers to give up, after a confirmation naming each entry;
   `journal.json` then moves to `journal.json.bad`, never deleted. An unreadable
-  journal is set aside the same way. Journal and settings formats are unchanged.
+  journal is set aside the same way.
 - **2026-09-30: the memory purge is opt-in.** A new profile defaults to no
   purge on every platform; a saved setting is kept as it is. The Scan tab may
   still suggest it, but auto-scan never switches it on
   (`low_risk_additions` skips it).
 - **2026-09-30: an unreadable `settings.json` is never overwritten.** A
   damaged or newer file leaves the engine on the built-in settings, refusing
-  every save and Go Quiet, behind a banner that cannot be dismissed. Its
-  action moves the file to `settings.json.bad` (then `.bad-2`, never
-  replacing a copy); a file that no longer exists is simply resolved.
+  every save and Go Quiet. The banner's action moves the file to
+  `settings.json.bad` (then `.bad-2`, never replacing a copy); a file that no
+  longer exists is simply resolved.
   Restore is unaffected. `store.rs` retries the rename and the read for the
   Windows access-denied and sharing errors an antivirus scan causes.
+- **2026-09-30: one copy per data directory, by file lock.** The first copy
+  locks `instance.lock`; a later launch leaves a request in `wake/` (a fixed
+  command word, no arguments; `cq_core::instance`) and exits once the running
+  copy takes it. Windows blocks window messages from an unelevated launch to
+  an elevated copy, which the old single-instance plugin used. `go_quiet`
+  re-reads `journal.json` and adopts it.
 - **2026-09-29: a restart or new sign-in ends Quiet Mode.** The journal
   records where Quiet Mode began (optional `began`: uptime and, on Windows,
   the WTS sign-in's logon stamp), never compared with the wall clock, which
   jumps by hours on this dual-boot PC. A journal from an earlier sign-in is
   finished at launch: closed programs are not relaunched with stale
-  arguments, services restart unless uptime shows a reboot (Fast Startup and
-  sign-out keep them stopped), resumes are always tried (the PID check
+  arguments, services restart unless uptime shows a reboot, resumes are always tried (the PID check
   refuses anything else) and the power plan is always restored. Older
   journals, and Linux/macOS sign-outs without a reboot, restore everything.
 - **2026-09-30: Linux start times are recorded from boot; only programs are
-  listed.** sysinfo reads Linux's boot time once per run, so a clock step
-  between runs (this PC's jumps by hours) made a resume look like "a different
-  program" and dropped it, leaving it stopped. `ProcessInfo.start_time` is now
+  listed.** A clock step between runs (this PC's jumps by hours) made a
+  resume look like "a different program" and dropped it, leaving it stopped. `ProcessInfo.start_time` is now
   seconds since boot on Linux; a recorded value of 10^9 or more is an older
   wall-clock one, still accepted; restore before downgrading to 1.1.7, which
   would not resume those. Threads are never listed.
@@ -50,7 +54,7 @@ the decisions and constraints that are not visible in the code.
 
 - **2026-09-29: a window that never loaded restarts the app once.** The
   elevated logon launch sometimes gets no WebView2; Tauri only logs that, so
-  the tray ran with no window behind it and every item looked dead. Tray
+  the tray ran with no window behind it. Tray
   actions and a second launch now restart with `--reopen`, and warnings and
   errors go to `compuquiet.log` in the data directory so the cause is kept.
 
@@ -75,8 +79,7 @@ the decisions and constraints that are not visible in the code.
   the real binary; only the OS adapter is swapped. `verify.sh` asserts the
   feature is not a default and not in `tauri.conf.json`.
 - **2026-09-25: GitHub is the only remote.** Origin has no runners or releases
-  of its own (CI there needs Depot or Buildkite, Linux-only or self-hosted), so
-  `Swatto86/CompuQuiet` on GitHub is the source of truth, runs the workflows
+  of its own, so `Swatto86/CompuQuiet` on GitHub is the source of truth, runs the workflows
   and hosts the releases. Swatto mirrors it to Origin himself; this clone has
   no Origin remote. Push to GitHub (`origin`) only.
 - **2026-09-27: updates install themselves.** `tauri-plugin-updater` checks
@@ -90,8 +93,8 @@ the decisions and constraints that are not visible in the code.
   on by default and parks low-risk finds for that run without editing the
   saved targets; medium-risk finds (browsers, launchers, voice chat, Office)
   are shown on the Scan tab and never applied unasked. Unknown programs are
-  suggested only where the platform can prove they own no window (Windows),
-  so a Linux or macOS user's IDE is never guessed at. The catalogue lives in
+  suggested only where the platform can prove they own no window (Windows).
+  The catalogue lives in
   `crates/cq-core/src/catalogue.rs`; adding an entry needs a reason and a risk.
 - **Linux elevation is per action through polkit** (`systemctl` for system
   units, `pkexec` for the cache drop), never a root relaunch of the GUI.

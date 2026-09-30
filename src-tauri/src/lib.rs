@@ -10,12 +10,15 @@ mod logfile;
 mod reopen;
 mod rows;
 mod scan;
+mod single;
 mod tray;
 mod update;
 
+use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock};
 
+use cq_core::instance;
 use cq_platform::Platform;
 use tauri::Manager;
 
@@ -67,11 +70,38 @@ pub(crate) fn platform_for_relaunch() -> Arc<dyn Platform> {
     build_platform()
 }
 
+/// Take the data directory for this copy, or leave this launch to the copy
+/// that has it. `false` means this launch is finished.
+fn claim_data_dir(data_dir: &Path) -> bool {
+    let lock_error =
+        match instance::start(data_dir, instance::Command::Show, instance::ANSWER_WITHIN) {
+            Ok(instance::Start::First(lock)) => {
+                single::keep(lock);
+                None
+            }
+            // The running copy has been asked to show its window; this launch
+            // leaves the log alone, which the running copy has open.
+            Ok(instance::Start::HandedOff) => return false,
+            Ok(instance::Start::Stuck(reason)) => {
+                eprintln!("CompuQuiet is already running, so this copy will not start: {reason}");
+                std::process::exit(1);
+            }
+            Err(error) => Some(error),
+        };
+    logfile::install(data_dir);
+    if let Some(error) = lock_error {
+        log::error!("another copy could run beside this one: {error}");
+    }
+    true
+}
+
 pub fn run() {
     let data_dir = cq_core::store::data_dir()
         .unwrap_or_else(|error| panic!("CompuQuiet has nowhere to keep its state: {error}"));
-    logfile::install(&data_dir);
-    let engine = Arc::new(Engine::new(build_platform(), data_dir));
+    if !claim_data_dir(&data_dir) {
+        return;
+    }
+    let engine = Arc::new(Engine::new(build_platform(), data_dir.clone()));
     let hidden_arg = std::env::args().skip(1).any(|arg| arg == "--hidden");
     let reopen_arg = std::env::args().skip(1).any(|arg| arg == REOPEN_ARG);
     let _ = REOPENED.set(reopen_arg);
@@ -83,9 +113,6 @@ pub fn run() {
 
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
-        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
-            tray::reveal(app);
-        }))
         .plugin(tauri_plugin_updater::Builder::new().build());
 
     #[cfg(not(windows))]
@@ -100,6 +127,10 @@ pub fn run() {
             tray::install(app.handle())?;
             tray::refresh(app.handle(), &engine.state());
             update::schedule(app.handle());
+            let handle = app.handle().clone();
+            single::serve(data_dir, move |command| match command {
+                instance::Command::Show => tray::reveal(&handle),
+            });
 
             // Quiet Mode left on in an earlier sign-in has already lost what
             // it parked; finish it rather than show it as still on.

@@ -92,7 +92,9 @@ Required runtimes (shared platform components, not bundled):
 
 State lives in `%APPDATA%\CompuQuiet` (Windows), `~/.config/CompuQuiet`
 (Linux) or `~/Library/Application Support/CompuQuiet` (macOS):
-`settings.json` and, while Quiet Mode is on, `journal.json`.
+`settings.json` and, while Quiet Mode is on, `journal.json`. An
+`instance.lock` file in the same folder keeps a second copy from running
+beside the first.
 
 ## Building from source
 

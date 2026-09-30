@@ -60,7 +60,10 @@ Dependencies point inward: `src-tauri` → `cq-platform` → `cq-core`.
    one; the power plan is a saved setting and is always put back. A journal
    from an earlier sign-in is finished at launch; an unreadable one blocks a
    new run rather than being overwritten, until Home's action moves it aside
-   (`Engine::set_aside_journal`).
+   (`Engine::set_aside_journal`). `go_quiet` also re-reads the file
+   (`adopt_journal_on_disk`): entries it finds that this copy has not seen are
+   adopted and the run refused, and a file that has become unreadable blocks
+   it the same way.
 6. **System tools** (`powercfg`, `taskkill`, `schtasks`, `systemctl`,
    `launchctl`, `pkexec`) run through `cq_platform::run_tool`: a 180 s
    deadline, and the C locale on Linux and macOS so their messages can be
@@ -139,7 +142,17 @@ exist only with the `fake-platform` feature.
 - `logfile` sends every crate's `log` warnings and errors to
   `compuquiet.log` in the data directory; it is the only record of why a
   window failed to load.
-- Single instance: a second launch reveals the running window.
+- One copy per data directory (`cq_core::instance`, `single.rs`): the first
+  copy holds an exclusive lock on `instance.lock` for the life of the process.
+  A later launch leaves a request in `wake/` (one command word from a fixed
+  list, never arguments) and waits up to 3 s for the running copy, which polls
+  twice a second, to take it; the window is then shown (`Command::Show`). The
+  files carry the user's access list, so an unelevated launch reaches an
+  elevated copy, which window messages and named objects cannot. A lock freed
+  during the wait is taken over: a restart or an elevated relaunch starts
+  before the old process is gone and both call `single::release` first. A
+  copy that does not answer exits with code 1. The elevated-to-unelevated pair
+  is a manual check; the suite runs from one unelevated shell.
 - Autostart: `schtasks` logon task on Windows (elevated when created by an
   elevated process), `tauri-plugin-autostart` elsewhere, always guarded
   against registering a temporary or build-directory executable.

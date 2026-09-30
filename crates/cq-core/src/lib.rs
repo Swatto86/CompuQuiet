@@ -7,6 +7,7 @@
 
 pub mod catalogue;
 pub mod error;
+pub mod instance;
 pub mod journal;
 pub mod plan;
 pub mod policy;

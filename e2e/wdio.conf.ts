@@ -109,6 +109,7 @@ export const config: WebdriverIO.Config = {
       "persist",
       "settings-guard",
       "stuck-restore",
+      "second-launch",
       "exit",
     ].map((name) => path.resolve(here, `specs/${name}.spec.ts`)),
   ],

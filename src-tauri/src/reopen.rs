@@ -59,11 +59,11 @@ fn restart_shown(app: &AppHandle) -> ! {
     let mut env = app.env();
     env.args_os = reopen_args(env.args_os);
     // The old icon would linger until hovered, and the new process must not
-    // find this one's single-instance lock and hand itself back to it.
+    // find this one's lock and hand itself back to it.
     if let Some(tray) = app.tray_by_id("main") {
         let _ = tray.set_visible(false);
     }
-    tauri_plugin_single_instance::destroy(app);
+    crate::single::release();
     app.cleanup_before_exit();
     tauri::process::restart(&env)
 }
