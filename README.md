@@ -18,16 +18,20 @@ reboot cannot lose the list of what to put back.
 | --- | --- | --- | --- |
 | Suspend a program (frozen in place, resumed on restore) | `NtSuspendProcess` | `SIGSTOP` | `SIGSTOP` |
 | Slow a program down (lowest priority, Efficiency mode; put back on restore) | `SetPriorityClass`, `SetProcessInformation` | `renice`, as root only | `renice`, as root only |
-| Close a program and relaunch it on restore | `taskkill`, then relaunch | `SIGTERM`, then relaunch | `SIGTERM`, then relaunch |
+| Close a program and relaunch it on restore | `taskkill` (a program with a window), then `TerminateProcess` | `SIGTERM`, then `SIGKILL` if it stays | `SIGTERM`, then `SIGKILL` if it stays |
 | Stop a service and start it again | Service Control Manager (administrator) | `systemctl` (polkit for system units, `user:` prefix for user units) | `launchctl` user agents |
 | Performance power plan | `powercfg` (Ultimate or High performance) | `powerprofilesctl` | not available |
 | Purge cached memory (opt-in) | standby list (administrator) | `drop_caches` via polkit | not available |
 | Keep the PC awake while quiet (opt-in) | `SetThreadExecutionState` | `systemd-inhibit` | `caffeinate` |
 | Unload local AI models (opt-in) | Ollama's local API; LM Studio's `lms` tool | same | same |
 
-The desktop shell, compositor, input, audio, security software, terminals
-and CompuQuiet itself are always protected and cannot be added as targets.
-Your own "never touch" list sits on top of that.
+The desktop shell, compositor, input, audio, security software, the terminal
+you are typing in and CompuQuiet itself are always protected and cannot be
+added as targets. So are the essential services (sound, the network, the
+firewall, sign-in and the desktop session): saving one is refused, and one
+that an older version saved is skipped with the reason shown. A service that
+a running service needs is left running too, and named. Your own "never
+touch" list sits on top of that.
 
 A program with sound running, a call or a song, is left alone and listed as
 such with the reason, in the preview and in the run: a helper that plays the
@@ -86,12 +90,13 @@ unless CompuQuiet runs as root.
    quiet, Home shows the countdown and can add an hour or leave it on.
    Settings > *Ending Quiet Mode by itself* can also say so, once, when Quiet
    Mode has been on for a chosen number of hours with nothing to end it.
-7. **Go quiet by itself** (Settings, off until you turn it on) starts Quiet
-   Mode ten seconds after one of a list of programs (a game, a local AI
-   server) starts and puts everything back thirty seconds after the last has
-   closed. Because you did not press the button it suspends instead of
-   closing programs, leaves cached memory alone, never parks the programs on
-   the list, and never ends or restarts a Quiet Mode you pressed for.
+7. **Go quiet when one of these programs is running** (Settings > *Ending
+   Quiet Mode by itself*, off until you turn it on) starts Quiet Mode ten
+   seconds after one of a list of programs (a game, a local AI server) starts
+   and puts everything back thirty seconds after the last has closed. Because
+   you did not press the button it suspends instead of closing programs,
+   leaves cached memory alone, never parks the programs on the list, and never
+   ends or restarts a Quiet Mode you pressed for.
 8. **Keep the PC awake** (Park list > System, off by default) holds off sleep
    and the screen turning off while Quiet Mode is on and lets go when it ends
    or CompuQuiet exits. A closed laptop lid still sleeps it, and on battery it
@@ -123,7 +128,7 @@ unless CompuQuiet runs as root.
 **Windows and administrator rights.** Stopping services and purging memory
 need an elevated process. CompuQuiet starts unelevated so it can run at
 logon without a prompt; when a target needs elevation the dashboard offers
-*Relaunch as administrator*. "Start with the system" registers a logon task.
+*Relaunch as administrator*. "Start when I sign in" registers a logon task.
 Created from an elevated CompuQuiet that runs from Program Files (where the
 installer puts it), the task starts it elevated without a prompt. From any
 other folder, such as a portable copy, the task is made without
@@ -131,10 +136,12 @@ administrator rights, because a program running as you could otherwise
 replace that copy and be started with administrator rights at every sign-in;
 the setting says so.
 
-**Start with the system** is available on all three platforms (logon task on
+**Start when I sign in** is available on all three platforms (logon task on
 Windows, LaunchAgent on macOS, XDG autostart for the Linux AppImage). It
 refuses to register a copy running from Downloads, a temporary folder or a
-build directory.
+build directory. The entry always starts CompuQuiet in the tray, whatever
+*Start hidden in the tray* says. If the entry was made with administrator
+rights and this copy has none, Settings says so and leaves the switch alone.
 
 **From the command line.** `CompuQuiet --quiet` switches Quiet Mode on,
 `--restore` puts everything back and `--toggle` does whichever the machine is
@@ -159,13 +166,19 @@ and read `%ERRORLEVEL%`, or `Start-Process -Wait -PassThru`, to see the code.
 
 Download from the [GitHub Releases page](https://github.com/Swatto86/CompuQuiet/releases).
 Every release ships an installer and a portable build per platform, built by
-the `release` workflow from the tagged commit after the full gate passes:
+the `release` workflow from the tagged commit after the full gate passes, with
+a `SHA256SUMS-*.txt` file per platform to check a download against:
 
 | Platform | Installer | Portable |
 | --- | --- | --- |
 | Windows 10/11 x64 | `CompuQuiet_<version>_x64-setup.exe` (NSIS, all users, into Program Files) | `CompuQuiet-portable-windows-x64.exe` |
 | Linux x64 | `CompuQuiet_<version>_amd64.deb` | `CompuQuiet-portable-linux-x64` / `.AppImage` |
 | macOS (Apple silicon) | `CompuQuiet_<version>_aarch64.dmg` | `CompuQuiet-portable-macos-arm64.app.tar.gz` |
+
+The installers and portable builds are not code-signed with a publisher
+certificate, and the macOS app is not notarised, so expect a SmartScreen or
+Gatekeeper warning the first time. What is signed is the update: the app
+installs a release only if it was signed with CompuQuiet's own update key.
 
 Portable builds keep their settings and undo journal in the normal per-user
 configuration folder unless `COMPUQUIET_DATA_DIR` points somewhere else,
@@ -176,8 +189,8 @@ installs for all users. Releases up to 1.1.7 installed per user, into
 `%LOCALAPPDATA%\CompuQuiet`; the new installer removes that copy and its
 shortcuts, keeps your settings and undo journal (they live elsewhere), and
 points an existing sign-in task at the new copy. Uninstalling removes the
-sign-in task too. A portable copy is untouched: switch "Start with the
-system" off before deleting one.
+sign-in task too. A portable copy is untouched: switch "Start when I sign
+in" off before deleting one.
 
 The Windows installer, the Linux AppImage and the macOS app check GitHub for
 a newer signed release when Quiet Mode is off (at launch, then every few
@@ -198,14 +211,17 @@ Required runtimes (shared platform components, not bundled):
 
 - **Windows:** the [WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/), present on Windows 11 and updated Windows 10.
 - **Linux:** `libwebkit2gtk-4.1` and GTK 3 (the `.deb` declares them; the AppImage expects them installed). `powerprofilesctl` (with the power-profiles daemon running and offering a performance profile) and `pkexec` are optional and enable the power and memory actions; `xprop` (x11-utils) lets an X11 desktop tell which programs have a window.
-- **macOS:** nothing beyond macOS 12 or later.
+- **macOS:** nothing beyond the system itself. The release is built on
+  GitHub's current macOS runner for Apple silicon; no minimum version is set
+  or tested.
 
 State lives in `%APPDATA%\CompuQuiet` (Windows), `~/.config/CompuQuiet`
 (Linux) or `~/Library/Application Support/CompuQuiet` (macOS):
 `settings.json` and, while Quiet Mode is on, `journal.json`. An
 `instance.lock` file in the same folder keeps a second copy from running
 beside the first, and `compuquiet.log` records warnings, errors and failed
-steps.
+steps (a full one becomes `compuquiet.log.1`). A file CompuQuiet could not read
+is moved aside to the same name with `.bad` added, never deleted or overwritten.
 
 **Copy diagnostics** (Settings > About) puts a report on the clipboard for a
 bug report: the version, the system, whether it runs as administrator, what
@@ -229,8 +245,14 @@ pwsh scripts/verify.ps1       # or scripts/verify.sh: the full gate
 The full gate runs formatting, clippy, Rust and frontend tests, a debug build
 with an in-memory fake platform, and a WebdriverIO suite that drives the real
 binary through its real webview (Windows and Linux; `scripts/setup-e2e.ps1`
-fetches the matching Edge WebDriver on Windows). Packaged installers are built
-by `npx tauri build`, which is the release step rather than the inner loop.
+fetches the matching Edge WebDriver on Windows, and `scripts/setup-tauri-driver.sh`
+the pinned `tauri-driver`; Linux also needs `webkit2gtk-driver`, and `xvfb`
+without a display).
+Packaged installers are built by `npx tauri build`, which is the release step
+rather than the inner loop; it signs the update bundles, so it needs the
+`TAURI_SIGNING_PRIVATE_KEY` environment variable (or
+`--config '{"bundle":{"createUpdaterArtifacts":false}}'` for an unsigned
+local build).
 
 ## Licence
 

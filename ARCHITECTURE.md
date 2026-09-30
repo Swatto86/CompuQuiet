@@ -5,13 +5,16 @@ page has no filesystem, shell or process permission; everything with an
 effect happens in Rust behind a validated command.
 
 ```
-ui/            vanilla TS + Vite: dashboard, scan, park list editor, settings, about
-src-tauri/     the shell: commands, engine, watch, tray, autostart, window lifecycle
+ui/            vanilla TS + Vite: Home, Scan, Park list, Settings (with About)
+src-tauri/     the shell: commands, engine, watch, cli, tray, autostart, update,
+               diagnostics, log file, single-copy lock, window lifecycle
 crates/
-  cq-core/     domain, no OS calls: profile, policy, planner, journal, settings
+  cq-core/     domain, no OS calls: profile, policy, planner, scan, journal,
+               settings, endings and the watch, single-copy requests
   cq-platform/ the Platform trait and its adapters: windows, linux, macos, fake
 e2e/           WebdriverIO suite driving the real binary (fake platform)
-scripts/       verify (full gate), fastcheck (inner loop), driver setup
+scripts/       verify (full gate), fastcheck (inner loop), driver setup, and the
+               release checks (version, tag, update key, manifest, checksums)
 ```
 
 Dependencies point inward: `src-tauri` → `cq-platform` → `cq-core`.
@@ -100,8 +103,10 @@ Dependencies point inward: `src-tauri` → `cq-platform` → `cq-core`.
 6. **System tools** (`powercfg`, `taskkill`, `schtasks`, `systemctl`,
    `launchctl`, `pkexec`) run through `cq_platform::run_tool`: a 180 s
    deadline, and the C locale on Linux and macOS so their messages can be
-   matched. Windows decisions use error codes, never a tool's translated
-   text; the forced close is `TerminateProcess`.
+   matched. The tools that only look (`pactl`, `xprop`, `lsappinfo`,
+   `nvidia-smi`, `pmset`, the service listings) use `run_tool_within` with a
+   deadline of their own. Windows decisions use error codes, never a tool's
+   translated text; the forced close is `TerminateProcess`.
 7. **Endings and the watch.** A run may end by itself (`Journal::ending`,
    `cq_core::watch::Ending`): at a deadline counted in the machine's uptime
    (`Platform::marker`, never the wall clock), when a program the user named
@@ -197,11 +202,11 @@ power throttling, the two that Task Manager's Efficiency mode sets), the token
 elevation check, the standby-list purge, the file-cache figure (`GetPerformanceInfo`), the list
 of services and a service's running dependents, window enumeration, starting a program with the desktop
 shell's token (`CreateProcessWithTokenW`, so an elevated CompuQuiet does not
-hand its rights on), holding off sleep (`SetThreadExecutionState`) and the
-`runas` relaunch. Everything else uses safe crates
-(`windows-service`, `sysinfo`, `nix`) or structured subprocess calls with
-validated arguments (`powercfg`, `taskkill`, `systemctl`, `powerprofilesctl`,
-`launchctl`, `schtasks`).
+hand its rights on), the audio sessions (COM), holding off sleep
+(`SetThreadExecutionState`) and the `runas` relaunch. Everything else uses
+safe crates (`windows-service`, `sysinfo`, `nix`) or structured subprocess
+calls with validated arguments (`powercfg`, `taskkill`, `systemctl`,
+`powerprofilesctl`, `launchctl`, `schtasks`).
 
 `Platform::slow_down` lowers a process to the lowest priority and returns how
 it ran before (`Pace`); `speed_up` puts that back, but only what is still as
@@ -212,10 +217,11 @@ it again is not (`renice` as a normal user answers "Permission denied"), so
 Linux and macOS (`unix.rs`: `ps -o ni=`, `renice`) report `slow_down` only as
 root. `Platform::audio_users` is the processes with a running stream:
 Windows enumerates the audio sessions of every active render and capture
-device through the `windows` crate's Core Audio interfaces (already in the
-build through `sysinfo`), on a thread of its own so COM is set up the way it
-needs; Linux asks `pactl --format=json list sink-inputs` and `source-outputs`
-(`linux/audio.rs`) and skips paused streams; macOS cannot tell.
+device through the `windows` crate's Core Audio interfaces (a Windows-only
+dependency of `cq-platform` with just the audio and COM features), on a thread
+of its own so COM is set up the way it needs; Linux asks
+`pactl --format=json list sink-inputs` and `source-outputs` (`linux/audio.rs`)
+and skips paused streams; macOS cannot tell.
 
 `Platform::list_services` names every service the machine has for the Park
 list's picker (`EnumServicesStatusExW`; `systemctl list-units`, system and
@@ -256,8 +262,9 @@ suite. It is never a default feature; `scripts/verify.sh` asserts that. It
 can be told to fail (`Fake::fail(Call, target, Failure)`, `Fake::heal`): a
 refusal, a missing-rights error, or a timeout whose effect still lands. The
 e2e build exposes that as the `fake_fail` and `fake_heal` commands, which
-exist only with the `fake-platform` feature, as do `fake_program` (open or
-close a program), `fake_advance` (move uptime on) and `fake_awake`, which the
+exist only with the `fake-platform` feature, as do `simulate_tray_menu` (a
+tray click, for the tray specs), `fake_program` (open or close a program),
+`fake_advance` (move uptime on) and `fake_awake`, which the
 timed and auto-quiet specs drive, and `fake_audio` (which programs have sound
 running) and `fake_slowed` (which are slowed), which the slow-sound spec does.
 `Call::SlowDown`, `SpeedUp` and `AudioUsers` can be made to fail.
@@ -268,9 +275,11 @@ No framework: one module per view (`dashboard`, `scan`, `targets`,
 `settings-view`, `run-length`, `auto-quiet`, `updates`, `diagnostics`,
 `profiles`, `banner`), `main.ts` for boot and the flows that span views,
 `tabs.ts` for the tab bar, and pure helpers with `node --test` tests
-(`format`, `scan-select`, `profile-edit`, `park-list`). The Park list's rows
-are built in `park-rows.ts` and its pickers (running programs, the machine's
-services) live in `pickers.ts`. Conventions that are not visible in the code:
+(`format`, `scan-select`, `profile-edit`, `park-list`, `ending-text`,
+`preview-text`, `recovery-text`, `theme`). Home's line saying what a press
+will do comes from `homePlan` in `format.ts`, so the page states it before
+the user leaves Home. The Park list's rows are built in `park-rows.ts` and
+its pickers (running programs, the machine's services) live in `pickers.ts`. Conventions that are not visible in the code:
 
 - A control inside a row (a tick, an Action select) updates the state and the
   save button only; it never rebuilds the rows, which would drop the keyboard
@@ -441,9 +450,12 @@ services) live in `pickers.ts`. Conventions that are not visible in the code:
 
 ## State
 
-`COMPUQUIET_DATA_DIR` overrides the platform config directory. Files are
-`settings.json` (versioned; named profiles are fields added to it, not a new
-version) and `journal.json` (versioned). Writes are
+`COMPUQUIET_DATA_DIR` overrides the platform config directory (the old
+`COMPUTEQUIET_DATA_DIR` still works, and a `ComputeQuiet` folder is adopted
+when `CompuQuiet` does not exist yet). Files are `settings.json` (versioned;
+named profiles are fields added to it, not a new version) and `journal.json`
+(versioned), beside `instance.lock`, the `wake/` requests, `compuquiet.log`
+and the `.bad` and `.1` copies named below. Writes are
 temp-file + rename, and the rename and reads are retried briefly on the
 Windows errors a scanner holding the file causes. A newer or corrupt
 `settings.json` is an error, not a reset: the engine runs on the defaults but
@@ -452,17 +464,24 @@ banner's action moves the file to `settings.json.bad`.
 
 ## Verification
 
-- Rust unit tests: policy, planner, journal, settings, store, fake adapter,
-  engine round trip and failure paths (`engine/failure_tests.rs`); real suspend/resume/close on a child process and real
-  service/power queries on the host OS.
-- Frontend tests (`node --test`): formatting, scan selection, profile editing
-  and the theme's contrast.
-- WebDriver suite (`e2e/`): boot, the full quiet-then-restore workflow
-  asserting the journal on disk, persistence across a restart, and a clean
-  quit that restores first, and giving up on a restore step that cannot
-  succeed; `ui` and `keyboard` cover focus, dialogs, theme, polling while
-  hidden and screen-reader names. Runs on Windows and Linux in
-  `scripts/verify.sh`. WebView2 posts IPC as host messages and
+- Rust unit tests: policy, planner, scan, journal, settings, store, fake
+  adapter, engine round trip and failure paths (`engine/failure_tests.rs`);
+  real suspend/resume/close on a child process and real service/power queries
+  on the host OS.
+- Frontend tests (`node --test`, `npm test`): the pure helpers listed under
+  the window, and the release scripts (`latest-json`, `check-update-key`).
+- WebDriver suite (`e2e/`, the order in `wdio.conf.ts`, one session): `boot`,
+  `quiet` (the full quiet-then-restore workflow asserting the journal on
+  disk), the run's preview, report and options (`preview`, `run-report`,
+  `ai-models`, `slow-sound`, `gpu`), `scan` and `scan-actions`, `park-list`,
+  `ui` and `keyboard` (focus, dialogs, theme, polling while hidden,
+  screen-reader names), `persist`, the failure paths (`settings-guard`,
+  `stuck-restore`, `tray-failure`, `diagnostics`), the automatic ones
+  (`timed`, `auto-quiet`, `profiles`, `update`), `permissions` (what the page
+  may ask of the shell), and the launches (`cli`, `second-launch`, `exit`: a
+  clean quit that restores first). Runs on Windows and Linux in
+  `scripts/verify.sh`. A spec that leaves unsaved page state must reload the
+  session. WebView2 posts IPC as host messages and
   `__TAURI_INTERNALS__.invoke` is locked, so `watchInvokes` (in `support.ts`)
   stands in front of the transport to count calls or make one fail.
 - The suite refuses a binary that lacks the fake platform (it looks for the
@@ -473,8 +492,15 @@ banner's action moves the file to `settings.json.bad`.
   which both workflows upload.
 - CI (`.github/workflows/`): `verify` runs the gate on all three systems for
   every commit on main (only pull requests cancel superseded runs); `release`
-  repeats it on the tag, then checks that the `.sig` files were made by the
-  key in `plugins.updater.pubkey` (`scripts/check-update-key.mjs`, key IDs
-  only) before anything is published; `audit` runs `cargo audit` and
+  repeats it on the tag (`scripts/check-release-tag.sh`: the tag names the
+  manifests' version), builds the installers and portable copies with the
+  updater bundles signed by `TAURI_SIGNING_PRIVATE_KEY`, checks that the
+  `.sig` files were made by the key in `plugins.updater.pubkey`
+  (`scripts/check-update-key.mjs`, key IDs only), adds per-platform SHA-256
+  sums and the `latest.json` the updater reads (`scripts/latest-json.mjs`:
+  one signed Windows, Linux and macOS bundle each, never the portable copy),
+  and only then publishes; `audit` runs `cargo audit` and
   `npm audit --omit=dev` weekly and only reports. `verify` and `release`
-  install exactly the compiler `rust-toolchain.toml` pins.
+  install exactly the compiler `rust-toolchain.toml` pins. Nothing is
+  code-signed with a publisher certificate or notarised: the bundles carry
+  only the updater's minisign signature, which the app itself checks.
