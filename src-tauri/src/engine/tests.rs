@@ -1,6 +1,6 @@
 use super::*;
 
-fn engine(dir: &std::path::Path) -> Engine {
+pub(super) fn engine(dir: &std::path::Path) -> Engine {
     Engine::new(Arc::new(cq_platform::fake::Fake::new()), dir.to_path_buf())
 }
 
@@ -11,6 +11,7 @@ fn quiet_then_restore_round_trips_through_the_journal_on_disk() {
     let mut settings = engine.settings();
     // This test pins the profile path; scan.rs covers the auto additions.
     settings.auto_scan = false;
+    settings.profile.purge_memory = true;
     settings.profile.services = vec![cq_core::ServiceTarget {
         name: "SysMain".into(),
         enabled: true,
@@ -306,4 +307,35 @@ fn an_emptied_journal_left_on_disk_means_quiet_mode_is_off() {
     let engine = engine(dir.path());
     assert!(!engine.state().quiet);
     assert!(!Journal::path(dir.path()).exists());
+}
+
+#[test]
+fn a_memory_purge_that_cannot_be_recorded_does_not_fail_a_finished_run() {
+    let dir = tempfile::tempdir().unwrap();
+    let engine = engine(dir.path());
+    let mut settings = engine.settings();
+    settings.auto_scan = false;
+    settings.profile.processes.clear();
+    settings.profile.services = vec![cq_core::ServiceTarget {
+        name: "SysMain".into(),
+        enabled: true,
+    }];
+    settings.profile.power = cq_core::PowerPolicy::Leave;
+    settings.profile.purge_memory = true;
+    engine.save_settings(settings).unwrap();
+
+    // Once the service is stopped, put a folder where the journal was, so
+    // the save after the purge (the last step) cannot replace it.
+    let path = Journal::path(dir.path());
+    let summary = engine
+        .go_quiet(&|_| {
+            if path.is_file() {
+                std::fs::remove_file(&path).unwrap();
+                std::fs::create_dir(&path).unwrap();
+            }
+        })
+        .unwrap();
+    assert_eq!(summary.services_stopped, 1);
+    assert!(summary.memory_purged, "the purge happened and is reported");
+    assert!(engine.state().quiet);
 }

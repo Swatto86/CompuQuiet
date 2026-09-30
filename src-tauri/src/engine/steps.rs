@@ -32,9 +32,17 @@ impl Engine {
                 if intended.is_some() {
                     journal.done.pop();
                 }
+                let undoable = done.restore().is_some();
                 journal.record(done);
                 if changed {
-                    journal.save(&self.data_dir)?;
+                    match journal.save(&self.data_dir) {
+                        Err(error) if undoable => return Err(error),
+                        // Nothing to undo, so nothing is stranded if it is
+                        // missing from disk; it must not fail a run that has
+                        // otherwise finished.
+                        Err(error) => log::warn!("recording a step with no undo: {error}"),
+                        Ok(()) => {}
+                    }
                 }
                 LogLine {
                     label: step.label(),
