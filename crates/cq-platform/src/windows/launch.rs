@@ -13,20 +13,24 @@ use std::path::Path;
 use std::ptr::{null, null_mut};
 
 use windows_sys::Win32::Foundation::{CloseHandle, ERROR_PRIVILEGE_NOT_HELD, HANDLE};
-use windows_sys::Win32::Foundation::{ERROR_SERVICE_DISABLED, ERROR_SERVICE_DOES_NOT_EXIST};
+use windows_sys::Win32::Foundation::{
+    ERROR_ELEVATION_REQUIRED, ERROR_SERVICE_DISABLED, ERROR_SERVICE_DOES_NOT_EXIST,
+};
 use windows_sys::Win32::Security::{
     DuplicateTokenEx, SecurityImpersonation, TOKEN_ADJUST_DEFAULT, TOKEN_ADJUST_SESSIONID,
     TOKEN_ASSIGN_PRIMARY, TOKEN_DUPLICATE, TOKEN_QUERY, TokenPrimary,
 };
 use windows_sys::Win32::System::Environment::{CreateEnvironmentBlock, DestroyEnvironmentBlock};
 use windows_sys::Win32::System::Threading::{
-    CREATE_NEW_PROCESS_GROUP, CREATE_UNICODE_ENVIRONMENT, CreateProcessWithTokenW, OpenProcess,
-    OpenProcessToken, PROCESS_INFORMATION, PROCESS_QUERY_LIMITED_INFORMATION, STARTUPINFOW,
+    CREATE_NEW_PROCESS_GROUP, CREATE_NO_WINDOW, CREATE_UNICODE_ENVIRONMENT,
+    CreateProcessWithTokenW, OpenProcess, OpenProcessToken, PROCESS_INFORMATION,
+    PROCESS_QUERY_LIMITED_INFORMATION, STARTUPINFOW,
 };
 use windows_sys::Win32::UI::WindowsAndMessaging::{GetShellWindow, GetWindowThreadProcessId};
 
 use cq_core::Env;
 
+use super::command_line;
 use super::environment::{block_entries, merged_block};
 use super::wide;
 use crate::error::{PlatformError, Result};
@@ -44,11 +48,16 @@ pub enum Outcome {
 
 /// Codes that say the borrowed-token mechanism itself is unavailable (the
 /// Secondary Logon service is disabled or missing, or this token may not
-/// use it) rather than that this program cannot be started.
+/// use it), or that this token cannot start the program at all because its
+/// manifest requires administrator rights (the shell's token is the filtered
+/// one), rather than that the program cannot be started.
 fn mechanism_unavailable(code: u32) -> bool {
     matches!(
         code,
-        ERROR_SERVICE_DISABLED | ERROR_SERVICE_DOES_NOT_EXIST | ERROR_PRIVILEGE_NOT_HELD
+        ERROR_SERVICE_DISABLED
+            | ERROR_SERVICE_DOES_NOT_EXIST
+            | ERROR_PRIVILEGE_NOT_HELD
+            | ERROR_ELEVATION_REQUIRED
     )
 }
 
@@ -106,48 +115,6 @@ fn shell_token() -> std::result::Result<Owned, String> {
     }
 }
 
-/// One argument as the C runtime parses it back: quoted when it holds a
-/// space or a quote (or is empty), with the quotes and the backslashes that
-/// lead up to one escaped, and any trailing backslashes doubled so they do
-/// not escape the closing quote.
-fn push_quoted(line: &mut String, arg: &str) {
-    if !arg.is_empty() && !arg.contains([' ', '\t', '\n', '\u{b}', '"']) {
-        line.push_str(arg);
-        return;
-    }
-    line.push('"');
-    let mut backslashes = 0;
-    for c in arg.chars() {
-        match c {
-            '\\' => backslashes += 1,
-            '"' => {
-                line.extend(std::iter::repeat_n('\\', backslashes * 2 + 1));
-                line.push('"');
-                backslashes = 0;
-            }
-            _ => {
-                line.extend(std::iter::repeat_n('\\', backslashes));
-                line.push(c);
-                backslashes = 0;
-            }
-        }
-    }
-    line.extend(std::iter::repeat_n('\\', backslashes * 2));
-    line.push('"');
-}
-
-/// The command line a program is started with: itself, then the recorded
-/// arguments after the first (which is the program).
-fn command_line(exe: &Path, args: &[String]) -> String {
-    let mut line = String::new();
-    push_quoted(&mut line, &exe.to_string_lossy());
-    for arg in args.iter().skip(1) {
-        line.push(' ');
-        push_quoted(&mut line, arg);
-    }
-    line
-}
-
 /// Start `exe` with the desktop user's normal token, in the folder it was
 /// running from when that still exists. `env` is set over that user's own
 /// environment, limited to what [`passed_on`] allows.
@@ -157,6 +124,13 @@ pub fn as_shell_user(
     cwd: Option<&Path>,
     env: &Env,
 ) -> Result<Outcome> {
+    let command = command_line::of(exe, args);
+    if command_line::too_long(&command) {
+        return Ok(Outcome::Unavailable(format!(
+            "its command line is longer than the {} characters a borrowed token can start",
+            command_line::LIMIT
+        )));
+    }
     let token = match shell_token() {
         Ok(token) => token,
         Err(reason) => return Ok(Outcome::Unavailable(reason)),
@@ -183,7 +157,7 @@ pub fn as_shell_user(
         .as_ref()
         .map_or(environment.cast_const(), |block| block.as_ptr().cast());
     let application = wide(&exe.to_string_lossy());
-    let mut line = wide(&command_line(exe, args));
+    let mut line = wide(&command);
     let folder = cwd
         .filter(|dir| dir.is_dir())
         .map(|dir| wide(&dir.to_string_lossy()));
@@ -203,7 +177,9 @@ pub fn as_shell_user(
             0,
             application.as_ptr(),
             line.as_mut_ptr(),
-            CREATE_UNICODE_ENVIRONMENT | CREATE_NEW_PROCESS_GROUP,
+            // The API gives a console program a new console unless told not
+            // to, as `spawn_detached` does; a GUI program ignores the flag.
+            CREATE_UNICODE_ENVIRONMENT | CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW,
             used,
             folder.as_ref().map_or(null(), |dir| dir.as_ptr()),
             &raw const startup,
@@ -240,30 +216,29 @@ pub fn as_shell_user(
 mod tests {
     use super::*;
 
-    fn quoted(arg: &str) -> String {
-        let mut line = String::new();
-        push_quoted(&mut line, arg);
-        line
+    #[test]
+    fn a_program_that_demands_administrator_rights_is_left_to_the_fallback() {
+        // The shell's token is the filtered one, so the API refuses a program
+        // whose manifest requires administrator with this code. Nothing is
+        // wrong with the program: it is started with this process's own
+        // rights instead, which it had before it was closed.
+        assert!(mechanism_unavailable(740));
+        // Any other failure is the program's own (file not found, bad image).
+        assert!(!mechanism_unavailable(2));
+        assert!(!mechanism_unavailable(193));
     }
 
     #[test]
-    fn arguments_are_quoted_so_the_program_reads_back_what_was_recorded() {
-        assert_eq!(quoted("plain"), "plain");
-        assert_eq!(quoted(""), r#""""#);
-        assert_eq!(quoted("two words"), r#""two words""#);
-        assert_eq!(quoted(r#"say "hi""#), r#""say \"hi\"""#);
-        // Backslashes only matter before a quote, and at the end.
-        assert_eq!(quoted(r"C:\a\b"), r"C:\a\b");
-        assert_eq!(quoted(r"C:\My Dir\"), r#""C:\My Dir\\""#);
-        assert_eq!(quoted(r#"a\"b"#), r#""a\\\"b""#);
-        let line = command_line(
-            Path::new(r"C:\Program Files\App\app.exe"),
-            &["app.exe".into(), "--profile".into(), "My Profile".into()],
-        );
-        assert_eq!(
-            line,
-            r#""C:\Program Files\App\app.exe" --profile "My Profile""#
-        );
+    fn a_command_line_the_api_cannot_take_starts_nothing_and_is_left_to_the_fallback() {
+        // CreateProcessWithTokenW takes 1024 characters at most and answers
+        // a longer line with "the parameter is incorrect". Decided before the
+        // desktop is asked anything, so it does not depend on who runs this.
+        let args = ["cmd.exe".to_string(), "x".repeat(1100)];
+        let cmd = Path::new(r"C:\Windows\System32\cmd.exe");
+        match as_shell_user(cmd, &args, None, &Env::new()).unwrap() {
+            Outcome::Unavailable(why) => assert!(why.contains("1024"), "{why}"),
+            Outcome::Started => panic!("a line that long must not be passed to the API"),
+        }
     }
 
     #[test]
@@ -333,35 +308,86 @@ mod tests {
         elevation.TokenIsElevated != 0
     }
 
-    /// The real thing, which only an administrator's terminal can run: an
-    /// elevated process that launches a program hands it the desktop user's
-    /// normal rights, not its own.
-    #[test]
-    #[ignore = "needs an elevated terminal: cargo test -p cq-platform -- --ignored an_elevated"]
-    fn an_elevated_process_starts_a_program_without_administrator_rights() {
+    /// `ping -n <count>` started through `Platform::launch` by an elevated
+    /// process, found again in the process table by its count.
+    fn launched_ping(platform: &super::super::Windows, count: &str) -> cq_core::ProcessInfo {
         use crate::Platform;
-        let platform = super::super::Windows::new();
         assert!(platform.elevated, "run this from an elevated terminal");
         let ping = Path::new(r"C:\Windows\System32\PING.EXE");
-        let args = ["ping.exe", "-n", "37", "127.0.0.1"].map(String::from);
+        let args = ["ping.exe", "-n", count, "127.0.0.1"].map(String::from);
         platform.launch(ping, &args, None, &Env::new()).unwrap();
         let mut found = None;
         for _ in 0..40 {
             found = platform.sampler.processes().into_iter().find(|process| {
                 process.name.eq_ignore_ascii_case("ping.exe")
-                    && process.args.iter().any(|a| a == "37")
+                    && process.args.iter().any(|a| a == count)
             });
             if found.is_some() {
                 break;
             }
             std::thread::sleep(std::time::Duration::from_millis(250));
         }
-        let ping = found.expect("the program was not started");
+        found.expect("the program was not started")
+    }
+
+    /// The real thing, which only an administrator's terminal can run: an
+    /// elevated process that launches a program hands it the desktop user's
+    /// normal rights, not its own.
+    #[test]
+    #[ignore = "needs an elevated terminal: cargo test -p cq-platform -- --ignored an_elevated"]
+    fn an_elevated_process_starts_a_program_without_administrator_rights() {
+        let platform = super::super::Windows::new();
+        let ping = launched_ping(&platform, "37");
         let elevated = process_is_elevated(ping.pid);
         platform.terminate(ping.pid).unwrap();
         assert!(
             !elevated,
             "the relaunched program is running as administrator"
         );
+    }
+
+    /// Visible windows of the classic console and of Windows Terminal, which
+    /// hosts a console program's window where it is the default terminal.
+    fn console_windows() -> usize {
+        use windows_sys::Win32::Foundation::LPARAM;
+        use windows_sys::Win32::UI::WindowsAndMessaging::{
+            EnumWindows, GetClassNameW, IsWindowVisible,
+        };
+        use windows_sys::core::BOOL;
+        unsafe extern "system" fn count(window: HANDLE, total: LPARAM) -> BOOL {
+            let mut class = [0u16; 64];
+            // SAFETY: `total` is the counter below, alive for the whole
+            // enumeration; the buffer is as long as it is said to be.
+            unsafe {
+                let length = GetClassNameW(window, class.as_mut_ptr(), 64);
+                let name = String::from_utf16_lossy(&class[..usize::try_from(length).unwrap_or(0)]);
+                if IsWindowVisible(window) != 0
+                    && (name == "ConsoleWindowClass" || name == "CASCADIA_HOSTING_WINDOW_CLASS")
+                {
+                    *(total as *mut usize) += 1;
+                }
+            }
+            1
+        }
+        let mut total = 0usize;
+        // SAFETY: the callback only touches `total`, which outlives the call.
+        unsafe { EnumWindows(Some(count), (&raw mut total) as LPARAM) };
+        total
+    }
+
+    /// A console program (a model server, say) is relaunched without the
+    /// window `CreateProcessWithTokenW` gives it unless told otherwise: one
+    /// that the user could close, taking the program with it.
+    #[test]
+    #[ignore = "needs an elevated terminal: cargo test -p cq-platform -- --ignored an_elevated"]
+    fn an_elevated_process_starts_a_console_program_without_a_console_window() {
+        let platform = super::super::Windows::new();
+        let before = console_windows();
+        let ping = launched_ping(&platform, "38");
+        // The window, where there is one, comes a moment after the process.
+        std::thread::sleep(std::time::Duration::from_millis(2500));
+        let after = console_windows();
+        platform.terminate(ping.pid).unwrap();
+        assert_eq!(after, before, "the program was given a console window");
     }
 }

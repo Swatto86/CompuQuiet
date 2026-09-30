@@ -9,7 +9,8 @@
 //! dependents of one (`EnumServicesStatusExW`, `EnumDependentServicesW`),
 //! window enumeration, a program's priority class and Efficiency mode
 //! (`SetPriorityClass`, `SetProcessInformation`), starting a program with
-//! the desktop shell's token (`CreateProcessWithTokenW`), holding off sleep
+//! the desktop shell's token (`CreateProcessWithTokenW`), the folders a tool
+//! may be run from (`GetSystemDirectoryW`, `SHGetKnownFolderPath`), holding off sleep
 //! (`SetThreadExecutionState`), which programs have sound running (the audio
 //! session interfaces of Core Audio, through the `windows` crate) and the UAC
 //! relaunch through `ShellExecuteW` with the `runas` verb.
@@ -18,6 +19,7 @@
 mod activity;
 mod audio;
 mod awake;
+mod command_line;
 mod environment;
 mod launch;
 mod memory;
@@ -27,6 +29,7 @@ mod process;
 mod service_list;
 mod services;
 mod session;
+mod system_tools;
 mod token;
 
 use std::ffi::CStr;
@@ -43,6 +46,8 @@ use crate::Platform;
 use crate::error::{PlatformError, Result};
 use crate::procs::Sampler;
 use crate::spawn::{launchable, run_tool, spawn_detached};
+
+pub(crate) use system_tools::nvidia_smi;
 
 const GRACE: Duration = Duration::from_secs(5);
 
@@ -201,11 +206,11 @@ impl Platform for Windows {
     }
 
     fn stop_service(&self, name: &str) -> Result<()> {
-        services::stop(name)
+        services::stop(name).map_err(|e| services::when_elevated(e, name, self.elevated))
     }
 
     fn start_service(&self, name: &str) -> Result<()> {
-        services::start(name)
+        services::start(name).map_err(|e| services::when_elevated(e, name, self.elevated))
     }
 
     fn set_performance_power(&self) -> Result<PowerPlan> {

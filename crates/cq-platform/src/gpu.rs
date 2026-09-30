@@ -59,10 +59,27 @@ const NVIDIA_QUERY: [&str; 2] = [
     "--format=csv,noheader,nounits",
 ];
 
+/// What to run for the NVIDIA tool. On Windows an absolute path in a folder
+/// only administrators write to: this app usually runs elevated, and a bare
+/// name would be looked for along the user's search path, where a program of
+/// theirs could have left its own. Not found there is no NVIDIA card.
+#[cfg(windows)]
+fn nvidia_tool() -> Option<String> {
+    crate::windows::nvidia_smi().and_then(|tool| tool.to_str().map(str::to_string))
+}
+
+#[cfg(target_os = "linux")]
+fn nvidia_tool() -> Option<String> {
+    Some("nvidia-smi".to_string())
+}
+
 /// No `nvidia-smi` on the machine is no NVIDIA card to read, not an error.
 #[cfg(any(windows, target_os = "linux"))]
 fn nvidia() -> Result<Vec<GpuInfo>> {
-    let output = match run_tool_within("nvidia-smi", &NVIDIA_QUERY, NVIDIA_WITHIN) {
+    let Some(tool) = nvidia_tool() else {
+        return Ok(Vec::new());
+    };
+    let output = match run_tool_within(&tool, &NVIDIA_QUERY, NVIDIA_WITHIN) {
         Ok(output) => output,
         Err(PlatformError::Io { source, .. }) if source.kind() == std::io::ErrorKind::NotFound => {
             return Ok(Vec::new());
@@ -243,6 +260,16 @@ mod tests {
             ]
         );
         assert!(parse_amd(&root.path().join("missing")).is_empty());
+    }
+
+    /// This app usually runs elevated, so a bare name, found along the user's
+    /// search path, would run whatever a program of theirs left there.
+    #[cfg(windows)]
+    #[test]
+    fn the_nvidia_tool_on_windows_is_an_absolute_path_never_a_name_to_search_for() {
+        if let Some(tool) = nvidia_tool() {
+            assert!(std::path::Path::new(&tool).is_absolute(), "{tool}");
+        }
     }
 
     /// The real tool, if this machine has one: what it says must make sense.

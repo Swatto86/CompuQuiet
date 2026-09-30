@@ -122,7 +122,8 @@ does not show.
 ## Known limits
 
 - Elevated on Windows, relaunched programs get the desktop shell's token
-  (unelevated); with none to borrow they get CompuQuiet's rights and a warning.
+  (unelevated); where that cannot be used they get CompuQuiet's rights and a
+  warning.
 - A relaunched program gets CompuQuiet's environment (minus an AppImage's
   bundle variables). A Flatpak, Snap or Store app is suspended instead of
   closed: it cannot be relaunched from here.

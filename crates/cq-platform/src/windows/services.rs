@@ -43,6 +43,20 @@ fn map_error(name: &str, context: &str, error: windows_service::Error) -> Platfo
     }
 }
 
+/// Access denied asks for a relaunch only of a process that is not
+/// administrator already. An elevated one is refused by a service whose
+/// security descriptor keeps everyone out (an antivirus one, say), which a
+/// relaunch cannot help.
+pub(super) fn when_elevated(error: PlatformError, name: &str, elevated: bool) -> PlatformError {
+    if elevated && error.needs_elevation() {
+        PlatformError::Other(format!(
+            "Windows protects service {name}, so it cannot be changed even as administrator"
+        ))
+    } else {
+        error
+    }
+}
+
 fn open(name: &str, access: ServiceAccess) -> Result<windows_service::service::Service> {
     let manager = ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT)
         .map_err(|e| map_error(name, "connecting to the service manager for", e))?;
@@ -269,6 +283,26 @@ mod tests {
         assert_eq!(nsi.state, ServiceState::Running);
         assert!(!nsi.needed_by.is_empty(), "{nsi:?}");
         assert!(nsi.needed_by.iter().all(|name| !name.is_empty()));
+    }
+
+    #[test]
+    fn access_denied_to_an_administrator_is_a_protected_service_not_a_missing_right() {
+        let denied = || map_error("Sense", "stopping service", access_denied());
+        assert!(denied().needs_elevation());
+        assert!(when_elevated(denied(), "Sense", false).needs_elevation());
+        let protected = when_elevated(denied(), "Sense", true);
+        assert!(!protected.needs_elevation(), "{protected}");
+        assert!(protected.to_string().contains("Sense"), "{protected}");
+        // Anything else is as it was, elevated or not.
+        let missing = when_elevated(PlatformError::NotInstalled("x".into()), "x", true);
+        assert!(
+            matches!(missing, PlatformError::NotInstalled(_)),
+            "{missing}"
+        );
+    }
+
+    fn access_denied() -> windows_service::Error {
+        windows_service::Error::Winapi(std::io::Error::from_raw_os_error(5))
     }
 
     #[test]

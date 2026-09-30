@@ -114,7 +114,12 @@ Dependencies point inward: `src-tauri` → `cq-platform` → `cq-core`.
    matched. The tools that only look (`pactl`, `xprop`, `lsappinfo`,
    `nvidia-smi`, `pmset`, the service listings) use `run_tool_within` with a
    deadline of their own. Windows decisions use error codes, never a tool's
-   translated text; the forced close is `TerminateProcess`.
+   translated text; the forced close is `TerminateProcess`. On Windows the
+   one tool that may be absent from the system folder, `nvidia-smi`, is run
+   by absolute path from System32 or Program Files (`windows/system_tools.rs`,
+   folders asked of Windows, not of the environment) and never found on the
+   search path: the app usually runs elevated, and a program of the user's
+   could have left one of its own there.
 7. **Endings and the watch.** A run may end by itself (`Journal::ending`,
    `cq_core::watch::Ending`): at a deadline counted in the machine's uptime
    (`Platform::marker`, never the wall clock), when a program the user named
@@ -210,7 +215,11 @@ power throttling, the two that Task Manager's Efficiency mode sets), the token
 elevation check, the standby-list purge, the file-cache figure (`GetPerformanceInfo`), the list
 of services and a service's running dependents, window enumeration, starting a program with the desktop
 shell's token (`CreateProcessWithTokenW`, so an elevated CompuQuiet does not
-hand its rights on), the audio sessions (COM), holding off sleep
+hand its rights on; a console program gets no window, and a program that needs
+administrator rights, or a command line of 1024 characters or more, which the
+call refuses, is started with CompuQuiet's own rights and a warning instead),
+the folders tools are run from (`GetSystemDirectoryW`, `SHGetKnownFolderPath`),
+the audio sessions (COM), holding off sleep
 (`SetThreadExecutionState`) and the `runas` relaunch. Everything else uses
 safe crates (`windows-service`, `sysinfo`, `nix`) or structured subprocess
 calls with validated arguments (`powercfg`, `taskkill`, `systemctl`,
@@ -240,8 +249,8 @@ a listing, not a check: on Linux and macOS a stopped or unloaded unit may be
 missing from it, so an absent name is never reported as not installed.
 
 `Platform::gpu` reads each graphics adapter's own memory (`gpu.rs`, shared by
-the adapters as the trait's default): `nvidia-smi` on Windows and Linux (no
-tool means no NVIDIA card, not an error) and, on Linux, the amdgpu driver's
+the adapters as the trait's default): `nvidia-smi` on Windows (by absolute
+path) and Linux (no tool means no NVIDIA card, not an error) and, on Linux, the amdgpu driver's
 `mem_info_vram_*` files. Any other card, and a Mac, whose graphics share the
 system's memory, answers with the reason it cannot be read, and the page shows
 that reason instead of a gauge. `get_gpu` returns a `GpuReading` (adapters, or
