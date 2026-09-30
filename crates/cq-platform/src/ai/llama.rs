@@ -292,7 +292,7 @@ fn closable(
         return Err("it is run by a service manager, which starts it again itself or would not know the copy CompuQuiet starts".to_string());
     }
     if sandboxed(process, os) {
-        return Err("it runs inside a sandbox (Flatpak, Snap or a Store app), where it cannot be started again from here".to_string());
+        return Err("it runs inside a sandbox or an AppImage (Flatpak, Snap, a Store app), where it cannot be started again from here".to_string());
     }
     let exe = process.exe.clone().ok_or(UNREADABLE)?;
     launchable(&exe).map_err(|_| {

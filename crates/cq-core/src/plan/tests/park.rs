@@ -50,6 +50,31 @@ fn a_sandboxed_app_is_suspended_when_closing_could_not_be_undone() {
 }
 
 #[test]
+fn an_appimage_program_is_suspended_because_its_mount_vanishes_when_it_exits() {
+    let profile = one_target("Obsidian", ProcessAction::Close);
+    // The AppImage runtime mounts the image under the temp folder and unmounts
+    // it on exit, so the recorded program file could not be found to reopen.
+    let mut mounted = process(30, "Obsidian");
+    mounted.exe = Some(PathBuf::from("/tmp/.mount_ObsidiaAbC123/obsidian"));
+    let mut extracted = process(31, "Obsidian");
+    extracted.exe = Some(PathBuf::from("/tmp/appimage_extracted_0f3a/obsidian"));
+    let plan = planned(&profile, vec![mounted, extracted], Os::Linux);
+    let steps: Vec<_> = plan.steps.iter().map(Step::label).collect();
+    assert_eq!(
+        steps,
+        vec!["Suspend Obsidian (PID 30)", "Suspend Obsidian (PID 31)"]
+    );
+    assert_eq!(plan.skipped.len(), 1, "{:?}", plan.skipped);
+    assert!(plan.skipped[0].reason.contains("AppImage"));
+
+    // An installed program is closed as asked.
+    let mut installed = process(32, "Obsidian");
+    installed.exe = Some(PathBuf::from("/opt/obsidian/obsidian"));
+    let plan = planned(&profile, vec![installed], Os::Linux);
+    assert_eq!(plan.steps[0].label(), "Close Obsidian (PID 32)");
+}
+
+#[test]
 fn a_store_app_is_suspended_when_closing_could_not_be_undone() {
     let profile = one_target("WhatsApp", ProcessAction::Close);
     let at = |pid, exe: &str| {

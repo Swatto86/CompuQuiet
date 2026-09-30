@@ -79,8 +79,13 @@ pub fn is_critical_service(name: &str, os: Os) -> bool {
             let unit = name.strip_prefix("user:").unwrap_or(name).trim();
             let unit = unit.strip_suffix(".service").unwrap_or(unit);
             let unit = unit.to_ascii_lowercase();
-            // systemd's own daemons (logind, resolved, udevd, ...) are one family.
-            unit.starts_with("systemd-") || LINUX_CRITICAL_SERVICES.contains(&unit.as_str())
+            // systemd's own daemons (logind, resolved, udevd, ...) are one family,
+            // and so are a user's session (`user@1000`) and a console login.
+            unit.starts_with("systemd-")
+                || LINUX_CRITICAL_UNIT_PREFIXES
+                    .iter()
+                    .any(|prefix| unit.starts_with(prefix))
+                || LINUX_CRITICAL_SERVICES.contains(&unit.as_str())
         }
         // Apple's own launchd labels; third-party updaters use their own.
         Os::MacOs => name.to_ascii_lowercase().starts_with("com.apple."),
@@ -189,6 +194,10 @@ const WINDOWS_CRITICAL_SERVICES: &[&str] = &[
     "wscsvc",
 ];
 
+/// Instances of a template unit: stopping `user@1000` ends that user's whole
+/// session, this app with it.
+const LINUX_CRITICAL_UNIT_PREFIXES: &[&str] = &["user@", "user-runtime-dir@", "getty@"];
+
 // Lower case, without a `user:` prefix or `.service` suffix.
 const LINUX_CRITICAL_SERVICES: &[&str] = &[
     "dbus",
@@ -205,6 +214,11 @@ const LINUX_CRITICAL_SERVICES: &[&str] = &[
     "pipewire-pulse",
     "wireplumber",
     "pulseaudio",
+    "accounts-daemon",
+    // The firewall: stopping these drops its rules.
+    "ufw",
+    "firewalld",
+    "nftables",
 ];
 
 const LINUX_CRITICAL: &[&str] = &[
@@ -344,6 +358,13 @@ mod tests {
             "user:wireplumber.service",
             "systemd-logind",
             "systemd-resolved.service",
+            "ufw",
+            "firewalld.service",
+            "nftables",
+            "accounts-daemon",
+            "user@1000.service",
+            "user-runtime-dir@1000",
+            "getty@tty1.service",
         ] {
             assert!(is_critical_service(name, Os::Linux), "{name}");
         }

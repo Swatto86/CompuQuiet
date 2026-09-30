@@ -2,6 +2,7 @@
 //! matches, and the step that parks each as its action asks.
 
 use std::collections::HashSet;
+use std::path::Path;
 
 use super::{Capabilities, Plan, Step};
 use crate::policy::{is_critical, is_helper_of, matches};
@@ -126,21 +127,32 @@ fn park_step(process: &ProcessInfo, action: ProcessAction, all: &[ProcessInfo], 
 
 /// A Flatpak app's path is inside its sandbox and does not exist outside it;
 /// a Snap's runs without its confinement unless started through `snap run`;
-/// a Store (packaged) app on Windows is refused, or runs without its package,
-/// when its executable is started directly. Either way the recorded command
-/// line cannot bring the program back.
+/// an AppImage's is inside a mount that goes when it exits; a Store
+/// (packaged) app on Windows is refused, or runs without its package, when
+/// its executable is started directly. Either way the recorded command line
+/// cannot bring the program back.
 pub fn sandboxed(origin: &ProcessInfo, os: Os) -> bool {
     let Some(exe) = origin.exe.as_deref() else {
         return false;
     };
     match os {
-        Os::Linux => exe.starts_with("/app") || exe.starts_with("/snap"),
+        Os::Linux => exe.starts_with("/app") || exe.starts_with("/snap") || in_appimage(exe),
         Os::Windows => {
             let path = exe.to_string_lossy().to_ascii_lowercase();
             path.contains(r"\windowsapps\") || path.contains(r"\systemapps\")
         }
         Os::MacOs => false,
     }
+}
+
+/// Inside the folder the AppImage runtime mounts its image at (`.mount_`,
+/// under the temp folder), or extracts it to when it cannot mount.
+fn in_appimage(exe: &Path) -> bool {
+    exe.components().any(|part| {
+        part.as_os_str().to_str().is_some_and(|part| {
+            part.starts_with(".mount_") || part.starts_with("appimage_extracted_")
+        })
+    })
 }
 
 /// Why a program that cannot be started again is suspended when closing was
@@ -151,7 +163,7 @@ fn unrelaunchable_reason(os: Os) -> &'static str {
             "a Store app cannot be started again from its recorded path, so it is suspended instead of closed"
         }
         _ => {
-            "a Flatpak or Snap app cannot be started again from outside its sandbox, so it is suspended instead of closed"
+            "a Flatpak, Snap or AppImage program cannot be started again from its recorded path, so it is suspended instead of closed"
         }
     }
 }

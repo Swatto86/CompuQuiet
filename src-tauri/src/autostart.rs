@@ -11,6 +11,7 @@
 //! refuses to register a copy that lives somewhere temporary — a debug build
 //! or a download that will be deleted would leave a login entry to nothing.
 
+use std::ffi::OsStr;
 use std::path::Path;
 
 use serde::Serialize;
@@ -37,6 +38,15 @@ pub struct AutostartStatus {
 
 /// Why this executable must not be registered, if it must not.
 pub(crate) fn refusal(exe: &Path) -> Option<String> {
+    if cfg!(target_os = "linux") {
+        appimage_refusal(exe, std::env::var_os("APPIMAGE").as_deref())
+    } else {
+        location_refusal(exe)
+    }
+}
+
+/// Where a copy runs from decides whether a login entry to it would outlive it.
+fn location_refusal(exe: &Path) -> Option<String> {
     let lower = exe
         .to_string_lossy()
         .to_ascii_lowercase()
@@ -50,24 +60,28 @@ pub(crate) fn refusal(exe: &Path) -> Option<String> {
     if dirs::download_dir().is_some_and(|downloads| inside(exe, &downloads)) {
         return Some("move the app out of Downloads first".into());
     }
-    #[cfg(target_os = "linux")]
-    match std::env::var_os("APPIMAGE") {
-        None => return Some("only the AppImage can register itself to start at login".into()),
-        Some(image) if breaks_login_entry(&image.to_string_lossy()) => {
-            return Some(
-                "move the AppImage to a folder whose path has no spaces or special characters"
-                    .into(),
-            );
-        }
-        Some(_) => {}
-    }
     None
+}
+
+/// On Linux only an AppImage registers itself, and the entry names the image
+/// (`$APPIMAGE`), not the executable inside it: that one sits in the runtime's
+/// mount under the temp folder, so it is the image that must be somewhere
+/// the entry can rely on.
+fn appimage_refusal(exe: &Path, image: Option<&OsStr>) -> Option<String> {
+    let Some(image) = image.filter(|image| !image.is_empty()) else {
+        return location_refusal(exe)
+            .or_else(|| Some("only the AppImage can register itself to start at login".into()));
+    };
+    location_refusal(Path::new(image)).or_else(|| {
+        breaks_login_entry(&image.to_string_lossy()).then(|| {
+            "move the AppImage to a folder whose path has no spaces or special characters".into()
+        })
+    })
 }
 
 /// The login entry's command line is not quoted when it is written, so a
 /// space or any character a desktop entry treats specially in the AppImage's
 /// path would start the wrong program, or none, at every login.
-#[cfg(any(target_os = "linux", test))]
 fn breaks_login_entry(path: &str) -> bool {
     path.chars()
         .any(|c| c.is_whitespace() || "\"'\\<>~|&;$*?#()`%".contains(c))
@@ -236,6 +250,30 @@ mod tests {
         assert!(refusal(&temp).is_some());
         if let Some(downloads) = dirs::download_dir() {
             assert!(refusal(&downloads.join("CompuQuiet.exe")).is_some());
+        }
+    }
+
+    #[test]
+    fn an_appimage_is_judged_by_its_image_not_by_the_mount_it_runs_from() {
+        let mount = std::env::temp_dir().join(".mount_CompuQAbC123/usr/bin/compuquiet");
+        let good = OsStr::new("/home/me/Applications/CompuQuiet.AppImage");
+        assert_eq!(appimage_refusal(&mount, Some(good)), None);
+        // The image itself is held to the same rules as any other copy.
+        let temp_image = std::env::temp_dir().join("CompuQuiet.AppImage");
+        assert!(appimage_refusal(&mount, Some(temp_image.as_os_str())).is_some());
+        if let Some(downloads) = dirs::download_dir() {
+            let image = downloads.join("CompuQuiet.AppImage");
+            assert!(appimage_refusal(&mount, Some(image.as_os_str())).is_some());
+        }
+        let spaced = OsStr::new("/home/me/My Apps/CompuQuiet.AppImage");
+        let reason = appimage_refusal(&mount, Some(spaced)).expect("a space breaks the entry");
+        assert!(reason.contains("no spaces"), "{reason}");
+        // Without an image this is not an AppImage run (empty counts as none).
+        for none in [None, Some(OsStr::new(""))] {
+            let reason = appimage_refusal(&mount, none).expect("not an AppImage");
+            assert!(reason.contains("temporary folder"), "{reason}");
+            let reason = appimage_refusal(Path::new("/usr/bin/compuquiet"), none).unwrap();
+            assert!(reason.contains("only the AppImage"), "{reason}");
         }
     }
 

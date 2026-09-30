@@ -140,8 +140,9 @@ Dependencies point inward: `src-tauri` → `cq-platform` → `cq-core`.
    entry: `Journal::awake` records it, `Engine::resume_awake` takes it up
    again for a recovered run, and restore lets go once the run is over.
    Windows holds `SetThreadExecutionState` on a thread of its own; Linux and
-   macOS start `systemd-inhibit` or `caffeinate` in their own process group,
-   bound to this process's pid (`cq-platform/src/awake.rs`).
+   macOS start `systemd-inhibit` (a blocking `idle:sleep` lock) or `caffeinate`
+   in their own process group, bound to this process's pid
+   (`cq-platform/src/awake.rs`).
 
 8. **Profiles.** `Settings::profile` is the active profile (what a press runs
    and the Park list edits), `profile_name` names it and `other_profiles`
@@ -232,7 +233,8 @@ since stays. Windows sets `IDLE_PRIORITY_CLASS` and Efficiency mode (before
 1709, priority alone). Lowering a nice value is allowed to anyone and raising
 it again is not (`renice` as a normal user answers "Permission denied"), so
 Linux and macOS (`unix.rs`: `ps -o ni=`, `renice`) report `slow_down` only as
-root. `Platform::audio_users` is the processes with a running stream:
+root. Linux keeps a nice value per thread, so `renice` names every thread in
+`/proc/<pid>/task`; macOS has one per process. `Platform::audio_users` is the processes with a running stream:
 Windows enumerates the audio sessions of every active render and capture
 device through the `windows` crate's Core Audio interfaces (a Windows-only
 dependency of `cq-platform` with just the audio and COM features), on a thread
@@ -291,7 +293,7 @@ then in the environment), has a carried variable named for a key, token,
 secret or password, has an environment that cannot be read
 (`Platform::environment`, from sysinfo, where the OS lets this process), is
 run by a service manager (a parent of PID 1, `systemd`, `launchd` or `init`,
-or `services.exe` anywhere above it), is in a sandbox (`cq_core::sandboxed`),
+or `services.exe` anywhere above it), is in a sandbox or an AppImage mount (`cq_core::sandboxed`),
 or has no program file, folder or full command line to start it from. What is
 carried is `cq_core::carried`: `CUDA_`, `HIP_` and `ROCR_VISIBLE_DEVICES`, and
 `GGML_*` and `LLAMA_ARG_*`, nothing else. A restore passes them through
@@ -488,7 +490,9 @@ its pickers (running programs, the machine's services) live in `pickers.ts`. Con
   `AutostartStatus.limited_because` says why), `tauri-plugin-autostart`
   elsewhere, always guarded
   against registering a temporary or build-directory executable (on Linux also
-  an AppImage path a login entry would split or expand: spaces, `%`, quotes).
+  an AppImage path a login entry would split or expand: spaces, `%`, quotes;
+  there `$APPIMAGE`, not the executable inside its temp mount, is what is
+  checked).
   An entry made with administrator rights is `locked` for an unelevated copy,
   which cannot delete or replace it: `set` refuses (`autostart_locked`) and the
   switch is disabled with the reason. The task always passes `--hidden`, so a

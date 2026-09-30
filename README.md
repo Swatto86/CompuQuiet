@@ -101,7 +101,8 @@ unless CompuQuiet runs as root.
 8. **Keep the PC awake** (Park list > System, off by default) holds off sleep
    and the screen turning off while Quiet Mode is on and lets go when it ends
    or CompuQuiet exits. A closed laptop lid still sleeps it, and on battery it
-   is skipped unless Settings allows it.
+   is skipped unless Settings allows it. On Linux it also holds up a suspend
+   asked for by hand, and a desktop may still turn the screen off.
 9. **Unload local AI models** (Park list > System, off by default) asks Ollama,
    LM Studio, llama.cpp and llama-swap to unload the models they hold in
    memory, which frees graphics memory for a game. A model loads again the next

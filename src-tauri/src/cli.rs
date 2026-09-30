@@ -36,6 +36,7 @@ use crate::watch::{alert, announce};
 
 const HIDDEN_ARG: &str = "--hidden";
 const PROFILE_ARG: &str = "--profile";
+const PSN_ARG: &str = "-psn_";
 /// The commands, by the flag that asks for each.
 const COMMANDS: [(&str, Command); 3] = [
     ("--quiet", Command::Quiet),
@@ -73,6 +74,11 @@ pub fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Launch, String>
     let mut args = args.into_iter();
     while let Some(arg) = args.next() {
         let arg = text(&arg)?;
+        // macOS adds a process serial number (`-psn_0_12345`) when Finder or
+        // Gatekeeper's Open Anyway opens a bundle; the app has no use for it.
+        if arg.starts_with(PSN_ARG) {
+            continue;
+        }
         if let Some(value) = profile_named(arg, &mut args)? {
             let name = check_profile_name(&value).map_err(|error| format!("{error}. {USAGE}"))?;
             if let Some(earlier) = launch.profile.replace(name.clone())

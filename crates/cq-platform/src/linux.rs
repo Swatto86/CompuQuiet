@@ -83,11 +83,13 @@ impl Default for Linux {
     }
 }
 
-/// The lock on idle sleep and screen blanking (never the lid), held by a
-/// shell that ends when `pid` does, so the lock cannot outlive this app.
+/// The lock on idle and on sleep (never the lid), held by a shell that ends
+/// when `pid` does, so the lock cannot outlive this app. `idle` alone binds
+/// only logind's own idle action: a desktop such as GNOME decides for itself
+/// and asks logind to suspend, which a blocking `sleep` lock refuses.
 fn inhibit_args(pid: u32) -> Vec<String> {
     [
-        "--what=idle",
+        "--what=idle:sleep",
         "--who=CompuQuiet",
         "--why=Quiet Mode is on",
         "--mode=block",

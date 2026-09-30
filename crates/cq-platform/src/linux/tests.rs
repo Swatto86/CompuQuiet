@@ -62,12 +62,11 @@ fn systemctl_show_output_maps_to_service_state() {
 #[test]
 fn the_sleep_lock_names_this_process_and_never_the_lid() {
     let args = inhibit_args(4242);
-    assert_eq!(args.first().map(String::as_str), Some("--what=idle"));
-    assert!(
-        !args
-            .iter()
-            .any(|arg| arg.contains("lid") || arg.contains("sleep:"))
-    );
+    // `idle` alone binds only logind's own idle action; a desktop asks logind
+    // to suspend and is refused only while a `sleep` lock is held.
+    assert_eq!(args.first().map(String::as_str), Some("--what=idle:sleep"));
+    assert!(args.iter().any(|arg| arg == "--mode=block"));
+    assert!(!args.iter().any(|arg| arg.contains("lid")));
     assert_eq!(args.last().map(String::as_str), Some("4242"));
     // The shell's own name ($0) sits between its script and the pid ($1).
     assert_eq!(args[args.len() - 2], "sh");

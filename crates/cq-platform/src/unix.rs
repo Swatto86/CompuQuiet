@@ -64,9 +64,48 @@ fn nice(pid: u32) -> Result<i32> {
         .map_err(|_| PlatformError::Other(format!("PID {pid} has no nice value to read")))
 }
 
-/// Set the nice value with `renice`, in the form both systems take.
+/// Every thread of `pid`, or `pid` alone where it cannot be listed. Linux
+/// keeps a nice value per thread and `renice -p` moves only the thread whose
+/// id it is given, so a program is slowed, and put back, by all of them;
+/// macOS has one value for the whole process.
+fn threads(pid: u32) -> Vec<u32> {
+    let listed: Vec<u32> = if cfg!(target_os = "linux") {
+        std::fs::read_dir(format!("/proc/{pid}/task"))
+            .into_iter()
+            .flatten()
+            .filter_map(|entry| entry.ok()?.file_name().to_str()?.parse().ok())
+            .collect()
+    } else {
+        Vec::new()
+    };
+    if listed.is_empty() { vec![pid] } else { listed }
+}
+
+/// Set the nice value of the program with `renice`, in the form both systems
+/// take: one call names every thread.
 fn renice(pid: u32, value: i32) -> Result<()> {
-    run_tool("renice", &[&value.to_string(), "-p", &pid.to_string()]).map(drop)
+    let value = value.to_string();
+    let ids: Vec<String> = threads(pid).iter().map(u32::to_string).collect();
+    let mut args = vec![value.as_str(), "-p"];
+    args.extend(ids.iter().map(String::as_str));
+    run_tool("renice", &args).map(drop).or_else(|error| {
+        if only_ended_threads(&error.to_string()) {
+            Ok(())
+        } else {
+            Err(error)
+        }
+    })
+}
+
+/// Whether `renice` failed only for threads that ended after they were
+/// listed, which it reports and carries on past: one of many threads of a busy
+/// program is gone within the moment between the list and the call.
+fn only_ended_threads(failure: &str) -> bool {
+    let mut complaints = failure
+        .lines()
+        .filter(|line| line.contains("failed to set priority"))
+        .peekable();
+    complaints.peek().is_some() && complaints.all(|line| line.contains("No such process"))
 }
 
 /// Run `pid` at the lowest priority. Lowering it is always allowed; raising
@@ -124,6 +163,83 @@ mod tests {
         assert_eq!(account_uid(0, Some("501")), 501);
         assert_eq!(account_uid(0, None), 0);
         assert_eq!(account_uid(0, Some("not a number")), 0);
+    }
+
+    #[test]
+    fn renice_failing_only_for_ended_threads_is_not_a_failure() {
+        let gone = "renice 19 -p 7 8 failed (exit status: 1): renice: failed to set priority for 8 (process ID): No such process";
+        assert!(only_ended_threads(gone));
+        let denied = "renice 19 -p 7 8 failed (exit status: 1): renice: failed to set priority for 7 (process ID): Permission denied";
+        assert!(!only_ended_threads(denied));
+        let both =
+            format!("{gone}\nrenice: failed to set priority for 7 (process ID): Permission denied");
+        assert!(!only_ended_threads(&both));
+        assert!(!only_ended_threads("renice: usage error"));
+    }
+
+    /// The nice value of each thread of `pid`, which `ps` shows only for the
+    /// first: field 19 of `/proc/<pid>/task/<tid>/stat`, read after the
+    /// program's name, which may hold spaces and brackets. Lists the threads
+    /// itself, so it does not lean on the code under test.
+    #[cfg(target_os = "linux")]
+    fn thread_nices(pid: u32) -> Vec<i32> {
+        std::fs::read_dir(format!("/proc/{pid}/task"))
+            .unwrap()
+            .map(|task| {
+                let stat = std::fs::read_to_string(task.unwrap().path().join("stat")).unwrap();
+                let (_, after_name) = stat.rsplit_once(')').unwrap();
+                after_name
+                    .split_whitespace()
+                    .nth(16)
+                    .unwrap()
+                    .parse()
+                    .unwrap()
+            })
+            .collect()
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn every_thread_of_a_program_is_slowed_and_put_back_not_just_its_first() {
+        let mut child = std::process::Command::new("python3")
+            .args([
+                "-c",
+                "import threading, time\n\
+                 [threading.Thread(target=time.sleep, args=(30,), daemon=True).start() for _ in range(3)]\n\
+                 time.sleep(30)",
+            ])
+            .spawn()
+            .unwrap();
+        let pid = child.id();
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        while thread_nices(pid).len() < 4 {
+            assert!(std::time::Instant::now() < deadline, "no threads started");
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        let sampler = Sampler::new();
+        let start_time = sampler
+            .processes()
+            .into_iter()
+            .find(|p| p.pid == pid)
+            .map(|p| p.start_time)
+            .unwrap();
+        let before = thread_nices(pid);
+        let pace = slow_down(&sampler, pid, start_time).unwrap();
+        let slowed = thread_nices(pid);
+        assert!(
+            slowed.len() >= 4 && slowed.iter().all(|&n| n == SLOWED),
+            "{slowed:?}"
+        );
+        // Lowering is for anyone; putting back is for root.
+        if is_root() {
+            speed_up(&sampler, pid, start_time, Some(&pace)).unwrap();
+            assert!(
+                thread_nices(pid).iter().all(|&n| n == pace.priority),
+                "was {before:?}"
+            );
+        }
+        let _ = child.kill();
+        let _ = child.wait();
     }
 
     #[test]

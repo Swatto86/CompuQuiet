@@ -125,7 +125,7 @@ does not show.
   (unelevated); where that cannot be used they get CompuQuiet's rights and a
   warning.
 - A relaunched program gets CompuQuiet's environment (minus an AppImage's
-  bundle variables). A Flatpak, Snap or Store app is suspended instead of
-  closed: it cannot be relaunched from here.
+  bundle variables). A Flatpak, Snap, AppImage or Store app is suspended
+  instead of closed: it cannot be relaunched from here.
 - Programs that respawn themselves (updaters) are suspended, not closed.
 - The e2e suite does not run on macOS (`tauri-driver` has no macOS backend).

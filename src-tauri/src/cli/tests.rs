@@ -13,6 +13,17 @@ fn each_command_flag_asks_for_its_command() {
 }
 
 #[test]
+fn the_serial_number_macos_adds_to_a_first_launch_is_ignored() {
+    // Finder, and Gatekeeper's Open Anyway, pass `-psn_0_<n>` to a bundle.
+    assert_eq!(launch(&["-psn_0_12345"]).unwrap(), Launch::default());
+    let with_command = launch(&["-psn_0_12345", "--quiet", "--hidden"]).unwrap();
+    assert!(with_command.hidden);
+    assert_eq!(with_command.command, Some(Command::Quiet));
+    // Only that form: a misspelt flag is still refused.
+    assert!(launch(&["-psn"]).is_err());
+}
+
+#[test]
 fn the_flags_the_app_passes_itself_are_still_understood() {
     let both = launch(&["--hidden", "--reopen"]).unwrap();
     assert!(both.hidden && both.reopen && both.command.is_none());
