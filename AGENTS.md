@@ -5,6 +5,14 @@ the decisions and constraints that are not visible in the code.
 
 ## Decisions
 
+- **2026-09-30: a step that times out stays on record, and a stuck restore
+  can be given up.** A timeout (`PlatformError::TimedOut`) does not prove the
+  step failed (a busy service stops late), so its journal entry stays and
+  Restore undoes it harmlessly; only definite failures take the entry out.
+  What a restore could not undo (`EngineState::unrestored`) is the only thing
+  Home offers to give up, after a confirmation naming each entry;
+  `journal.json` then moves to `journal.json.bad`, never deleted. An unreadable
+  journal is set aside the same way. Journal and settings formats are unchanged.
 - **2026-09-30: the memory purge is opt-in.** A new profile defaults to no
   purge on every platform; a saved setting is kept as it is. The Scan tab may
   still suggest it, but auto-scan never switches it on

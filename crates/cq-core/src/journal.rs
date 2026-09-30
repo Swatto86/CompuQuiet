@@ -121,6 +121,28 @@ impl RestoreStep {
             }
         }
     }
+
+    /// What stays as it is if this step is given up, in words for the
+    /// confirmation before that happens.
+    pub fn consequence(&self) -> String {
+        match self {
+            RestoreStep::ResumeProcess { name, .. } => {
+                format!("{name} stays frozen until you close and reopen it")
+            }
+            RestoreStep::Relaunch { name, .. } => {
+                format!("{name} stays closed until you open it yourself")
+            }
+            RestoreStep::StartService { name } => {
+                format!("{name} stays stopped until you start it or restart the PC")
+            }
+            RestoreStep::RestorePowerPlan { plan } => {
+                format!(
+                    "the power plan stays as it is; choose {} yourself",
+                    plan.name
+                )
+            }
+        }
+    }
 }
 
 impl DoneStep {

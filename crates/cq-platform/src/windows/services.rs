@@ -90,7 +90,7 @@ fn wait_for(
             return Ok(());
         }
         if Instant::now() >= deadline {
-            return Err(PlatformError::Other(format!(
+            return Err(PlatformError::TimedOut(format!(
                 "service {name} did not reach {wanted:?} within {}s",
                 SETTLE.as_secs()
             )));

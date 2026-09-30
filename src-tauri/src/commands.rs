@@ -78,6 +78,35 @@ pub fn set_aside_settings(engine: State<'_, Arc<Engine>>) -> Result<Option<Strin
         .map(|kept| kept.display().to_string()))
 }
 
+/// Stop trying to put back what the last restore could not, ending Quiet
+/// Mode. Takes no argument from the page, and only acts once a restore has
+/// failed: the journal is kept as journal.json.bad, not deleted.
+#[tauri::command]
+pub async fn give_up_restoring(
+    app: AppHandle,
+    engine: State<'_, Arc<Engine>>,
+) -> Result<EngineState, AppError> {
+    let engine = engine.inner().clone();
+    let worker = engine.clone();
+    tauri::async_runtime::spawn_blocking(move || worker.give_up_restoring()).await??;
+    Ok(publish(&app, &engine))
+}
+
+/// Keep a journal that cannot be read as journal.json.bad so Quiet Mode can
+/// start again. Returns the path it was kept at; `None` means it was already
+/// gone. Takes no argument from the page.
+#[tauri::command]
+pub async fn set_aside_journal(
+    app: AppHandle,
+    engine: State<'_, Arc<Engine>>,
+) -> Result<Option<String>, AppError> {
+    let engine = engine.inner().clone();
+    let worker = engine.clone();
+    let kept = tauri::async_runtime::spawn_blocking(move || worker.set_aside_journal()).await??;
+    publish(&app, &engine);
+    Ok(kept.map(|path| path.display().to_string()))
+}
+
 /// Look at the machine and list what Quiet Mode could park.
 #[tauri::command]
 pub async fn scan(engine: State<'_, Arc<Engine>>) -> Result<crate::scan::ScanReport, AppError> {
@@ -116,6 +145,19 @@ pub async fn run_transition(
     engine: Arc<Engine>,
     quiet: bool,
 ) -> Result<EngineState, AppError> {
+    // The window and tray show the run as soon as it is asked for, not at its
+    // first step, which can be a slow service stop away. Not when another run
+    // is already going: its own log would be wiped.
+    let before = engine.state();
+    if !before.busy {
+        let working = EngineState {
+            busy: true,
+            log: Vec::new(),
+            ..before
+        };
+        tray::refresh(&app, &working);
+        let _ = app.emit(EVENT_STATE, &working);
+    }
     let progress_app = app.clone();
     let progress = move |line: LogLine| {
         let _ = progress_app.emit(EVENT_PROGRESS, &line);
@@ -129,13 +171,19 @@ pub async fn run_transition(
         }
     })
     .await?;
+    let state = publish(&app, &engine);
+    result.map(|()| state)
+}
+
+/// Tell the tray and the window where the engine stands now.
+fn publish(app: &AppHandle, engine: &Engine) -> EngineState {
     let state = engine.state();
-    tray::refresh(&app, &state);
+    tray::refresh(app, &state);
     let _ = app.emit(EVENT_STATE, &state);
     if !state.quiet {
-        crate::update::nudge(&app);
+        crate::update::nudge(app);
     }
-    result.map(|()| state)
+    state
 }
 
 #[tauri::command]
@@ -221,6 +269,35 @@ pub async fn quit(
 #[tauri::command]
 pub fn simulate_tray_menu(app: AppHandle, id: String) {
     tray::dispatch_menu(&app, &id);
+}
+
+/// Make a call on the fake machine fail until `fake_heal`, so the acceptance
+/// suite can drive the engine's failure paths (fake platform only). `call`,
+/// `target` and `failure` are spelled as in `cq_platform::fake`.
+#[cfg(feature = "fake-platform")]
+#[tauri::command]
+pub fn fake_fail(call: String, target: Option<String>, failure: String) -> Result<(), AppError> {
+    use cq_platform::fake::{Call, Failure};
+    let call = Call::parse(&call)
+        .ok_or_else(|| AppError::new("fake_call", format!("unknown call {call}")))?;
+    let failure = Failure::parse(&failure)
+        .ok_or_else(|| AppError::new("fake_failure", format!("unknown failure {failure}")))?;
+    let fake = crate::FAKE
+        .get()
+        .ok_or_else(|| AppError::new("fake_missing", "the fake machine is not running"))?;
+    fake.fail(call, target.as_deref(), failure);
+    Ok(())
+}
+
+/// Undo every `fake_fail` (fake platform only).
+#[cfg(feature = "fake-platform")]
+#[tauri::command]
+pub fn fake_heal() -> Result<(), AppError> {
+    let fake = crate::FAKE
+        .get()
+        .ok_or_else(|| AppError::new("fake_missing", "the fake machine is not running"))?;
+    fake.heal();
+    Ok(())
 }
 
 #[tauri::command]

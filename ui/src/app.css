@@ -249,6 +249,24 @@ button.linkish:hover {
   display: none;
 }
 
+/* What Home says when Quiet Mode cannot finish or start */
+.recovery {
+  border-color: var(--warn);
+  margin-bottom: 12px;
+}
+
+.recovery[hidden] {
+  display: none;
+}
+
+.recovery p {
+  margin: 0 0 8px;
+}
+
+.recovery-actions {
+  margin-top: 10px;
+}
+
 /* Main layout */
 main {
   flex: 1;
@@ -738,6 +756,7 @@ code.path {
 .dialog p {
   margin: 0 0 16px;
   color: var(--fg-muted);
+  white-space: pre-line;
 }
 
 .dialog-buttons {

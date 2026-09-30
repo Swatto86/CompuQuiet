@@ -77,9 +77,9 @@ fn while_idle_holds_the_engine_and_refuses_during_a_run() {
     assert!(!ran, "must not run while a run is in progress");
 }
 
-/// Quiet Mode with one of each undoable step: a stopped service, a suspended
-/// and a closed program, and the power plan.
-fn quiet_with_every_kind_of_step(
+/// Targets for one of each undoable step: a stopped service, a suspended and
+/// a closed program, and the power plan. Quiet Mode is not started.
+pub(super) fn engine_with_every_kind_of_target(
     fake: &Arc<cq_platform::fake::Fake>,
     dir: &std::path::Path,
 ) -> Result<Engine, AppError> {
@@ -102,11 +102,19 @@ fn quiet_with_every_kind_of_step(
     })
     .collect();
     engine.save_settings(settings)?;
+    Ok(engine)
+}
+
+pub(super) fn quiet_with_every_kind_of_step(
+    fake: &Arc<cq_platform::fake::Fake>,
+    dir: &std::path::Path,
+) -> Result<Engine, AppError> {
+    let engine = engine_with_every_kind_of_target(fake, dir)?;
     engine.go_quiet(&|_| {})?;
     Ok(engine)
 }
 
-fn sysmain(fake: &cq_platform::fake::Fake) -> Option<cq_core::ServiceState> {
+pub(super) fn sysmain(fake: &cq_platform::fake::Fake) -> Option<cq_core::ServiceState> {
     let snapshot = fake.snapshot(&["SysMain".into()]).ok()?;
     snapshot.services.first().map(|service| service.state)
 }

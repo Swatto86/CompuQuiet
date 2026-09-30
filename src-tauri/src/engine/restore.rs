@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use cq_core::{Journal, RestoreStep};
 
-use super::{Engine, LogLine};
+use super::{Engine, LogLine, Unrestored};
 use crate::error::AppError;
 
 /// Tries at deleting a finished journal. Antivirus or an indexer can hold the
@@ -29,6 +29,7 @@ impl Engine {
         let running = self.running_command_lines();
         let mut resolved = HashSet::new();
         let mut log = Vec::new();
+        let mut unrestored = Vec::new();
         for (indices, step) in journal.restore_steps() {
             let outcome = if let Some(reason) = step.overtaken(elapsed) {
                 Ok(Some(format!("Skipped: {reason}")))
@@ -37,7 +38,7 @@ impl Engine {
                 // was cut short first: a relaunch would open a second copy.
                 Ok(Some("Skipped: it is already running".to_string()))
             } else {
-                self.undo(&step).map(|()| None)
+                self.undo(&step)
             };
             let line = match outcome {
                 Ok(detail) => LogLine {
@@ -61,6 +62,12 @@ impl Engine {
                 if let Err(error) = journal.without(&resolved).save(&self.data_dir) {
                     log::warn!("saving restore progress: {error}");
                 }
+            } else {
+                unrestored.push(Unrestored {
+                    label: line.label.clone(),
+                    consequence: step.consequence(),
+                    error: line.detail.clone(),
+                });
             }
             progress(line.clone());
             log.push(line);
@@ -73,6 +80,7 @@ impl Engine {
             inner.skipped.clear();
             inner.recovered = false;
             inner.journal = (remaining > 0).then(|| rest.clone());
+            inner.unrestored = unrestored;
         }
         if remaining == 0 {
             self.clear_journal();

@@ -29,8 +29,11 @@ Dependencies point inward: `src-tauri` → `cq-platform` → `cq-core`.
    (`DoneStep::intended`, `Engine::run_journaled`), corrected afterwards if
    the platform reports something different, and taken back out if the step
    failed. A crash mid-step therefore leaves it on record, and every undo is
-   safe for a step that never happened. Progress lines stream to the window;
-   a failed step is logged and the run continues.
+   safe for a step that never happened. A step that times out
+   (`PlatformError::TimedOut`, code `timed_out`) may still take effect, so
+   its entry stays; a program that has already gone is logged as done, not
+   failed. Progress lines stream to the window; a failed step is logged and
+   the run continues.
 4. **Restore.** The journal is replayed newest-first (`restore_steps`),
    relaunching a closed program once per distinct command line, and not at
    all while that command line is already running. A helper a program started
@@ -39,8 +42,14 @@ Dependencies point inward: `src-tauri` → `cq-platform` → `cq-core`.
    The journal is saved after every settled step (`Journal::without`), so an
    interrupted restore never repeats one. Entries whose undo failed are kept
    for retry; one whose process, program or service no longer exists is done
-   with. An emptied journal is deleted, with retries; one left on disk
-   because the file stayed locked counts as finished at the next launch.
+   with, and a power plan deleted meanwhile is replaced by Balanced
+   (`Platform::restore_power` returns the plan now active). An emptied
+   journal is deleted, with retries; one left on disk because the file stayed
+   locked counts as finished at the next launch. What a restore could not
+   undo is listed in `EngineState::unrestored`; only then does Home offer to
+   give up on it (`Engine::give_up_restoring`), after a confirmation that
+   names each entry, which moves `journal.json` to `journal.json.bad` and ends
+   Quiet Mode.
 5. **Recovery.** At launch a leftover journal puts the engine straight into
    Quiet Mode marked "recovered", so a crash never strands changes. Steps a
    restart or a new sign-in has already undone are skipped (`Elapsed`,
@@ -48,7 +57,8 @@ Dependencies point inward: `src-tauri` → `cq-platform` → `cq-core`.
    sign-in identity from `Platform::marker`, no wall clock) with the current
    one; the power plan is a saved setting and is always put back. A journal
    from an earlier sign-in is finished at launch; an unreadable one blocks a
-   new run rather than being overwritten.
+   new run rather than being overwritten, until Home's action moves it aside
+   (`Engine::set_aside_journal`).
 6. **System tools** (`powercfg`, `taskkill`, `schtasks`, `systemctl`,
    `launchctl`, `pkexec`) run through `cq_platform::run_tool`: a 180 s
    deadline, and the C locale on Linux and macOS so their messages can be
@@ -91,7 +101,11 @@ planner skips what it cannot with the reason shown ("needs administrator
 rights"), and the window offers the elevated relaunch on Windows.
 
 The `fake` feature provides an in-memory machine for tests and the e2e
-suite. It is never a default feature; `scripts/verify.sh` asserts that.
+suite. It is never a default feature; `scripts/verify.sh` asserts that. It
+can be told to fail (`Fake::fail(Call, target, Failure)`, `Fake::heal`): a
+refusal, a missing-rights error, or a timeout whose effect still lands. The
+e2e build exposes that as the `fake_fail` and `fake_heal` commands, which
+exist only with the `fake-platform` feature.
 
 ## Shell behaviour
 
@@ -131,9 +145,10 @@ banner's action moves the file to `settings.json.bad`.
 ## Verification
 
 - Rust unit tests: policy, planner, journal, settings, store, fake adapter,
-  engine round trip; real suspend/resume/close on a child process and real
+  engine round trip and failure paths (`engine/failure_tests.rs`); real suspend/resume/close on a child process and real
   service/power queries on the host OS.
 - Frontend tests (`node --test`): formatting and profile editing.
 - WebDriver suite (`e2e/`): boot, the full quiet-then-restore workflow
   asserting the journal on disk, persistence across a restart, and a clean
-  quit that restores first. Runs on Windows and Linux in `scripts/verify.sh`.
+  quit that restores first, and giving up on a restore step that cannot
+  succeed. Runs on Windows and Linux in `scripts/verify.sh`.

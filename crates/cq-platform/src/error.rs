@@ -12,6 +12,11 @@ pub enum PlatformError {
     NotInstalled(String),
     #[error("{0}")]
     Unsupported(String),
+    /// The request went out but its result was not confirmed in time, so it
+    /// may still take effect. Unlike every other error it does not prove the
+    /// machine is unchanged, and the engine keeps the step on record.
+    #[error("{0}")]
+    TimedOut(String),
     #[error("{context}: {source}")]
     Io {
         context: String,

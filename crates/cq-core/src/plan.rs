@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::policy::{is_critical, matches, normalize};
 use crate::profile::{Os, PowerPolicy, ProcessAction, Profile};
-use crate::snapshot::{ServiceState, Snapshot};
+use crate::snapshot::{ProcessInfo, ServiceState, Snapshot};
 
 /// What this platform, at this privilege level, can actually do.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -145,7 +145,7 @@ fn plan_processes(profile: &Profile, snapshot: &Snapshot, self_pid: u32, os: Os,
             plan.skip(&target.name, "on your keep-alive list");
             continue;
         }
-        let mut hits = 0;
+        let mut matched: Vec<&ProcessInfo> = Vec::new();
         for process in &snapshot.processes {
             if process.pid == self_pid || claimed.contains(&process.pid) {
                 continue;
@@ -158,7 +158,13 @@ fn plan_processes(profile: &Profile, snapshot: &Snapshot, self_pid: u32, os: Os,
                 continue;
             }
             claimed.insert(process.pid);
-            hits += 1;
+            matched.push(process);
+        }
+        // A program's own process first: its helpers end with it, and a
+        // helper met before it has no window to close politely, so it would
+        // wait out the whole grace period before being forced.
+        matched.sort_by_key(|process| process.program_root(&snapshot.processes).pid != process.pid);
+        for process in &matched {
             plan.steps.push(match target.action {
                 ProcessAction::Suspend => Step::SuspendProcess {
                     pid: process.pid,
@@ -180,7 +186,7 @@ fn plan_processes(profile: &Profile, snapshot: &Snapshot, self_pid: u32, os: Os,
                 }
             });
         }
-        if hits == 0 {
+        if matched.is_empty() {
             plan.skip(&target.name, "not running");
         }
     }

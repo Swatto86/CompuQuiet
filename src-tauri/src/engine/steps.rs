@@ -51,18 +51,38 @@ impl Engine {
                 }
             }
             Err(error) => {
-                // It did not happen: its entry comes back out. Left in, it
-                // would only be undone harmlessly.
-                if intended.is_some() {
+                // A timeout does not say the step failed: a service told to
+                // stop can finish stopping after the wait ended. Its entry
+                // stays, so Restore puts it back (harmless if it never
+                // happened). Any other error means it did not happen, and the
+                // entry comes back out.
+                let unknown = error.code == "timed_out";
+                if intended.is_some() && !unknown {
                     journal.done.pop();
                     if let Err(error) = journal.save(&self.data_dir) {
                         log::warn!("removing a step that did not happen: {error}");
                     }
                 }
+                // A program that ended on its own, or with the one that
+                // started it, needs no parking: nothing failed.
+                let gone = error.code == "not_running"
+                    && matches!(
+                        step,
+                        Step::SuspendProcess { .. } | Step::CloseProcess { .. }
+                    );
+                let detail = if gone {
+                    "already gone".to_string()
+                } else if unknown {
+                    format!(
+                        "{error}. It may still finish, so it stays on record and Restore will put it back."
+                    )
+                } else {
+                    error.to_string()
+                };
                 LogLine {
                     label: step.label(),
-                    ok: false,
-                    detail: Some(error.to_string()),
+                    ok: gone,
+                    detail: Some(detail),
                 }
             }
         })
@@ -112,7 +132,9 @@ impl Engine {
         })
     }
 
-    pub(super) fn undo(&self, step: &RestoreStep) -> Result<(), AppError> {
+    /// Put one step back. `Some` is a note for the log: the step is done,
+    /// but not quite as recorded.
+    pub(super) fn undo(&self, step: &RestoreStep) -> Result<Option<String>, AppError> {
         match step {
             RestoreStep::ResumeProcess {
                 pid, start_time, ..
@@ -124,8 +146,16 @@ impl Engine {
                 self.platform.launch(exe, args, cwd.as_deref())?;
             }
             RestoreStep::StartService { name } => self.platform.start_service(name)?,
-            RestoreStep::RestorePowerPlan { plan } => self.platform.restore_power(plan)?,
+            RestoreStep::RestorePowerPlan { plan } => {
+                let active = self.platform.restore_power(plan)?;
+                if active.id != plan.id {
+                    return Ok(Some(format!(
+                        "the {} plan no longer exists, so {} is active instead",
+                        plan.name, active.name
+                    )));
+                }
+            }
         }
-        Ok(())
+        Ok(None)
     }
 }

@@ -73,7 +73,12 @@ pub trait Platform: Send + Sync {
     /// Switch to the platform's performance plan and return the plan that was
     /// active, for the journal.
     fn set_performance_power(&self) -> Result<PowerPlan>;
-    fn restore_power(&self, plan: &PowerPlan) -> Result<()>;
+
+    /// Make `plan` active again and return the plan that is active now. A
+    /// plan deleted since it was recorded (an OEM tool regenerating them, say)
+    /// can never come back, so the platform's balanced default is activated
+    /// and returned instead, and the caller can tell.
+    fn restore_power(&self, plan: &PowerPlan) -> Result<PowerPlan>;
 
     fn purge_memory(&self) -> Result<()>;
 

@@ -205,14 +205,15 @@ impl Platform for Linux {
         Ok(previous)
     }
 
-    fn restore_power(&self, plan: &PowerPlan) -> Result<()> {
+    fn restore_power(&self, plan: &PowerPlan) -> Result<PowerPlan> {
         if !matches!(plan.id.as_str(), "power-saver" | "balanced" | "performance") {
             return Err(PlatformError::Other(format!(
                 "{:?} is not a power profile",
                 plan.id
             )));
         }
-        run_tool("powerprofilesctl", &["set", &plan.id]).map(drop)
+        run_tool("powerprofilesctl", &["set", &plan.id])?;
+        Ok(plan.clone())
     }
 
     fn purge_memory(&self) -> Result<()> {

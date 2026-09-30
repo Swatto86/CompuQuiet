@@ -13,6 +13,7 @@ import {
 import { Dashboard } from "./dashboard.ts";
 import { showDialog, toast } from "./dialog.ts";
 import { homePlan } from "./format.ts";
+import { Recovery } from "./recovery.ts";
 import { Scan } from "./scan.ts";
 import { SettingsView } from "./settings-view.ts";
 import { Targets } from "./targets.ts";
@@ -34,6 +35,10 @@ let busy = false;
 let runElsewhere = false;
 
 const dashboard = new Dashboard(() => void toggle());
+const recovery = new Recovery((next) => {
+  engine = next;
+  renderAll();
+});
 let targets: Targets;
 let settingsView: SettingsView;
 let scanView: Scan;
@@ -87,6 +92,10 @@ async function boot(): Promise<void> {
     renderAll();
   });
   await onConfirmQuit(() => void quitFlow());
+  // A run that ended between the first fetch and the listeners above would
+  // otherwise leave the page on "Working…" until the next click.
+  engine = await api.getState();
+  renderAll();
 
   if (engine.startup_error) toast(engine.startup_error, true);
   else if (engine.recovered)
@@ -100,6 +109,7 @@ async function boot(): Promise<void> {
 
 function renderAll(): void {
   dashboard.render(engine);
+  recovery.render(engine);
   targets.describe(engine.capabilities, engine.os);
   settingsView.render(settings, info);
   renderPlan();

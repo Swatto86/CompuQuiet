@@ -307,3 +307,34 @@ fn a_process_is_taken_by_the_first_target_that_matches_it() {
         plan.skipped
     );
 }
+
+#[test]
+fn a_programs_own_process_is_closed_before_its_helpers() {
+    let mut profile = Profile::default_for(Os::Windows);
+    profile.processes = vec![ProcessTarget {
+        name: "Chrome".into(),
+        action: ProcessAction::Close,
+        enabled: true,
+    }];
+    // The helpers come first in the process table, as a HashMap may order it.
+    let mut helper = process(21, "Chrome.exe");
+    helper.parent = Some(20);
+    let mut other_helper = process(22, "Chrome.exe");
+    other_helper.parent = Some(20);
+    let snapshot = Snapshot {
+        processes: vec![helper, other_helper, process(20, "Chrome.exe")],
+        ..Snapshot::default()
+    };
+    profile.power = PowerPolicy::Leave;
+    profile.purge_memory = false;
+    let plan = build_plan(&profile, &snapshot, 1, Os::Windows, &full_caps());
+    let steps: Vec<_> = plan.steps.iter().map(Step::label).collect();
+    assert_eq!(
+        steps,
+        vec![
+            "Close Chrome.exe (PID 20)",
+            "Close Chrome.exe (PID 21)",
+            "Close Chrome.exe (PID 22)"
+        ]
+    );
+}

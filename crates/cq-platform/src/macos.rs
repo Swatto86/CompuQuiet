@@ -186,7 +186,7 @@ impl Platform for MacOs {
         ))
     }
 
-    fn restore_power(&self, _plan: &PowerPlan) -> Result<()> {
+    fn restore_power(&self, _plan: &PowerPlan) -> Result<PowerPlan> {
         Err(PlatformError::Unsupported(
             "macOS has no user-switchable power plan".into(),
         ))

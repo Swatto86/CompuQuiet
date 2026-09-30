@@ -71,6 +71,56 @@ export async function clickDialogButton(label: string): Promise<void> {
   throw new Error(`the dialog had no "${label}" button`);
 }
 
+/**
+ * Call a Tauri command straight through the webview's IPC, as the page's own
+ * code does. For commands the UI has no control for: the fake machine's fault
+ * injection.
+ */
+async function invokeCommand(
+  command: string,
+  args: Record<string, unknown>,
+): Promise<void> {
+  const failure = await browser.executeAsync(
+    (
+      name: string,
+      payload: Record<string, unknown>,
+      done: (failure: string | null) => void,
+    ) => {
+      const internals = (
+        window as unknown as {
+          __TAURI_INTERNALS__: {
+            invoke: (cmd: string, body: object) => Promise<unknown>;
+          };
+        }
+      ).__TAURI_INTERNALS__;
+      internals.invoke(name, payload).then(
+        () => done(null),
+        (error: unknown) => done(JSON.stringify(error)),
+      );
+    },
+    command,
+    args,
+  );
+  if (failure !== null) throw new Error(`${command} failed: ${failure}`);
+}
+
+/**
+ * Make a call on the fake machine fail until `fakeHeal`. Names are spelled as
+ * in `cq_platform::fake`: `start_service`, `refused` / `timed_out` /
+ * `needs_elevation`; `target` is a service or program name.
+ */
+export function fakeFail(
+  call: string,
+  target: string | null,
+  failure: string,
+): Promise<void> {
+  return invokeCommand("fake_fail", { call, target, failure });
+}
+
+export function fakeHeal(): Promise<void> {
+  return invokeCommand("fake_heal", {});
+}
+
 export async function screenshot(name: string): Promise<void> {
   await browser.saveScreenshot(path.join(dataDir(), `${name}.png`));
 }

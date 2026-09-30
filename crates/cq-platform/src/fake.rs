@@ -18,8 +18,15 @@ use cq_core::{
 use crate::Platform;
 use crate::error::{PlatformError, Result};
 
+mod faults;
+pub use faults::{Call, Failure};
+
 const GIB: u64 = 1024 * 1024 * 1024;
 const MIB: u64 = 1024 * 1024;
+
+/// The power plans this machine has. A recorded plan outside them has been
+/// deleted, and restoring it falls back to Balanced, as on Windows.
+const PLANS: [&str; 2] = ["balanced", "performance"];
 
 #[derive(Default)]
 struct State {
@@ -36,6 +43,8 @@ struct State {
     /// Stopping or starting this service panics, standing in for the app
     /// dying in the middle of a step.
     crash_on_service: Option<String>,
+    /// Calls made to fail, see [`Fake::fail`].
+    faults: Vec<faults::Fault>,
 }
 
 pub struct Fake {
@@ -128,11 +137,14 @@ impl Fake {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
-    fn find(state: &State, pid: u32, start_time: u64) -> Result<usize> {
+    /// Where the process is in the table, and its name.
+    fn find(state: &State, pid: u32, start_time: u64) -> Result<(usize, String)> {
         state
             .processes
             .iter()
-            .position(|p| p.pid == pid && p.start_time == start_time)
+            .enumerate()
+            .find(|(_, p)| p.pid == pid && p.start_time == start_time)
+            .map(|(index, p)| (index, p.name.clone()))
             .ok_or_else(|| PlatformError::NotRunning(format!("PID {pid}")))
     }
 }
@@ -214,94 +226,116 @@ impl Platform for Fake {
 
     fn suspend(&self, pid: u32, start_time: u64) -> Result<()> {
         let mut state = self.lock();
-        Self::find(&state, pid, start_time)?;
-        state.suspended.insert(pid);
-        Ok(())
+        let (_, name) = Self::find(&state, pid, start_time)?;
+        state.guarded(Call::Suspend, &name, |state| {
+            state.suspended.insert(pid);
+            Ok(())
+        })
     }
 
     fn resume(&self, pid: u32, start_time: u64) -> Result<()> {
         let mut state = self.lock();
-        Self::find(&state, pid, start_time)?;
-        state.suspended.remove(&pid);
-        Ok(())
+        let (_, name) = Self::find(&state, pid, start_time)?;
+        state.guarded(Call::Resume, &name, |state| {
+            state.suspended.remove(&pid);
+            Ok(())
+        })
     }
 
     fn close(&self, pid: u32, start_time: u64) -> Result<()> {
         let mut state = self.lock();
-        let index = Self::find(&state, pid, start_time)?;
-        state.processes.remove(index);
-        state.suspended.remove(&pid);
-        Ok(())
+        let (index, name) = Self::find(&state, pid, start_time)?;
+        state.guarded(Call::Close, &name, |state| {
+            state.processes.remove(index);
+            state.suspended.remove(&pid);
+            Ok(())
+        })
     }
 
     fn launch(&self, exe: &Path, args: &[String], cwd: Option<&Path>) -> Result<()> {
-        let mut state = self.lock();
         let name = exe
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_else(|| "unknown".to_string());
-        let pid = state.next_pid;
-        state.next_pid += 1;
-        state.processes.push(ProcessInfo {
-            pid,
-            name,
-            exe: Some(exe.to_path_buf()),
-            args: args.to_vec(),
-            cwd: cwd.map(Path::to_path_buf),
-            memory_bytes: 64 * MIB,
-            cpu_percent: 0.5,
-            start_time: 1_700_000_000 + u64::from(pid),
-            parent: None,
-        });
-        state.launched.push(exe.to_path_buf());
-        Ok(())
+        self.lock().guarded(Call::Launch, &name, |state| {
+            let pid = state.next_pid;
+            state.next_pid += 1;
+            state.processes.push(ProcessInfo {
+                pid,
+                name: name.clone(),
+                exe: Some(exe.to_path_buf()),
+                args: args.to_vec(),
+                cwd: cwd.map(Path::to_path_buf),
+                memory_bytes: 64 * MIB,
+                cpu_percent: 0.5,
+                start_time: 1_700_000_000 + u64::from(pid),
+                parent: None,
+            });
+            state.launched.push(exe.to_path_buf());
+            Ok(())
+        })
     }
 
     fn stop_service(&self, name: &str) -> Result<()> {
         self.crash_if_asked(name);
-        let mut state = self.lock();
-        match state.services.get_mut(&name.to_ascii_lowercase()) {
-            Some(current) => {
-                *current = ServiceState::Stopped;
-                Ok(())
+        self.lock().guarded(Call::StopService, name, |state| {
+            match state.services.get_mut(&name.to_ascii_lowercase()) {
+                Some(current) => {
+                    *current = ServiceState::Stopped;
+                    Ok(())
+                }
+                None => Err(PlatformError::NotInstalled(name.to_string())),
             }
-            None => Err(PlatformError::NotInstalled(name.to_string())),
-        }
+        })
     }
 
     fn start_service(&self, name: &str) -> Result<()> {
         self.crash_if_asked(name);
-        let mut state = self.lock();
-        match state.services.get_mut(&name.to_ascii_lowercase()) {
-            Some(current) => {
-                *current = ServiceState::Running;
-                Ok(())
+        self.lock().guarded(Call::StartService, name, |state| {
+            match state.services.get_mut(&name.to_ascii_lowercase()) {
+                Some(current) => {
+                    *current = ServiceState::Running;
+                    Ok(())
+                }
+                None => Err(PlatformError::NotInstalled(name.to_string())),
             }
-            None => Err(PlatformError::NotInstalled(name.to_string())),
-        }
+        })
     }
 
     fn set_performance_power(&self) -> Result<PowerPlan> {
-        let mut state = self.lock();
-        let previous = state
-            .power
-            .clone()
-            .ok_or_else(|| PlatformError::Unsupported("no active power plan".to_string()))?;
-        state.power = Some(PowerPlan {
-            id: "performance".into(),
-            name: "High performance".into(),
-        });
-        Ok(previous)
+        self.lock().guarded(Call::SetPower, "", |state| {
+            let previous = state
+                .power
+                .clone()
+                .ok_or_else(|| PlatformError::Unsupported("no active power plan".to_string()))?;
+            state.power = Some(PowerPlan {
+                id: "performance".into(),
+                name: "High performance".into(),
+            });
+            Ok(previous)
+        })
     }
 
-    fn restore_power(&self, plan: &PowerPlan) -> Result<()> {
-        self.lock().power = Some(plan.clone());
-        Ok(())
+    fn restore_power(&self, plan: &PowerPlan) -> Result<PowerPlan> {
+        self.lock().guarded(Call::RestorePower, &plan.id, |state| {
+            let active = if PLANS.contains(&plan.id.as_str()) {
+                plan.clone()
+            } else {
+                PowerPlan {
+                    id: "balanced".into(),
+                    name: "Balanced".into(),
+                }
+            };
+            state.power = Some(active.clone());
+            Ok(active)
+        })
     }
 
     fn purge_memory(&self) -> Result<()> {
-        self.lock().purges += 1;
-        Ok(())
+        self.lock().guarded(Call::PurgeMemory, "", |state| {
+            state.purges += 1;
+            Ok(())
+        })
     }
 
     fn relaunch_elevated(&self, _exe: &Path, _args: &[String]) -> Result<()> {

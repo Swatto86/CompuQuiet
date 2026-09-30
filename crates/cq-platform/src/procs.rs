@@ -291,7 +291,7 @@ fn output_within(
         if Instant::now() >= deadline {
             let _ = child.kill();
             let _ = child.wait();
-            return Err(PlatformError::Other(format!(
+            return Err(PlatformError::TimedOut(format!(
                 "{program} did not finish within {} s and was stopped",
                 timeout.as_secs()
             )));

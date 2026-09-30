@@ -25,6 +25,17 @@ pub struct LogLine {
     pub detail: Option<String>,
 }
 
+/// A step the last restore could not undo, described for the confirmation
+/// before it is given up.
+#[derive(Debug, Clone, Serialize)]
+pub struct Unrestored {
+    pub label: String,
+    /// What stays as it is if it is given up.
+    pub consequence: String,
+    /// Why the last attempt failed.
+    pub error: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct EngineState {
     pub quiet: bool,
@@ -38,12 +49,15 @@ pub struct EngineState {
     pub os: Os,
     /// A journal from an earlier run was found at start-up.
     pub recovered: bool,
-    /// The journal could not be read at start-up.
+    /// The journal could not be read at start-up, and is still on disk.
     pub startup_error: Option<String>,
     /// Why settings.json could not be read, while it is still unresolved.
     /// The engine runs on the built-in settings and refuses to save or go
     /// quiet until the file is fixed or set aside.
     pub settings_unreadable: Option<String>,
+    /// What the last restore could not put back; the only time giving up on
+    /// the journal is offered. Empty once a restore succeeds.
+    pub unrestored: Vec<Unrestored>,
 }
 
 struct Inner {
@@ -60,6 +74,7 @@ struct Inner {
     /// a newer CompuQuiet). Saving would replace the user's target lists with
     /// the defaults, and Quiet Mode would run on them.
     unreadable_settings: Option<String>,
+    unrestored: Vec<Unrestored>,
 }
 
 pub struct Engine {
@@ -115,6 +130,7 @@ impl Engine {
                 startup_error,
                 unreadable_journal,
                 unreadable_settings,
+                unrestored: Vec::new(),
             }),
             busy: AtomicBool::new(false),
         }
@@ -145,6 +161,7 @@ impl Engine {
             recovered: inner.recovered,
             startup_error: inner.startup_error.clone(),
             settings_unreadable: inner.unreadable_settings.clone(),
+            unrestored: inner.unrestored.clone(),
         }
     }
 
@@ -349,9 +366,12 @@ impl Drop for BusyGuard<'_> {
     }
 }
 
+mod recovery;
 mod restore;
 mod steps;
 
+#[cfg(all(test, feature = "fake-platform"))]
+mod failure_tests;
 #[cfg(all(test, feature = "fake-platform"))]
 mod tests;
 

@@ -121,7 +121,7 @@ impl Platform for Windows {
         if self.sampler.wait_for_exit(pid, GRACE) {
             Ok(())
         } else {
-            Err(PlatformError::Other(format!("PID {pid} did not exit")))
+            Err(PlatformError::TimedOut(format!("PID {pid} did not exit")))
         }
     }
 
@@ -148,8 +148,8 @@ impl Platform for Windows {
         power::set_performance()
     }
 
-    fn restore_power(&self, plan: &PowerPlan) -> Result<()> {
-        power::set_active(&plan.id)
+    fn restore_power(&self, plan: &PowerPlan) -> Result<PowerPlan> {
+        power::restore(&plan.id)
     }
 
     fn purge_memory(&self) -> Result<()> {

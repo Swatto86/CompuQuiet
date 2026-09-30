@@ -53,7 +53,7 @@ pub fn close(sampler: &Sampler, pid: u32, start_time: u64) -> Result<()> {
     if sampler.wait_for_exit(pid, GRACE) {
         Ok(())
     } else {
-        Err(PlatformError::Other(format!("PID {pid} did not exit")))
+        Err(PlatformError::TimedOut(format!("PID {pid} did not exit")))
     }
 }
 

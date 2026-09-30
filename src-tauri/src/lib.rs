@@ -46,18 +46,24 @@ fn starts_hidden(hidden_arg: bool, reopen_arg: bool, start_hidden_setting: bool)
     !reopen_arg && (hidden_arg || start_hidden_setting)
 }
 
-fn build_platform() -> Box<dyn Platform> {
+/// The fake machine the engine runs on, kept so the acceptance suite can make
+/// its calls fail (`commands::fake_fail`).
+#[cfg(feature = "fake-platform")]
+static FAKE: OnceLock<Arc<cq_platform::fake::Fake>> = OnceLock::new();
+
+fn build_platform() -> Arc<dyn Platform> {
     #[cfg(feature = "fake-platform")]
     {
-        Box::new(cq_platform::fake::Fake::new())
+        FAKE.get_or_init(|| Arc::new(cq_platform::fake::Fake::new()))
+            .clone()
     }
     #[cfg(not(feature = "fake-platform"))]
     {
-        cq_platform::native()
+        Arc::from(cq_platform::native())
     }
 }
 
-pub(crate) fn platform_for_relaunch() -> Box<dyn Platform> {
+pub(crate) fn platform_for_relaunch() -> Arc<dyn Platform> {
     build_platform()
 }
 
@@ -65,7 +71,7 @@ pub fn run() {
     let data_dir = cq_core::store::data_dir()
         .unwrap_or_else(|error| panic!("CompuQuiet has nowhere to keep its state: {error}"));
     logfile::install(&data_dir);
-    let engine = Arc::new(Engine::new(Arc::from(build_platform()), data_dir));
+    let engine = Arc::new(Engine::new(build_platform(), data_dir));
     let hidden_arg = std::env::args().skip(1).any(|arg| arg == "--hidden");
     let reopen_arg = std::env::args().skip(1).any(|arg| arg == REOPEN_ARG);
     let _ = REOPENED.set(reopen_arg);
@@ -149,6 +155,8 @@ pub fn run() {
             commands::default_settings,
             commands::save_settings,
             commands::set_aside_settings,
+            commands::give_up_restoring,
+            commands::set_aside_journal,
             commands::scan,
             commands::apply_recommendations,
             commands::go_quiet,
@@ -161,6 +169,10 @@ pub fn run() {
             commands::show_window,
             #[cfg(feature = "fake-platform")]
             commands::simulate_tray_menu,
+            #[cfg(feature = "fake-platform")]
+            commands::fake_fail,
+            #[cfg(feature = "fake-platform")]
+            commands::fake_heal,
         ])
         .run(tauri::generate_context!())
         .unwrap_or_else(|error| panic!("CompuQuiet could not start its window: {error}"));

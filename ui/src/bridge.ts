@@ -94,6 +94,15 @@ export interface LogLine {
   detail: string | null;
 }
 
+/** A step the last restore could not undo. */
+export interface Unrestored {
+  label: string;
+  /** What stays as it is if it is given up. */
+  consequence: string;
+  /** Why the last attempt failed. */
+  error: string | null;
+}
+
 export interface EngineState {
   quiet: boolean;
   busy: boolean;
@@ -105,9 +114,12 @@ export interface EngineState {
   data_dir: string;
   os: Os;
   recovered: boolean;
+  /** Why the journal cannot be read, while it is still on disk unread. */
   startup_error: string | null;
   /** Why settings.json cannot be read, until it is fixed or set aside. */
   settings_unreadable: string | null;
+  /** What the last restore could not put back; empty once one succeeds. */
+  unrestored: Unrestored[];
 }
 
 export interface SystemStats {
@@ -174,6 +186,8 @@ export const api = {
   saveSettings: (settings: Settings) =>
     invoke<void>("save_settings", { settings }),
   setAsideSettings: () => invoke<string | null>("set_aside_settings"),
+  giveUpRestoring: () => invoke<EngineState>("give_up_restoring"),
+  setAsideJournal: () => invoke<string | null>("set_aside_journal"),
   goQuiet: () => invoke<EngineState>("go_quiet"),
   restore: () => invoke<EngineState>("restore"),
   frontendReady: () => invoke<void>("frontend_ready"),

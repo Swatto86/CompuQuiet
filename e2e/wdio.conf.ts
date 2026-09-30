@@ -102,9 +102,15 @@ export const config: WebdriverIO.Config = {
   runner: "local",
   framework: "mocha",
   specs: [
-    ["boot", "quiet", "scan", "persist", "settings-guard", "exit"].map((name) =>
-      path.resolve(here, `specs/${name}.spec.ts`),
-    ),
+    [
+      "boot",
+      "quiet",
+      "scan",
+      "persist",
+      "settings-guard",
+      "stuck-restore",
+      "exit",
+    ].map((name) => path.resolve(here, `specs/${name}.spec.ts`)),
   ],
   maxInstances: 1,
   logLevel: "error",

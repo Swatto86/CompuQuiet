@@ -37,6 +37,7 @@ impl From<cq_platform::PlatformError> for AppError {
             cq_platform::PlatformError::NotRunning(_) => "not_running",
             cq_platform::PlatformError::NotInstalled(_) => "not_installed",
             cq_platform::PlatformError::Unsupported(_) => "unsupported",
+            cq_platform::PlatformError::TimedOut(_) => "timed_out",
             _ => "platform",
         };
         AppError::new(code, error.to_string())

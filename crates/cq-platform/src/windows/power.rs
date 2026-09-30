@@ -11,6 +11,7 @@ use crate::procs::run_tool;
 
 const ULTIMATE: &str = "e9a42b02-d5df-448d-aa00-03f14749eb61";
 const HIGH_PERFORMANCE: &str = "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c";
+const BALANCED: &str = "381b4222-f694-41f0-9685-ff5bb260df2e";
 
 /// Parse one `powercfg` line, `Power Scheme GUID: <guid>  (<name>) *`, by its
 /// shape: Windows translates the label (`GUID des Energieschemas:` in German).
@@ -60,6 +61,29 @@ pub fn set_active(id: &str) -> Result<()> {
         )));
     }
     run_tool("powercfg", &["/setactive", id]).map(drop)
+}
+
+/// The plan to put back in place of `wanted`: itself while it is installed,
+/// otherwise Balanced, so a plan deleted during Quiet Mode cannot keep
+/// Restore failing on every attempt.
+pub(crate) fn restore_target<'a>(
+    available: &'a [PowerPlan],
+    wanted: &str,
+) -> Option<&'a PowerPlan> {
+    let wanted = wanted.to_ascii_lowercase();
+    [wanted.as_str(), BALANCED]
+        .iter()
+        .find_map(|id| available.iter().find(|plan| plan.id == *id))
+}
+
+/// Activate the plan recorded as `id`, or Balanced when it no longer exists;
+/// returns the plan that is active now.
+pub fn restore(id: &str) -> Result<PowerPlan> {
+    let available = list()?;
+    let target = restore_target(&available, id)
+        .ok_or_else(|| PlatformError::NotInstalled(format!("power plan {id} or Balanced")))?;
+    set_active(&target.id)?;
+    Ok(target.clone())
 }
 
 /// Choose the fastest plan the machine offers, activate it, and return the
@@ -138,6 +162,31 @@ mod tests {
         assert_eq!(choose(&plans[..2]).unwrap().id, HIGH_PERFORMANCE);
         assert!(choose(&plans[..1]).is_none());
         assert!(set_active("'; shutdown").is_err());
+    }
+
+    #[test]
+    fn a_plan_deleted_since_it_was_recorded_is_replaced_by_balanced() {
+        let plan = |id: &str, name: &str| PowerPlan {
+            id: id.into(),
+            name: name.into(),
+        };
+        let custom = "0f0f0f0f-1111-2222-3333-444444444444";
+        let installed = vec![
+            plan(BALANCED, "Balanced"),
+            plan(HIGH_PERFORMANCE, "High performance"),
+            plan(custom, "Custom"),
+        ];
+        assert_eq!(restore_target(&installed, custom).unwrap().name, "Custom");
+        assert_eq!(
+            restore_target(&installed, &custom.to_uppercase())
+                .unwrap()
+                .id,
+            custom
+        );
+        let after_deletion = &installed[..2];
+        assert_eq!(restore_target(after_deletion, custom).unwrap().id, BALANCED);
+        assert_eq!(restore_target(after_deletion, "junk").unwrap().id, BALANCED);
+        assert!(restore_target(&installed[1..2], custom).is_none());
     }
 
     #[test]

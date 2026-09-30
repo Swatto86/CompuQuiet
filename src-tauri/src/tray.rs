@@ -116,12 +116,19 @@ pub fn refresh(app: &AppHandle, state: &EngineState) {
     } else {
         (ICON_IDLE, "CompuQuiet — idle", "Free up this PC")
     };
+    let tooltip = if state.busy {
+        "CompuQuiet — working"
+    } else {
+        tooltip
+    };
 
     let changed = {
         let Some(handles) = app.try_state::<TrayHandles>() else {
             return;
         };
         let _ = handles.toggle.set_text(label);
+        // A second click during a run would only be refused as busy.
+        let _ = handles.toggle.set_enabled(!state.busy);
         // Read so the field is used on every platform: owning `menu` here is
         // what keeps the native menu from being destroyed.
         let _keep_menu = &handles.menu;
