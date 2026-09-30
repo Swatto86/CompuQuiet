@@ -1,5 +1,5 @@
 /** Pure presentation helpers, tested without a DOM. */
-import type { Profile, Summary, UpdateStatus } from "./bridge.ts";
+import type { Profile, RunReport, Summary, UpdateStatus } from "./bridge.ts";
 
 const UNITS = ["B", "KB", "MB", "GB", "TB"];
 
@@ -45,7 +45,7 @@ export function formatSince(startedAt: number, now: number): string {
   return restHours === 0 ? `${days} d` : `${days} d ${restHours} h`;
 }
 
-function plural(count: number, one: string, many: string): string {
+export function plural(count: number, one: string, many: string): string {
   return `${count} ${count === 1 ? one : many}`;
 }
 
@@ -66,6 +66,36 @@ export function summaryLines(summary: Summary): string[] {
     );
   if (summary.power_changed) lines.push("Performance power plan active");
   if (summary.memory_purged) lines.push("Cached memory purged");
+  return lines;
+}
+
+/**
+ * What Quiet Mode gave back, as the engine measured it: the rise in the memory
+ * available, never below zero. Null when there is no measurement.
+ */
+export function memoryFreed(report: RunReport | null): number | null {
+  return report === null
+    ? null
+    : Math.max(0, report.available_after - report.available_before);
+}
+
+/**
+ * What the run measurably did, for the card beside the counts. Parked and
+ * freed stay apart: a suspended program still holds its memory, so only the
+ * change in what is available says what came back, and that is approximate.
+ */
+export function reportLines(report: RunReport | null): string[] {
+  if (report === null) return [];
+  const lines = [
+    `Memory available ${formatBytes(report.available_before)} to ${formatBytes(report.available_after)} (approximate)`,
+    `CPU ${formatPercent(report.cpu_before)} to ${formatPercent(report.cpu_after)}`,
+  ];
+  if (report.suspended_bytes > 0)
+    lines.push(
+      `Suspended programs still hold ${formatBytes(report.suspended_bytes)}: only closing one frees its memory`,
+    );
+  if (report.closed_bytes > 0)
+    lines.push(`Closed programs held ${formatBytes(report.closed_bytes)}`);
   return lines;
 }
 

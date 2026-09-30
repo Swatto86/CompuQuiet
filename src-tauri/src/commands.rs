@@ -8,7 +8,7 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::autostart::{self, AutostartStatus};
-use crate::engine::{Engine, EngineState, LogLine};
+use crate::engine::{Engine, EngineState, LogLine, Preview};
 use crate::error::AppError;
 use crate::rows::ProcessRow;
 use crate::tray;
@@ -124,6 +124,14 @@ pub fn apply_recommendations(
     accepted: Vec<cq_core::Recommendation>,
 ) -> Result<Settings, AppError> {
     engine.apply_recommendations(accepted)
+}
+
+/// What one press would do on the machine as it is right now. Read-only, and
+/// the run never uses it: a press plans again. Takes no argument.
+#[tauri::command]
+pub async fn preview_plan(engine: State<'_, Arc<Engine>>) -> Result<Preview, AppError> {
+    let engine = engine.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || engine.preview()).await?
 }
 
 /// Switch Quiet Mode on. Progress lines stream to the window as they happen.
@@ -318,6 +326,18 @@ pub fn fake_fail(call: String, target: Option<String>, failure: String) -> Resul
         .get()
         .ok_or_else(|| AppError::new("fake_missing", "the fake machine is not running"))?;
     fake.fail(call, target.as_deref(), failure);
+    Ok(())
+}
+
+/// Make the fake machine run on battery, on mains or (`None`) have no battery,
+/// so the acceptance suite can drive the battery guard (fake platform only).
+#[cfg(feature = "fake-platform")]
+#[tauri::command]
+pub fn fake_battery(on_battery: Option<bool>) -> Result<(), AppError> {
+    let fake = crate::FAKE
+        .get()
+        .ok_or_else(|| AppError::new("fake_missing", "the fake machine is not running"))?;
+    fake.set_on_battery(on_battery);
     Ok(())
 }
 

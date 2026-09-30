@@ -15,6 +15,7 @@ import { Dashboard } from "./dashboard.ts";
 import { showDialog, toast } from "./dialog.ts";
 import { byId } from "./dom.ts";
 import { closeHint, homePlan } from "./format.ts";
+import { PreviewPanel } from "./preview.ts";
 import { Recovery } from "./recovery.ts";
 import { Scan } from "./scan.ts";
 import { SettingsView } from "./settings-view.ts";
@@ -28,7 +29,6 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 let engine: EngineState;
 let settings: Settings;
 let info: AppInfo;
-let memoryBaseline: number | null = null;
 let busy = false;
 /** The Park list holds edits that are not saved, so Home does not count them. */
 let unsaved = false;
@@ -36,6 +36,7 @@ let unsaved = false;
 let runElsewhere = false;
 
 const dashboard = new Dashboard(() => void toggle());
+const preview = new PreviewPanel();
 const recovery = new Recovery((next) => {
   engine = next;
   renderAll();
@@ -54,6 +55,7 @@ async function boot(): Promise<void> {
   applyTheme(settings.theme);
 
   tabs = wireTabs((view) => {
+    if (view === "dashboard") preview.refreshIfOpen();
     if (view === "targets") void targets.refreshRunning();
     if (view === "settings") void settingsView.refreshAutostart();
     if (view === "scan") void scanView.refresh();
@@ -128,6 +130,7 @@ function renderAll(): void {
   applyTheme(settings.theme);
   scanView.setQuiet(engine.quiet);
   dashboard.render(engine);
+  preview.setAvailable(!engine.quiet);
   recovery.render(engine);
   targets.describe(engine.capabilities, engine.os);
   settingsView.render(settings, info);
@@ -278,15 +281,7 @@ async function windowShowing(): Promise<boolean> {
 async function pollStats(): Promise<void> {
   if (!(await windowShowing())) return;
   try {
-    const stats = await api.getStats();
-    const freed =
-      engine.quiet && memoryBaseline !== null
-        ? Math.max(0, memoryBaseline - stats.memory_used)
-        : null;
-    dashboard.updateStats(stats, freed);
-    // Not while a run is freeing memory, or the figure would shrink.
-    if (!engine.quiet && !busy && !runElsewhere)
-      memoryBaseline = stats.memory_used;
+    dashboard.updateStats(await api.getStats());
   } catch {
     // The next poll will report; a missed sample is not worth a toast.
   }

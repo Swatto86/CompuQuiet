@@ -4,6 +4,8 @@ import {
   formatBytes,
   formatPercent,
   formatSince,
+  memoryFreed,
+  reportLines,
   summaryLines,
 } from "./format.ts";
 
@@ -61,7 +63,14 @@ export class Dashboard {
     }
     this.tick();
 
-    const lines = summaryLines(state.summary);
+    // The engine measured these around the run, so they hold however the run
+    // began and whether or not this window was open.
+    const lines = [
+      ...summaryLines(state.summary),
+      ...reportLines(state.run_report),
+    ];
+    const freed = memoryFreed(state.run_report);
+    byId("freed-value").textContent = freed === null ? "—" : formatBytes(freed);
     this.fill(
       this.summary,
       lines.length ? lines : ["Nothing yet."],
@@ -116,7 +125,7 @@ export class Dashboard {
     this.log.scrollTop = this.log.scrollHeight;
   }
 
-  updateStats(stats: SystemStats, freedBytes: number | null): void {
+  updateStats(stats: SystemStats): void {
     const memPercent =
       stats.memory_total > 0
         ? (stats.memory_used / stats.memory_total) * 100
@@ -135,8 +144,6 @@ export class Dashboard {
       String(Math.round(memPercent)),
     );
     byId("proc-value").textContent = String(stats.process_count);
-    byId("freed-value").textContent =
-      freedBytes === null ? "—" : formatBytes(freedBytes);
     this.tick();
   }
 

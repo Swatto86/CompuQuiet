@@ -39,6 +39,8 @@ export interface Settings {
   notifications: boolean;
   restore_on_quit: boolean;
   auto_scan: boolean;
+  /** Run the performance plan and the memory purge on battery too. */
+  allow_on_battery: boolean;
 }
 
 export type Risk = "low" | "medium";
@@ -88,6 +90,48 @@ export interface Skipped {
   reason: string;
 }
 
+/**
+ * What the run that began Quiet Mode measurably did, read by the engine. The
+ * memory a suspended program holds is kept apart from the change in what is
+ * available: freezing a program frees nothing, and the change is approximate.
+ */
+export interface RunReport {
+  /** Memory the suspended programs still hold. */
+  suspended_bytes: number;
+  /** Memory the closed programs held, given back when they ended. */
+  closed_bytes: number;
+  /** Memory a new program could use, just before the first step and after the last. */
+  available_before: number;
+  available_after: number;
+  /** CPU load over the same two moments, in percent of the whole machine. */
+  cpu_before: number;
+  cpu_after: number;
+}
+
+export type PreviewAction =
+  "power" | "stop_service" | "suspend" | "close" | "purge";
+
+/** One line of the preview: a service, a program (all its processes), the plan or the purge. */
+export interface PreviewItem {
+  action: PreviewAction;
+  /** Empty for the power plan and the purge. */
+  name: string;
+  processes: number;
+  memory_bytes: number;
+  /** For a closed program: the command line it reopens with. Null: its path was unreadable. */
+  relaunch: string | null;
+}
+
+/** What one press would do at the moment it was looked at. */
+export interface Preview {
+  items: PreviewItem[];
+  skipped: Skipped[];
+  /** Low-risk finds of a quick scan this press would add, by name. */
+  from_scan: string[];
+  /** Seconds since the epoch. */
+  taken_at: number;
+}
+
 export interface LogLine {
   label: string;
   ok: boolean;
@@ -108,6 +152,8 @@ export interface EngineState {
   busy: boolean;
   started_at: number | null;
   summary: Summary;
+  /** Measured by the engine; null when Quiet Mode is off or was recovered. */
+  run_report: RunReport | null;
   skipped: Skipped[];
   log: LogLine[];
   capabilities: Capabilities;
@@ -205,6 +251,7 @@ export const api = {
   setAsideSettings: () => invoke<string | null>("set_aside_settings"),
   giveUpRestoring: () => invoke<EngineState>("give_up_restoring"),
   setAsideJournal: () => invoke<string | null>("set_aside_journal"),
+  previewPlan: () => invoke<Preview>("preview_plan"),
   goQuiet: () => invoke<EngineState>("go_quiet"),
   restore: () => invoke<EngineState>("restore"),
   frontendReady: () => invoke<void>("frontend_ready"),

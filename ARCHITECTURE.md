@@ -25,7 +25,17 @@ Dependencies point inward: `src-tauri` → `cq-platform` → `cq-core`.
    plan, services, processes, memory purge. Critical processes and services
    (`policy.rs`), keep-alive entries (a process is also spared when only its
    own name matches, as a truncated Linux name does) and the app itself are
-   never planned.
+   never planned. `cq_core::guard_battery` then drops the performance power
+   plan and the memory purge, listing them as left alone, when
+   `Platform::on_battery` says `Some(true)` and `Settings::allow_on_battery`
+   is off. Windows answers from `GetSystemPowerStatus`, Linux from the
+   machine's own `Battery` supplies in `/sys/class/power_supply` (a
+   peripheral's, `scope` Device, and a `UPS` never count) and macOS from
+   `pmset -g batt` (`UPS Power` is not battery); `None`, a desktop, and a UPS
+   on mains all mean mains.
+   `Engine::plan_now` runs steps 1 and 2 and the guard for both a run and the
+   read-only `Engine::preview`, so a preview cannot differ from what a press
+   plans; the run always plans afresh and never uses an earlier preview.
 3. **Execute and journal.** Each step's `DoneStep` is written to
    `journal.json` (atomic write) before the platform carries it out
    (`DoneStep::intended`, `Engine::run_journaled`), corrected afterwards if
@@ -35,7 +45,12 @@ Dependencies point inward: `src-tauri` → `cq-platform` → `cq-core`.
    (`PlatformError::TimedOut`, code `timed_out`) may still take effect, so
    its entry stays; a program that has already gone is logged as done, not
    failed. Progress lines stream to the window; a failed step is logged and
-   the run continues.
+   the run continues. A run with steps is measured by the engine
+   (`Engine::measure`: two `stats()` readings `Platform::settle` apart, before
+   the first step and after the last) into `EngineState::run_report`, in
+   memory only, so a recovered run has none. It keeps the memory the suspended
+   programs still hold apart from the closed ones' and from the change in
+   available memory: freezing frees nothing, and the change is approximate.
 4. **Restore.** The journal is replayed newest-first (`restore_steps`),
    relaunching a closed program once per distinct command line, and not at
    all while that command line is already running. A helper a program started
@@ -148,6 +163,10 @@ the code:
   passes. The window frame follows the Theme setting through `setTheme`.
 - The big button carries its state in `data-quiet`, not `aria-pressed`: its
   label already says what a press does.
+- Home's preview (`preview.ts`, text in `preview-text.ts`) is a `<details>`
+  fetched when opened, on Look again and when Home is shown while open, only
+  while Quiet Mode is off. The freed figure and the run lines come from
+  `EngineState::run_report`, not from the page's own polling.
 - The page's permissions are the three calls it makes itself (`listen`,
   `isVisible`, `setTheme`), listed in `src-tauri/capabilities/main.json`; add
   one only with the `ui/src` call that needs it. The e2e build adds four for

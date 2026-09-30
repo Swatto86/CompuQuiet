@@ -9,10 +9,12 @@ import {
   formatPercent,
   formatSince,
   homePlan,
+  memoryFreed,
+  reportLines,
   summaryLines,
   updateLine,
 } from "./format.ts";
-import type { Profile, UpdateStatus } from "./bridge.ts";
+import type { Profile, RunReport, UpdateStatus } from "./bridge.ts";
 
 test("bytes scale with one decimal below 100 and none above", () => {
   assert.equal(formatBytes(0), "0 B");
@@ -174,5 +176,42 @@ test("every update state has a sentence, and only some allow a check", () => {
   assert.match(
     updateLine({ kind: "ready", version: "1.2.0", asks_permission: true }),
     /Windows will ask for permission when it installs\.$/,
+  );
+});
+
+const MIB = 1024 * 1024;
+
+function measured(over: Partial<RunReport>): RunReport {
+  return {
+    suspended_bytes: 850 * MIB,
+    closed_bytes: 180 * MIB,
+    available_before: 5000 * MIB,
+    available_after: 5180 * MIB,
+    cpu_before: 22.4,
+    cpu_after: 6.2,
+    ...over,
+  };
+}
+
+test("what a run freed is the measured rise in available memory, never negative", () => {
+  assert.equal(memoryFreed(null), null);
+  assert.equal(memoryFreed(measured({})), 180 * MIB);
+  // Memory moves for other reasons too; a fall is not "negative freed".
+  assert.equal(memoryFreed(measured({ available_after: 4000 * MIB })), 0);
+});
+
+test("the report keeps what parking holds apart from what came back", () => {
+  assert.deepEqual(reportLines(null), []);
+  const lines = reportLines(measured({}));
+  assert.deepEqual(lines, [
+    "Memory available 4.9 GB to 5.1 GB (approximate)",
+    "CPU 22% to 6%",
+    "Suspended programs still hold 850 MB: only closing one frees its memory",
+    "Closed programs held 180 MB",
+  ]);
+  // Nothing suspended or closed: only the measurements remain.
+  assert.equal(
+    reportLines(measured({ suspended_bytes: 0, closed_bytes: 0 })).length,
+    2,
   );
 });

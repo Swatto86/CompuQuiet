@@ -176,11 +176,7 @@ fn toggle_from_tray(app: AppHandle) {
         } else if let (true, true, Ok(state)) = (hidden, engine.settings().notifications, &outcome)
         {
             let body = if quiet {
-                format!(
-                    "Quiet Mode on: {} services stopped, {} processes parked.",
-                    state.summary.services_stopped,
-                    state.summary.processes_suspended + state.summary.processes_closed
-                )
+                crate::engine::notification(&state.summary, state.run_report.as_ref())
             } else {
                 "Everything is back.".to_string()
             };

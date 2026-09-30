@@ -47,6 +47,15 @@ describe("Quiet Mode", () => {
     assert.match(summary, /Performance power plan active/);
     assert.match(summary, /Cached memory purged/);
 
+    // Measured by the engine around the run. Suspending OneDrive (210 MB) and
+    // Slack (640 MB) keeps their memory; closing Dropbox (180 MB) gave its
+    // back, and only that shows in what came free.
+    assert.match(summary, /Suspended programs still hold 850 MB/);
+    assert.match(summary, /Closed programs held 180 MB/);
+    assert.match(summary, /Memory available [\d.]+ GB to [\d.]+ GB/);
+    assert.match(summary, /CPU 23% to 4%/);
+    assert.equal(await $("#freed-value").getText(), "180 MB");
+
     const skipped = await $("#skipped").getText();
     assert.match(skipped, /DiagTrack — already stopped/);
     assert.match(skipped, /NoSuchService — not installed/);

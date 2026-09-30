@@ -29,7 +29,10 @@ Your own "never touch" list sits on top of that.
 ## Using it
 
 1. Open CompuQuiet. Home shows live CPU, memory and process figures, and what
-   one press will do.
+   one press will do. *Preview what one press would do right now* looks at
+   the running machine and lists each program and service it would park, the
+   command line a closed program reopens with, and what it would leave alone
+   and why. It only looks: a press plans again from the machine as it is.
 2. Open **Scan** to see what is using resources right now: recognised
    background software that is not yet on the park list, large programs with no
    window, stoppable services that are running, a non-performance power plan
@@ -44,7 +47,12 @@ Your own "never touch" list sits on top of that.
 4. Press the big button. With *Also park low-risk finds from a quick scan* on
    (the default), the run also parks those finds without changing your saved
    park list. The activity log shows every step and anything left alone (with
-   the reason). The tray icon turns amber while Quiet Mode is on.
+   the reason). The tray icon turns amber while Quiet Mode is on. Home then
+   shows what CompuQuiet measured around the run: memory available and CPU
+   before and after, and how much the suspended programs still hold. Freezing
+   a program frees nothing; only closing one gives its memory back, and the
+   change is approximate. On battery the performance power plan and the memory
+   purge are skipped and listed as left alone, unless Settings allows them.
 5. Press it again, or right-click the tray icon, to restore. Quitting while
    quiet can put everything back first.
 

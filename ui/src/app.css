@@ -935,3 +935,42 @@ table.scan tr.targeted td {
     forced-color-adjust: none;
   }
 }
+
+/* The Home preview */
+.preview {
+  margin: 0 8px 18px;
+  max-width: 720px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.preview[hidden] {
+  display: none;
+}
+
+.preview > summary {
+  padding: 10px 16px;
+  cursor: pointer;
+  color: var(--accent-text);
+}
+
+.preview-body {
+  padding: 0 16px 14px;
+}
+
+.preview-body h3 {
+  margin: 14px 0 6px;
+}
+
+.preview-body code {
+  display: block;
+  margin-top: 2px;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+
+.preview-body button {
+  margin-top: 12px;
+}

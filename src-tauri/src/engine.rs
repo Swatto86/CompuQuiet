@@ -11,10 +11,13 @@ use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use cq_core::journal::Summary;
-use cq_core::{Capabilities, CoreError, Journal, Os, Settings, Skipped, SystemStats, build_plan};
+use cq_core::{Capabilities, CoreError, Journal, Os, Settings, Skipped, SystemStats};
 use cq_platform::Platform;
 use serde::Serialize;
 
+use self::preview::Planned;
+pub use self::preview::Preview;
+pub use self::report::{RunReport, notification};
 use crate::error::AppError;
 use crate::rows::{ProcessRow, fold_processes};
 
@@ -42,6 +45,10 @@ pub struct EngineState {
     pub busy: bool,
     pub started_at: Option<u64>,
     pub summary: Summary,
+    /// What the run that started Quiet Mode measurably did. Only while Quiet
+    /// Mode is on, and only for a run this copy made: a recovered journal has
+    /// no figures.
+    pub run_report: Option<RunReport>,
     pub skipped: Vec<Skipped>,
     pub log: Vec<LogLine>,
     pub capabilities: Capabilities,
@@ -65,6 +72,7 @@ struct Inner {
     journal: Option<Journal>,
     log: Vec<LogLine>,
     skipped: Vec<Skipped>,
+    run_report: Option<RunReport>,
     recovered: bool,
     startup_error: Option<String>,
     /// A journal file is on disk but could not be read. Starting Quiet Mode
@@ -128,6 +136,7 @@ impl Engine {
                 journal,
                 log: Vec::new(),
                 skipped: Vec::new(),
+                run_report: None,
                 startup_error,
                 unreadable_journal,
                 unreadable_settings,
@@ -154,6 +163,7 @@ impl Engine {
                 .as_ref()
                 .map(Journal::summary)
                 .unwrap_or_default(),
+            run_report: inner.run_report.clone().filter(|_| inner.journal.is_some()),
             skipped: inner.skipped.clone(),
             log: inner.log.clone(),
             capabilities: self.platform.capabilities(),
@@ -264,83 +274,69 @@ impl Engine {
 
     pub fn go_quiet(&self, progress: &dyn Fn(LogLine)) -> Result<Summary, AppError> {
         let _guard = self.begin()?;
-        let settings = {
-            let mut inner = self.lock();
-            if inner.journal.is_some() {
-                return Err(AppError::new("already_quiet", "Quiet Mode is already on"));
-            }
-            if let Some(error) = &inner.unreadable_journal {
-                return Err(self.journal_unreadable(error));
-            }
-            self.adopt_journal_on_disk(&mut inner)?;
-            if let Some(error) = &inner.unreadable_settings {
-                return Err(Self::settings_unreadable(error));
-            }
-            inner.settings.clone()
-        };
-        let caps = self.platform.capabilities();
-        let names: Vec<String> = if settings.auto_scan {
-            cq_core::recommend::service_names_to_query(&settings.profile, self.platform.os())
-        } else {
-            settings
-                .profile
-                .services
-                .iter()
-                .filter(|s| s.enabled)
-                .map(|s| s.name.clone())
-                .collect()
-        };
-        let snapshot = self.platform.snapshot(&names)?;
+        let settings = self.runnable_settings()?;
+        self.lock().run_report = None;
+        // Planned from the machine as it is now, never from an earlier preview.
+        let Planned {
+            snapshot,
+            plan,
+            added,
+        } = self.plan_now(&settings)?;
 
-        // With auto-scan on, this run also parks the low-risk finds. The saved
-        // targets are untouched; the journal records what actually happened.
         let mut log = Vec::new();
-        let profile = if settings.auto_scan {
-            let report = self.report(&settings.profile, &snapshot)?;
-            let added = crate::scan::low_risk_additions(&report.recommendations);
-            if !added.is_empty() {
-                let line = LogLine {
-                    label: format!("Scan added {} low-risk target(s)", added.len()),
-                    ok: true,
-                    detail: Some(
-                        added
-                            .iter()
-                            .map(|r| r.name.as_str())
-                            .collect::<Vec<_>>()
-                            .join(", "),
-                    ),
-                };
-                progress(line.clone());
-                log.push(line);
-            }
-            cq_core::recommend::apply(&settings.profile, &added)
+        if !added.is_empty() {
+            let line = LogLine {
+                label: format!("Scan added {} low-risk target(s)", added.len()),
+                ok: true,
+                detail: Some(
+                    added
+                        .iter()
+                        .map(|r| r.name.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                ),
+            };
+            progress(line.clone());
+            log.push(line);
+        }
+        // Read by the engine just before the first step, so the figures are
+        // this run's and not whatever an open window last happened to poll.
+        // A run with nothing to do is not measured.
+        let before = if plan.steps.is_empty() {
+            None
         } else {
-            settings.profile.clone()
+            self.measure()
         };
-        let plan = build_plan(
-            &profile,
-            &snapshot,
-            cq_platform::current_pid(),
-            self.platform.os(),
-            &caps,
-        );
 
         let mut journal = Journal::new(now());
         journal.began = Some(self.platform.marker());
         journal.save(&self.data_dir)?;
+        let mut took_effect = Vec::with_capacity(plan.steps.len());
         for step in &plan.steps {
             let line = match self.run_journaled(step, snapshot.power_plan.as_ref(), &mut journal) {
                 Ok(line) => line,
                 Err(error) => return Err(self.stop_unrecorded(journal, log, error)),
             };
+            took_effect.push(line.ok && line.detail.is_none());
             progress(line.clone());
             log.push(line);
         }
+        let run_report = before.and_then(|before| {
+            let after = self.measure()?;
+            Some(RunReport::measured(
+                &before,
+                &after,
+                &plan.steps,
+                &took_effect,
+                &snapshot.processes,
+            ))
+        });
         let summary = journal.summary();
         let mut inner = self.lock();
         inner.journal = Some(journal);
         inner.log = log;
         inner.skipped = plan.skipped;
+        inner.run_report = run_report;
         inner.recovered = false;
         Ok(summary)
     }
@@ -363,7 +359,9 @@ impl Drop for BusyGuard<'_> {
     }
 }
 
+mod preview;
 mod recovery;
+mod report;
 mod restore;
 mod steps;
 

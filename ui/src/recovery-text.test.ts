@@ -16,6 +16,7 @@ function state(over: Partial<EngineState>): EngineState {
       power_changed: false,
       memory_purged: false,
     },
+    run_report: null,
     skipped: [],
     log: [],
     capabilities: {

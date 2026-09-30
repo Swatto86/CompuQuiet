@@ -59,6 +59,18 @@
             </div>
           </section>
           <p id="hero-plan" class="plan"></p>
+          <details id="preview" class="preview">
+            <summary>Preview what one press would do right now</summary>
+            <div class="preview-body">
+              <p id="preview-status" class="muted" aria-live="polite"></p>
+              <h3>It would</h3>
+              <ul id="preview-steps" class="plain"></ul>
+              <p id="preview-scan" class="muted" hidden></p>
+              <h3>It would leave alone</h3>
+              <ul id="preview-left" class="plain"></ul>
+              <button id="preview-refresh" type="button" class="small">Look again</button>
+            </div>
+          </details>
           <p class="tray-hint muted">
             <span id="close-hint">Closing this window leaves CompuQuiet in the tray. Right-click that icon for the same
             button, to open this window, or to quit.</span>
@@ -82,7 +94,7 @@
               <span class="stat-big" id="proc-value">—</span>
             </div>
             <div class="stat">
-              <span class="stat-label">Memory freed</span>
+              <span class="stat-label" title="Measured by CompuQuiet around the run; approximate">Memory freed</span>
               <span class="stat-big accent" id="freed-value">—</span>
             </div>
           </div>
@@ -218,6 +230,10 @@
               <label class="choice"><input type="checkbox" id="set-auto-scan" />
                 <span>Also park low-risk finds from a quick scan</span>
                 <span class="choice-help">For that run only. Medium-risk programs are never parked unless you tick them on Scan, and the saved park list is not edited. The power plan and memory purge follow your Park list settings, never the scan.</span>
+              </label>
+              <label class="choice"><input type="checkbox" id="set-battery" />
+                <span>Use the performance power plan and memory purge on battery too</span>
+                <span class="choice-help">Off by default: on battery they drain the charge and heat a laptop, so they are skipped and listed under what is left alone. A desktop, or a PC on mains, is never affected.</span>
               </label>
               <label class="row-label"><span>Theme</span>
                 <select id="set-theme"><option value="system">Match system</option><option value="dark">Dark</option><option value="light">Light</option></select>

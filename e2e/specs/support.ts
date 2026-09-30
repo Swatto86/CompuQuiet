@@ -46,6 +46,17 @@ export async function text(selector: string): Promise<string> {
   );
 }
 
+/** The DOM text of every element matching `selector`, in order. */
+export async function texts(selector: string): Promise<string[]> {
+  return browser.execute(
+    (sel: string) =>
+      Array.from(document.querySelectorAll(sel)).map(
+        (element) => element.textContent?.trim() ?? "",
+      ),
+    selector,
+  );
+}
+
 export async function waitForPill(
   expected: string,
   timeout = 30_000,
@@ -181,6 +192,14 @@ export function fakeFail(
 
 export function fakeHeal(): Promise<void> {
   return invokeCommand("fake_heal", {});
+}
+
+/**
+ * Make the fake machine run on battery (true), on mains (false) or have no
+ * battery at all (null).
+ */
+export function fakeBattery(onBattery: boolean | null): Promise<void> {
+  return invokeCommand("fake_battery", { onBattery });
 }
 
 /**
