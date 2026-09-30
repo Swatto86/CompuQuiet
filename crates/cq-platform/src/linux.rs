@@ -1,12 +1,15 @@
 //! The Linux adapter: signals for processes, `systemctl` for services
 //! (system units authenticate through polkit; `user:` units need nothing),
 //! `powerprofilesctl` for the power profile, and the page cache drop through
-//! `pkexec` when not root.
+//! `pkexec` when not root. Which programs have a window is read from X11
+//! only (`x11.rs`); a Wayland session has no such list.
 
 use std::path::Path;
 use std::time::Duration;
 
-use cq_core::{Capabilities, PowerPlan, ServiceInfo, ServiceState, Snapshot, SystemStats};
+use cq_core::{
+    Activity, Capabilities, PowerPlan, ServiceInfo, ServiceState, Snapshot, SystemStats,
+};
 
 use crate::Platform;
 use crate::awake;
@@ -18,6 +21,7 @@ use crate::unix;
 mod audio;
 mod battery;
 mod units;
+mod x11;
 
 pub struct Linux {
     sampler: Sampler,
@@ -264,6 +268,10 @@ impl Platform for Linux {
 
     fn audio_users(&self) -> Result<Vec<u32>> {
         audio::users()
+    }
+
+    fn activity(&self) -> Activity {
+        x11::current()
     }
 
     fn close(&self, pid: u32, start_time: u64) -> Result<()> {

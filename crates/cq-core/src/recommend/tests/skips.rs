@@ -90,3 +90,58 @@ fn workloads_and_the_family_of_the_program_in_front_are_not_guessed_at() {
     assert!(names.contains(&"game-helper.exe".to_string()), "{names:?}");
     assert!(!names.iter().any(|n| n == "python.exe" || n == "vmmemWSL"));
 }
+
+#[test]
+fn a_helper_of_a_program_with_a_window_is_not_a_program_without_one() {
+    // A Mac app's renderers run from their own executable, named after the
+    // app; a Linux program can start copies of itself under other names.
+    // Neither owns a window, but freezing one freezes the program.
+    let mut profile = Profile::default_for(Os::Linux);
+    profile.processes.clear();
+    profile.services.clear();
+    profile.power = PowerPolicy::Leave;
+    let at = |pid, name: &str, exe: &str, mib| ProcessInfo {
+        exe: Some(PathBuf::from(exe)),
+        ..process(pid, name, mib)
+    };
+    let snapshot = Snapshot {
+        processes: vec![
+            at(30, "acme", "/opt/acme/acme", 300),
+            at(31, "acme-renderer", "/opt/acme/acme", 900),
+            at(
+                32,
+                "Notes",
+                "/Applications/Notes.app/Contents/MacOS/Notes",
+                300,
+            ),
+            at(
+                33,
+                "Notes Helper (Renderer)",
+                "/Applications/Notes.app/Contents/Frameworks/Notes Helper.app/Contents/MacOS/Notes Helper",
+                900,
+            ),
+            // A different program that happens to be named alike, and one
+            // that shares nothing with a window.
+            at(34, "Notes Helperd", "/usr/local/bin/notes-helperd", 900),
+            at(35, "render-farm", "/opt/farm/render-farm", 900),
+        ],
+        ..Snapshot::default()
+    };
+    let activity = Activity {
+        known: true,
+        foreground_pid: None,
+        windowed_pids: vec![30, 32],
+    };
+    let scan = recommend(
+        &profile,
+        &snapshot,
+        &stats(0),
+        &activity,
+        1,
+        Os::Linux,
+        &caps(),
+    );
+    let mut names: Vec<_> = scan.iter().map(|i| i.name.as_str()).collect();
+    names.sort_unstable();
+    assert_eq!(names, vec!["Notes Helperd", "render-farm"]);
+}

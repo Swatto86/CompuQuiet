@@ -199,7 +199,9 @@ export class Scan {
     if (this.report.cached_bytes > 0)
       parts.push(`${formatBytes(this.report.cached_bytes)} cached`);
     if (!this.report.activity_known)
-      parts.push("unknown programs are not guessed on this platform");
+      parts.push(
+        "unknown programs are not guessed: this system cannot say which have a window",
+      );
     summary.textContent = parts.join(" · ");
 
     if (items.length === 0) {

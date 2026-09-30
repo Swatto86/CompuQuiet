@@ -1,11 +1,14 @@
 //! The macOS adapter: signals for processes and `launchctl` for the user's
 //! launch agents. macOS has no power profile to switch, and the cache purge
 //! needs root, so both are reported as unavailable rather than half-done.
+//! Which programs are apps the user can see comes from `lsappinfo` (`apps.rs`).
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use cq_core::{Capabilities, PowerPlan, ServiceInfo, ServiceState, Snapshot, SystemStats};
+use cq_core::{
+    Activity, Capabilities, PowerPlan, ServiceInfo, ServiceState, Snapshot, SystemStats,
+};
 
 use crate::Platform;
 use crate::awake;
@@ -13,6 +16,8 @@ use crate::error::{PlatformError, Result};
 use crate::procs::Sampler;
 use crate::spawn::{absolute, app_bundle, run_tool, run_tool_within, spawn_detached};
 use crate::unix;
+
+mod apps;
 
 pub struct MacOs {
     sampler: Sampler,
@@ -199,6 +204,10 @@ impl Platform for MacOs {
 
     fn speed_up(&self, pid: u32, start_time: u64, previous: Option<&cq_core::Pace>) -> Result<()> {
         unix::speed_up(&self.sampler, pid, start_time, previous)
+    }
+
+    fn activity(&self) -> Activity {
+        apps::current()
     }
 
     fn close(&self, pid: u32, start_time: u64) -> Result<()> {

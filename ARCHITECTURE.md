@@ -136,7 +136,9 @@ OS, each with a reason and a `Risk`), running services from the catalogue, a
 non-performance power plan, a file cache above 1 GB, and, only when the
 platform can report windows, unknown processes over 200 MB or 3% CPU that
 own none, except the workloads in `catalogue::WORKLOADS` (interpreters, local
-AI servers, the WSL VM) and the family of the program in front. Names on the
+AI servers, the WSL VM), the family of the program in front and the helpers of
+a program that has a window (a copy of its executable under another name, or a
+Mac app's "Name Helper (Renderer)": freezing one freezes the program). Names on the
 keep-alive list, services included, are skipped. Anything the profile already
 covers is returned marked `already_targeted` so the page can grey it out.
 `recommend::apply` folds accepted finds into a profile without touching
@@ -151,8 +153,21 @@ actually happened, so Restore is unchanged. Removing a target on the Targets
 tab adds its name to the keep-alive list ("Never touch"), because the scan
 would otherwise find a known target again on every run. Window ownership comes from
 `EnumWindows` on Windows (a Store app's own process owns only a child window
-of its frame, so those are read too); Linux and macOS report
-`Activity::known = false` and the scanner then names only recognised software.
+of its frame, so those are read too). Linux reads an X11 session with `xprop`
+(`linux/x11.rs`): the window manager's `_NET_CLIENT_LIST`, `_NET_ACTIVE_WINDOW`
+and each window's `_NET_WM_PID`, one call per window within a 4 s budget. It
+reports `known = false` on Wayland (there is no list of other programs'
+windows, and XWayland's holds only the older programs, so a program would read
+as windowless), when a window names no process, or when the list cannot be
+read whole. A Flatpak app's window names its PID inside the sandbox, so that
+program can read as windowless: a Medium, unticked suggestion. macOS asks
+`lsappinfo list` and `front` (`macos/apps.rs`), which says how each registered
+app shows itself, not whether a window is open, so every `Foreground` or
+`UIElement` app counts as having one and only `BackgroundOnly` ones and
+programs Launch Services does not list are candidates. Its output is for
+people: anything not understood (no entry with both `pid` and `type`) reports
+`known = false`. Where `known` is false the scanner names only recognised
+software.
 
 ## Platform adapters
 

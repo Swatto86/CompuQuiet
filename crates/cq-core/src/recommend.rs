@@ -5,8 +5,9 @@
 //! software; running services from the catalogue; and, when the platform can
 //! say which processes own a visible window, large processes that own none
 //! (never the workloads in `catalogue::WORKLOADS`, nor the family of the
-//! program in front). Plus the two system-level savings: a non-performance
-//! power plan and a large file cache.
+//! program in front, nor the helpers of a program that has one). Plus the
+//! two system-level savings: a non-performance power plan and a large file
+//! cache.
 
 use std::collections::{HashMap, HashSet};
 
@@ -15,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use crate::catalogue;
 pub use crate::catalogue::Risk;
 use crate::plan::Capabilities;
-use crate::policy::{is_critical, matches, normalize};
+use crate::policy::{is_critical, is_helper_of, matches, normalize};
 use crate::profile::{Os, PowerPolicy, ProcessAction, Profile};
 use crate::snapshot::{Activity, ProcessInfo, ServiceState, Snapshot, SystemStats};
 
@@ -214,6 +215,16 @@ fn foreground_family(snapshot: &Snapshot, activity: &Activity) -> HashSet<u32> {
     family
 }
 
+/// Is `process` part of a program that owns a window: a copy of its
+/// executable under another name (Linux), or the helper a Mac app starts
+/// under its own name? Freezing it freezes that program.
+fn helps_a_windowed_program(process: &ProcessInfo, windowed: &[&ProcessInfo]) -> bool {
+    windowed.iter().any(|owner| {
+        (process.exe.is_some() && process.exe == owner.exe)
+            || is_helper_of(&owner.name, &process.name)
+    })
+}
+
 fn recommend_processes(
     profile: &Profile,
     snapshot: &Snapshot,
@@ -224,6 +235,11 @@ fn recommend_processes(
 ) {
     let windowed: HashSet<u32> = activity.windowed_pids.iter().copied().collect();
     let family = foreground_family(snapshot, activity);
+    let owners: Vec<&ProcessInfo> = snapshot
+        .processes
+        .iter()
+        .filter(|p| windowed.contains(&p.pid))
+        .collect();
     for group in group_by_name(snapshot, self_pid, os) {
         if kept_alive(profile, &group) || workload(&group) {
             continue;
@@ -252,6 +268,13 @@ fn recommend_processes(
                     continue;
                 }
                 if memory < HEAVY_MEMORY_BYTES && cpu < HEAVY_CPU_PERCENT {
+                    continue;
+                }
+                if group
+                    .processes
+                    .iter()
+                    .any(|p| helps_a_windowed_program(p, &owners))
+                {
                     continue;
                 }
                 (

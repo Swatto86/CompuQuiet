@@ -75,12 +75,11 @@ does not show.
 - **2026-09-30: a program with sound running is left alone** (`guard_audio`,
   helpers included, reason shown). It only removes steps, so a platform that
   cannot tell changes nothing.
-- **Fake platform behind a cargo feature** for the e2e suite, which drives the
-  real binary with only the OS adapter swapped; the gate asserts it is never a
-  default.
+- **The fake platform is a cargo feature** for the e2e suite (real binary,
+  swapped OS adapter); the gate asserts it is never a default.
 - **2026-09-25: GitHub is the only remote.** Origin has no runners or
-  releases; `Swatto86/CompuQuiet` holds source, workflows and releases, and
-  Swatto mirrors it to Origin. Push to `origin` (GitHub) only.
+  releases; `Swatto86/CompuQuiet` is the source of truth; Swatto mirrors
+  it to Origin. Push to `origin` (GitHub) only.
 - **2026-09-27: updates install themselves.** `tauri-plugin-updater` checks
   `latest.json` on the GitHub release when idle; the release workflow signs
   each bundle with the minisign key in `TAURI_SIGNING_PRIVATE_KEY` (public
@@ -97,8 +96,9 @@ does not show.
 - **2026-09-19 (1.1.0): the scanner acts on low risk only.** `auto_scan` is
   on by default and parks low-risk finds for that run without editing the
   saved targets; medium-risk finds are shown on the Scan tab, never applied
-  unasked. Unknown programs are suggested only where the platform can prove
-  they own no window (Windows). Catalogue entries need a reason and a risk.
+  unasked. Unknown programs are suggested only where the platform can say
+  which own a window (Windows, macOS, X11), never a helper of one that does.
+  Catalogue entries need a reason and a risk.
 - **Linux elevation is per action through polkit** (`systemctl` for system
   units, `pkexec` for the cache drop), never a root relaunch of the GUI.
   macOS reports power and memory actions as unavailable.
