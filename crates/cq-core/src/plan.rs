@@ -11,7 +11,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use crate::policy::{is_critical, is_helper_of, matches, normalize};
+use crate::policy::{is_critical, is_critical_service, is_helper_of, matches, normalize};
 use crate::profile::{Os, PowerPolicy, ProcessAction, Profile};
 use crate::snapshot::{ProcessInfo, ServiceState, Snapshot};
 
@@ -91,7 +91,7 @@ pub fn build_plan(
         }
     }
 
-    plan_services(profile, snapshot, caps, &mut plan);
+    plan_services(profile, snapshot, os, caps, &mut plan);
     plan_processes(profile, snapshot, self_pid, os, &mut plan);
 
     if profile.purge_memory {
@@ -107,8 +107,22 @@ pub fn build_plan(
     plan
 }
 
-fn plan_services(profile: &Profile, snapshot: &Snapshot, caps: &Capabilities, plan: &mut Plan) {
+fn plan_services(
+    profile: &Profile,
+    snapshot: &Snapshot,
+    os: Os,
+    caps: &Capabilities,
+    plan: &mut Plan,
+) {
     for target in profile.services.iter().filter(|target| target.enabled) {
+        if is_critical_service(&target.name, os) {
+            plan.skip(&target.name, "protected: essential to the system");
+            continue;
+        }
+        if profile.keeps_alive(&target.name) {
+            plan.skip(&target.name, "on your keep-alive list");
+            continue;
+        }
         let wanted = normalize(&target.name);
         let Some(service) = snapshot
             .services
@@ -145,11 +159,7 @@ fn plan_processes(profile: &Profile, snapshot: &Snapshot, self_pid: u32, os: Os,
             plan.skip(&target.name, "protected: essential to the desktop");
             continue;
         }
-        if profile
-            .keep_alive
-            .iter()
-            .any(|kept| normalize(kept) == normalize(&target.name))
-        {
+        if profile.keeps_alive(&target.name) {
             plan.skip(&target.name, "on your keep-alive list");
             continue;
         }
@@ -158,6 +168,7 @@ fn plan_processes(profile: &Profile, snapshot: &Snapshot, self_pid: u32, os: Os,
         // ends them with it.
         let with_helpers = os == Os::MacOs && target.action == ProcessAction::Suspend;
         let mut matched: Vec<&ProcessInfo> = Vec::new();
+        let mut spared = false;
         for process in &snapshot.processes {
             if process.pid == self_pid || claimed.contains(&process.pid) {
                 continue;
@@ -169,6 +180,16 @@ fn plan_processes(profile: &Profile, snapshot: &Snapshot, self_pid: u32, os: Os,
                 continue;
             }
             if is_critical(&process.name, os) {
+                continue;
+            }
+            // The kept name may be how this one process shows (a Linux name
+            // cut to 15 bytes) rather than the target's whole name.
+            if profile
+                .keep_alive
+                .iter()
+                .any(|kept| matches(kept, &process.name, stem.as_deref()))
+            {
+                spared = true;
                 continue;
             }
             claimed.insert(process.pid);
@@ -191,7 +212,12 @@ fn plan_processes(profile: &Profile, snapshot: &Snapshot, self_pid: u32, os: Os,
         }
         plan.steps.extend(steps);
         if matched.is_empty() {
-            plan.skip(&target.name, "not running");
+            let reason = if spared {
+                "on your keep-alive list"
+            } else {
+                "not running"
+            };
+            plan.skip(&target.name, reason);
         }
     }
 }

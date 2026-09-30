@@ -38,6 +38,8 @@ const fn s(name: &'static str, reason: &'static str, risk: Risk) -> KnownService
 }
 
 const SYNC: &str = "cloud sync client; resumes syncing on restore";
+const ON_DEMAND: &str =
+    "cloud sync client; files not downloaded yet will not open while it is parked";
 const UPDATER: &str = "background updater; it will run again later";
 const TELEMETRY: &str = "telemetry or assistant that does nothing for a game";
 const CHAT: &str = "chat client; suspend keeps it signed in";
@@ -50,12 +52,13 @@ const VOICE: &str = "voice chat; keep it if you are talking while you play";
 const DEV: &str = "developer tooling that idles in the background";
 
 const COMMON_PROCESSES: &[KnownProcess] = &[
-    p("OneDrive", SYNC, Risk::Low),
+    p("OneDrive", ON_DEMAND, Risk::Low),
     p("Dropbox", SYNC, Risk::Low),
-    p("GoogleDriveFS", SYNC, Risk::Low),
-    p("Google Drive", SYNC, Risk::Low),
+    // Serves a whole drive letter: anything that touches it stalls while parked.
+    p("GoogleDriveFS", ON_DEMAND, Risk::Medium),
+    p("Google Drive", ON_DEMAND, Risk::Medium),
     p("iCloudDrive", SYNC, Risk::Low),
-    p("Nextcloud", SYNC, Risk::Low),
+    p("Nextcloud", ON_DEMAND, Risk::Low),
     p("insync", SYNC, Risk::Low),
     p("Teams", CHAT, Risk::Low),
     p("ms-teams", CHAT, Risk::Low),
@@ -70,7 +73,11 @@ const COMMON_PROCESSES: &[KnownProcess] = &[
     p("CoreSync", CREATIVE, Risk::Low),
     p("Creative Cloud", CREATIVE, Risk::Low),
     p("Adobe Desktop Service", CREATIVE, Risk::Low),
-    p("AdobeIPCBroker", CREATIVE, Risk::Low),
+    p(
+        "AdobeIPCBroker",
+        "used by every open Adobe app; parking it can stall them",
+        Risk::Medium,
+    ),
     p("AGSService", CREATIVE, Risk::Low),
     p("chrome", BROWSER, Risk::Medium),
     p("msedge", BROWSER, Risk::Medium),
@@ -176,7 +183,6 @@ const WINDOWS_SERVICES: &[KnownService] = &[
     s("Fax", "fax service", Risk::Low),
     s("RetailDemo", "retail demo mode", Risk::Low),
     s("wisvc", "Windows Insider service", Risk::Low),
-    s("iphlpsvc", "IPv6 transition tunnels", Risk::Low),
     s("SEMgrSvc", "payments and NFC", Risk::Low),
     s(
         "CDPSvc",
@@ -203,6 +209,11 @@ const WINDOWS_SERVICES: &[KnownService] = &[
     s(
         "XboxNetApiSvc",
         "Xbox networking; Game Pass games need it",
+        Risk::Medium,
+    ),
+    s(
+        "iphlpsvc",
+        "port forwarding (netsh portproxy, WSL, Docker) and Xbox Teredo tunnels",
         Risk::Medium,
     ),
 ];
@@ -285,6 +296,36 @@ const MACOS_SERVICES: &[KnownService] = &[
     ),
 ];
 
+/// Programs the scan never offers, however large they are and whether or not
+/// they own a window: what this app exists to give resources to (a local
+/// model server, the WSL2 VM it runs in) and the interpreters that stand for
+/// any of a dozen unrelated programs under one name.
+pub const WORKLOADS: &[&str] = &[
+    "python",
+    "python3",
+    "pythonw",
+    "node",
+    "java",
+    "javaw",
+    "dotnet",
+    "bun",
+    "deno",
+    "ollama",
+    "ollama app",
+    "ollama_llama_server",
+    "llama-server",
+    "llama-cli",
+    "koboldcpp",
+    "LM Studio",
+    "lms",
+    "vmmem",
+    "vmmemWSL",
+    "vmwp",
+    "VBoxHeadless",
+    "qemu-system-x86_64",
+    "wslhost",
+];
+
 pub fn processes(os: Os) -> impl Iterator<Item = &'static KnownProcess> {
     let specific: &[KnownProcess] = match os {
         Os::Windows => WINDOWS_PROCESSES,
@@ -303,32 +344,4 @@ pub fn services(os: Os) -> &'static [KnownService] {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::policy::is_critical;
-
-    #[test]
-    fn the_catalogue_never_names_a_critical_process_and_has_no_duplicates() {
-        for os in [Os::Windows, Os::Linux, Os::MacOs] {
-            let mut seen = std::collections::HashSet::new();
-            for known in processes(os) {
-                assert!(!is_critical(known.name, os), "{:?}: {}", os, known.name);
-                assert!(!known.reason.is_empty());
-                assert!(
-                    seen.insert(crate::policy::normalize(known.name)),
-                    "{:?} lists {} twice",
-                    os,
-                    known.name
-                );
-            }
-            let mut services_seen = std::collections::HashSet::new();
-            for known in services(os) {
-                assert!(
-                    services_seen.insert(known.name.to_ascii_lowercase()),
-                    "{}",
-                    known.name
-                );
-            }
-        }
-    }
-}
+mod tests;

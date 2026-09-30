@@ -177,6 +177,7 @@ impl Engine {
         if let Some(error) = &self.lock().unreadable_settings {
             return Err(Self::settings_unreadable(error));
         }
+        settings.refuse_new_critical_services(&self.lock().settings, self.platform.os())?;
         settings.save(&self.data_dir)?;
         self.lock().settings = settings;
         Ok(())

@@ -317,3 +317,5 @@ fn the_catalogue_knows_each_platforms_own_names() {
     assert!(units.contains(&"user:localsearch-3"));
     assert!(units.contains(&"user:tracker-miner-fs-3"));
 }
+
+mod skips;

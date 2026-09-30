@@ -30,6 +30,14 @@ function checkName(name: string, kind: string): string | null {
   return null;
 }
 
+/** `list` plus `name`, unless a name that compares equal is already in it. */
+function withName(list: string[], name: string): string[] {
+  const key = normalizeName(name);
+  return list.some((kept) => normalizeName(kept) === key)
+    ? list
+    : [...list, name];
+}
+
 export function addProcess(
   profile: Profile,
   name: string,
@@ -42,7 +50,10 @@ export function addProcess(
     return { ok: false, reason: `${name.trim()} is already in the list` };
   }
   if (profile.keep_alive.some((kept) => normalizeName(kept) === key)) {
-    return { ok: false, reason: `${name.trim()} is on the keep-alive list` };
+    return {
+      ok: false,
+      reason: `${name.trim()} is on the Never touch list; remove it there first`,
+    };
   }
   return {
     ok: true,
@@ -63,6 +74,16 @@ export function addService(profile: Profile, name: string): EditResult {
   if (profile.services.some((target) => target.name.toLowerCase() === key)) {
     return { ok: false, reason: `${name.trim()} is already in the list` };
   }
+  if (
+    profile.keep_alive.some(
+      (kept) => normalizeName(kept) === normalizeName(name),
+    )
+  ) {
+    return {
+      ok: false,
+      reason: `${name.trim()} is on the Never touch list; remove it there first`,
+    };
+  }
   return {
     ok: true,
     profile: {
@@ -73,13 +94,13 @@ export function addService(profile: Profile, name: string): EditResult {
 }
 
 export function addKeepAlive(profile: Profile, name: string): EditResult {
-  const problem = checkName(name, "program");
+  const problem = checkName(name, "program or service");
   if (problem) return { ok: false, reason: problem };
   const key = normalizeName(name);
   if (profile.keep_alive.some((kept) => normalizeName(kept) === key)) {
     return { ok: false, reason: `${name.trim()} is already protected` };
   }
-  // A program cannot be both parked and protected; protection wins.
+  // Nothing can be both parked and protected; protection wins.
   return {
     ok: true,
     profile: {
@@ -88,21 +109,35 @@ export function addKeepAlive(profile: Profile, name: string): EditResult {
       processes: profile.processes.filter(
         (target) => normalizeName(target.name) !== key,
       ),
+      services: profile.services.filter(
+        (target) => normalizeName(target.name) !== key,
+      ),
     },
   };
 }
 
+/**
+ * Removing a row is a decision, not just a deletion: a scan finds a known
+ * target that is missing from the list and parks it again on every run. So
+ * the name goes under Never touch, where it shows and can be taken back.
+ */
 export function removeProcess(profile: Profile, index: number): Profile {
+  const removed = profile.processes[index];
+  if (!removed) return profile;
   return {
     ...profile,
     processes: profile.processes.filter((_, i) => i !== index),
+    keep_alive: withName(profile.keep_alive, removed.name),
   };
 }
 
 export function removeService(profile: Profile, index: number): Profile {
+  const removed = profile.services[index];
+  if (!removed) return profile;
   return {
     ...profile,
     services: profile.services.filter((_, i) => i !== index),
+    keep_alive: withName(profile.keep_alive, removed.name),
   };
 }
 

@@ -3,11 +3,12 @@
 //!
 //! Three sources, in order of confidence: the catalogue of known background
 //! software; running services from the catalogue; and, when the platform can
-//! say which processes own a visible window, large processes that own none.
-//! Plus the two system-level savings: a non-performance power plan and a
-//! large file cache.
+//! say which processes own a visible window, large processes that own none
+//! (never the workloads in `catalogue::WORKLOADS`, nor the family of the
+//! program in front). Plus the two system-level savings: a non-performance
+//! power plan and a large file cache.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
 
@@ -177,6 +178,42 @@ fn kept_alive(profile: &Profile, group: &Group<'_>) -> bool {
     })
 }
 
+fn workload(group: &Group<'_>) -> bool {
+    catalogue::WORKLOADS.iter().any(|known| {
+        group
+            .processes
+            .iter()
+            .any(|p| matches(known, &p.name, p.exe_stem().as_deref()))
+    })
+}
+
+/// The program in front and everything it started or was started by. Its
+/// helpers own no window either, but freezing one freezes the program.
+fn foreground_family(snapshot: &Snapshot, activity: &Activity) -> HashSet<u32> {
+    let Some(front) = activity.foreground_pid else {
+        return HashSet::new();
+    };
+    let parents: HashMap<u32, Option<u32>> = snapshot
+        .processes
+        .iter()
+        .map(|p| (p.pid, p.parent))
+        .collect();
+    // Bounded, so PIDs reused into a cycle cannot loop forever.
+    let limit = parents.len();
+    let ancestors = std::iter::successors(Some(front), |pid| parents.get(pid).copied().flatten())
+        .take(limit + 1);
+    let mut family: HashSet<u32> = ancestors.collect();
+    for process in &snapshot.processes {
+        let mut chain =
+            std::iter::successors(process.parent, |pid| parents.get(pid).copied().flatten())
+                .take(limit);
+        if chain.any(|pid| pid == front) {
+            family.insert(process.pid);
+        }
+    }
+    family
+}
+
 fn recommend_processes(
     profile: &Profile,
     snapshot: &Snapshot,
@@ -186,8 +223,9 @@ fn recommend_processes(
     out: &mut Vec<Recommendation>,
 ) {
     let windowed: HashSet<u32> = activity.windowed_pids.iter().copied().collect();
+    let family = foreground_family(snapshot, activity);
     for group in group_by_name(snapshot, self_pid, os) {
-        if kept_alive(profile, &group) {
+        if kept_alive(profile, &group) || workload(&group) {
             continue;
         }
         let memory: u64 = group.processes.iter().map(|p| p.memory_bytes).sum();
@@ -209,7 +247,8 @@ fn recommend_processes(
                     .processes
                     .iter()
                     .any(|p| Some(p.pid) == activity.foreground_pid);
-                if has_window || foreground {
+                let with_foreground = group.processes.iter().any(|p| family.contains(&p.pid));
+                if has_window || foreground || with_foreground {
                     continue;
                 }
                 if memory < HEAVY_MEMORY_BYTES && cpu < HEAVY_CPU_PERCENT {
@@ -256,6 +295,11 @@ fn recommend_services(
         };
         // A service that others need cannot be stopped without stopping them.
         if service.state != ServiceState::Running || !service.needed_by.is_empty() {
+            continue;
+        }
+        // Removing a service from the list, or naming it under "Never touch",
+        // is a promise the scan keeps too.
+        if profile.keeps_alive(&service.name) {
             continue;
         }
         out.push(Recommendation {

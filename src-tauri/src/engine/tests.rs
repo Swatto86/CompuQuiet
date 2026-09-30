@@ -50,6 +50,28 @@ fn quiet_then_restore_round_trips_through_the_journal_on_disk() {
 }
 
 #[test]
+fn saving_an_essential_service_is_refused_with_the_reason_and_saves_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let engine = engine(dir.path());
+    let mut settings = engine.settings();
+    settings.profile.services.push(cq_core::ServiceTarget {
+        name: "AudioSrv".into(),
+        enabled: true,
+    });
+    let error = engine.save_settings(settings).unwrap_err();
+    assert!(error.message.contains("AudioSrv is essential"), "{error:?}");
+    assert!(
+        !engine
+            .settings()
+            .profile
+            .services
+            .iter()
+            .any(|target| target.name == "AudioSrv")
+    );
+    assert!(!cq_core::Settings::path(dir.path()).exists());
+}
+
+#[test]
 fn a_second_run_while_quiet_is_refused_and_rows_fold_instances() {
     let dir = tempfile::tempdir().unwrap();
     let engine = engine(dir.path());

@@ -66,6 +66,27 @@ pub fn is_critical(process_name: &str, os: Os) -> bool {
         .any(|critical| normalize(critical) == name)
 }
 
+/// Never stop: the services sound, the network, the firewall, sign-in and the
+/// desktop session run on. A profile cannot name one, for the same reason it
+/// cannot name `dwm`: stopping it leaves no working session to click Restore.
+pub fn is_critical_service(name: &str, os: Os) -> bool {
+    let name = name.trim();
+    match os {
+        Os::Windows => WINDOWS_CRITICAL_SERVICES
+            .iter()
+            .any(|critical| critical.eq_ignore_ascii_case(name)),
+        Os::Linux => {
+            let unit = name.strip_prefix("user:").unwrap_or(name).trim();
+            let unit = unit.strip_suffix(".service").unwrap_or(unit);
+            let unit = unit.to_ascii_lowercase();
+            // systemd's own daemons (logind, resolved, udevd, ...) are one family.
+            unit.starts_with("systemd-") || LINUX_CRITICAL_SERVICES.contains(&unit.as_str())
+        }
+        // Apple's own launchd labels; third-party updaters use their own.
+        Os::MacOs => name.to_ascii_lowercase().starts_with("com.apple."),
+    }
+}
+
 const COMMON_CRITICAL: &[&str] = &[
     "compuquiet",
     "compuquiet-e2e",
@@ -125,6 +146,65 @@ const WINDOWS_CRITICAL: &[&str] = &[
     "steam",
     "steamwebhelper",
     "msedgewebview2",
+    // WSL2's virtual machine: a suspended one freezes every Linux program in
+    // it, including a model server that has just been given the memory.
+    "vmmem",
+    "vmmemWSL",
+    // Anti-cheat services miss their heartbeat when parked, and the game
+    // that runs them kicks the player.
+    "EasyAntiCheat",
+    "EasyAntiCheat_EOS",
+    "BEService",
+    "vgc",
+    "vgtray",
+    "EAAntiCheat.GameService",
+    "PnkBstrA",
+    "PnkBstrB",
+];
+
+const WINDOWS_CRITICAL_SERVICES: &[&str] = &[
+    "RpcSs",
+    "RpcEptMapper",
+    "DcomLaunch",
+    "PlugPlay",
+    "Power",
+    "LSM",
+    "ProfSvc",
+    "UserManager",
+    "SamSs",
+    "EventLog",
+    "Winmgmt",
+    "CryptSvc",
+    "Schedule",
+    "AudioSrv",
+    "AudioEndpointBuilder",
+    "Dhcp",
+    "Dnscache",
+    "NlaSvc",
+    "netprofm",
+    "nsi",
+    "BFE",
+    "mpssvc",
+    "WinDefend",
+    "wscsvc",
+];
+
+// Lower case, without a `user:` prefix or `.service` suffix.
+const LINUX_CRITICAL_SERVICES: &[&str] = &[
+    "dbus",
+    "dbus-broker",
+    "display-manager",
+    "gdm",
+    "gdm3",
+    "sddm",
+    "lightdm",
+    "networkmanager",
+    "wpa_supplicant",
+    "polkit",
+    "pipewire",
+    "pipewire-pulse",
+    "wireplumber",
+    "pulseaudio",
 ];
 
 const LINUX_CRITICAL: &[&str] = &[
@@ -249,6 +329,38 @@ mod tests {
         assert!(is_critical("WebKitNetworkPr", Os::Linux));
         assert!(is_critical("com.apple.WebKit.WebContent", Os::MacOs));
         assert!(is_critical("msedgewebview2.exe", Os::Windows));
+    }
+
+    #[test]
+    fn the_services_sound_network_and_the_session_run_on_are_critical() {
+        for name in ["AudioSrv", "audiosrv", " BFE ", "Dnscache", "WinDefend"] {
+            assert!(is_critical_service(name, Os::Windows), "{name}");
+        }
+        for name in [
+            "NetworkManager",
+            "NetworkManager.service",
+            "gdm",
+            "user:pipewire",
+            "user:wireplumber.service",
+            "systemd-logind",
+            "systemd-resolved.service",
+        ] {
+            assert!(is_critical_service(name, Os::Linux), "{name}");
+        }
+        assert!(is_critical_service("com.apple.WindowServer", Os::MacOs));
+        assert!(!is_critical_service("Spooler", Os::Windows));
+        assert!(!is_critical_service("cups", Os::Linux));
+        assert!(!is_critical_service("user:tracker-miner-fs-3", Os::Linux));
+        assert!(!is_critical_service("com.google.keystone.agent", Os::MacOs));
+        // A name is critical on the platform that runs it, not on all of them.
+        assert!(!is_critical_service("AudioSrv", Os::Linux));
+    }
+
+    #[test]
+    fn the_wsl_vm_and_anti_cheat_services_are_critical_processes() {
+        for name in ["vmmemWSL", "vmmem", "EasyAntiCheat_EOS.exe", "BEService"] {
+            assert!(is_critical(name, Os::Windows), "{name}");
+        }
     }
 
     #[test]

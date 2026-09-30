@@ -92,15 +92,20 @@ export class Targets {
 
   describe(caps: Capabilities, os: Os): void {
     const hint = byId("service-hint");
+    // Rust refuses these when the list is saved; say so before that.
+    const essential = " Essential ones (sound, network, security) are refused.";
     if (os === "linux")
       hint.textContent =
-        "systemd units; prefix user units with user: (e.g. user:tracker-miner-fs-3).";
+        "systemd units; prefix user units with user: (e.g. user:tracker-miner-fs-3)." +
+        essential;
     else if (os === "mac_os")
       hint.textContent =
-        "launchd agent labels, e.g. com.microsoft.update.agent.";
+        "launchd agent labels, e.g. com.microsoft.update.agent." + essential;
     else if (!caps.services)
       hint.textContent = "Stopping services needs administrator rights.";
-    else hint.textContent = "Windows service names, as shown in services.msc.";
+    else
+      hint.textContent =
+        "Windows service names, as shown in services.msc." + essential;
   }
 
   setProfile(profile: Profile): void {

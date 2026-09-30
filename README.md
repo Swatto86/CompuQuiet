@@ -38,7 +38,9 @@ Your own "never touch" list sits on top of that.
    *Add and free up this PC* adds the ticked finds and parks them.
 3. Review **Park list**: the built-in list of background hogs for your platform,
    with a running/not-running indicator. Add any running program by name,
-   choose Suspend or Close & relaunch, add services, and save.
+   choose Suspend or Close & relaunch, add services, and save. Removing a row
+   adds it to *Never touch*, so a scan does not bring it back; take it off
+   that list to allow that.
 4. Press the big button. With *Also park low-risk finds from a quick scan* on
    (the default), the run also parks those finds without changing your saved
    park list. The activity log shows every step and anything left alone (with

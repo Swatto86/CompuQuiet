@@ -4,9 +4,12 @@
 //! The defaults are a curated catalogue of background hogs per platform —
 //! sync clients, updaters, indexers, telemetry. Nothing a game or a model
 //! server needs is in it, and nothing the desktop needs can be added to it
-//! (see `policy`).
+//! (see `policy`: critical programs, and critical services in the planner and
+//! at save time).
 
 use serde::{Deserialize, Serialize};
+
+use crate::policy::normalize;
 
 /// The operating system the app is running on. Defaults and critical lists
 /// differ per platform, and the acceptance suite needs to choose one.
@@ -75,6 +78,13 @@ pub struct Profile {
 }
 
 impl Profile {
+    /// Has the user promised never to touch `name`? A program or a service,
+    /// compared the way names are everywhere else.
+    pub fn keeps_alive(&self, name: &str) -> bool {
+        let wanted = normalize(name);
+        self.keep_alive.iter().any(|kept| normalize(kept) == wanted)
+    }
+
     pub fn default_for(os: Os) -> Profile {
         let (processes, services) = match os {
             Os::Windows => (WINDOWS_PROCESSES, WINDOWS_SERVICES),
@@ -192,7 +202,7 @@ const MACOS_PROCESSES: &[&str] = &[
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::policy::is_critical;
+    use crate::policy::{is_critical, is_critical_service};
 
     #[test]
     fn every_default_target_is_enabled_and_none_is_critical() {
@@ -209,7 +219,25 @@ mod tests {
                     target.name
                 );
             }
+            for target in &profile.services {
+                assert!(target.enabled, "{:?} {}", os, target.name);
+                assert!(
+                    !is_critical_service(&target.name, os),
+                    "{:?} default stops an essential service: {}",
+                    os,
+                    target.name
+                );
+            }
         }
+    }
+
+    #[test]
+    fn keeping_a_name_alive_compares_it_the_way_targets_are_compared() {
+        let mut profile = Profile::default_for(Os::Windows);
+        profile.keep_alive = vec!["OneDrive.exe".into(), "wsearch".into()];
+        assert!(profile.keeps_alive("onedrive"));
+        assert!(profile.keeps_alive(" WSearch "));
+        assert!(!profile.keeps_alive("SysMain"));
     }
 
     #[test]

@@ -20,8 +20,10 @@ pub struct ScanReport {
     pub cached_bytes: u64,
 }
 
-/// The finds that can be parked without asking: low risk and not already in
-/// the profile. The memory purge is never one of them: it is opt-in, so it is
+/// The finds that can be parked without asking: programs and services that
+/// are low risk and not already in the profile. The power plan and the memory
+/// purge are never among them: each is a switch on the Targets tab, and an
+/// unticked one is a choice (a new profile leaves the purge off), so they are
 /// suggested on the Scan tab and switched on only by the user.
 pub fn low_risk_additions(recommendations: &[Recommendation]) -> Vec<Recommendation> {
     recommendations
@@ -29,7 +31,10 @@ pub fn low_risk_additions(recommendations: &[Recommendation]) -> Vec<Recommendat
         .filter(|item| {
             item.risk == Risk::Low
                 && !item.already_targeted
-                && item.kind != RecommendationKind::MemoryPurge
+                && matches!(
+                    item.kind,
+                    RecommendationKind::Process { .. } | RecommendationKind::Service
+                )
         })
         .cloned()
         .collect()
@@ -149,20 +154,31 @@ mod tests {
                 .all(|r| r.risk == Risk::Low && !r.already_targeted)
         );
         let applied = engine.apply_recommendations(low.clone()).unwrap();
-        assert_eq!(applied.profile.power, cq_core::PowerPolicy::Performance);
         assert!(
-            !low.iter()
-                .any(|r| r.kind == RecommendationKind::MemoryPurge),
-            "the purge is suggested, never applied unasked"
+            !low.iter().any(|r| matches!(
+                r.kind,
+                RecommendationKind::PowerPlan | RecommendationKind::MemoryPurge
+            )),
+            "the power plan and the purge are suggested, never applied unasked"
         );
+        assert_eq!(applied.profile.power, cq_core::PowerPolicy::Leave);
         assert!(!applied.profile.purge_memory);
-        let cache = report
-            .recommendations
-            .iter()
-            .find(|r| r.kind == RecommendationKind::MemoryPurge)
+        let find = |kind: RecommendationKind| {
+            report
+                .recommendations
+                .iter()
+                .find(|r| r.kind == kind)
+                .cloned()
+                .unwrap()
+        };
+        let cache = engine
+            .apply_recommendations(vec![find(RecommendationKind::MemoryPurge)])
             .unwrap();
-        let accepted = engine.apply_recommendations(vec![cache.clone()]).unwrap();
-        assert!(accepted.profile.purge_memory, "accepting it switches it on");
+        assert!(cache.profile.purge_memory, "accepting it switches it on");
+        let power = engine
+            .apply_recommendations(vec![find(RecommendationKind::PowerPlan)])
+            .unwrap();
+        assert_eq!(power.profile.power, cq_core::PowerPolicy::Performance);
         assert!(
             applied
                 .profile
@@ -186,5 +202,35 @@ mod tests {
                 assert!(item.already_targeted, "{}", item.name);
             }
         }
+    }
+
+    #[test]
+    fn auto_scan_parks_what_it_finds_but_leaves_the_switches_as_the_user_set_them() {
+        let dir = tempfile::tempdir().unwrap();
+        let engine = engine(dir.path());
+        let mut settings = engine.settings();
+        settings.auto_scan = true;
+        settings.profile.processes.clear();
+        settings.profile.services.clear();
+        settings.profile.power = cq_core::PowerPolicy::Leave;
+        settings.profile.purge_memory = false;
+        engine.save_settings(settings).unwrap();
+
+        let log = std::cell::RefCell::new(Vec::new());
+        let summary = engine
+            .go_quiet(&|line| log.borrow_mut().push(line.label))
+            .unwrap();
+        let log = log.into_inner();
+        assert!(
+            log.iter().any(|l| l.starts_with("Scan added")),
+            "the scan still adds finds: {log:?}"
+        );
+        assert!(summary.processes_suspended >= 1, "{summary:?}");
+        assert!(!summary.power_changed, "an unticked power plan stays off");
+        assert!(!summary.memory_purged, "an unticked purge stays off");
+        assert!(
+            !log.iter().any(|l| l.contains("power plan")),
+            "no step switched the plan: {log:?}"
+        );
     }
 }

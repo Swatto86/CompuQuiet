@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::CoreError;
+use crate::policy::is_critical_service;
 use crate::profile::{Os, Profile};
 use crate::store::{read_json, write_json};
 
@@ -87,6 +88,29 @@ impl Settings {
     pub fn save(&self, dir: &Path) -> Result<(), CoreError> {
         self.validate()?;
         write_json(&Self::path(dir), self)
+    }
+
+    /// Refuse a service this save adds that Quiet Mode would never stop
+    /// (sound, the network, the firewall, the desktop session), so the user
+    /// hears it now rather than from the run's skipped list. One already
+    /// saved is left alone: a file from an earlier release still loads and
+    /// still saves, and the planner skips it either way.
+    pub fn refuse_new_critical_services(&self, saved: &Settings, os: Os) -> Result<(), CoreError> {
+        let added = self.profile.services.iter().find(|target| {
+            is_critical_service(&target.name, os)
+                && !saved
+                    .profile
+                    .services
+                    .iter()
+                    .any(|old| old.name.eq_ignore_ascii_case(&target.name))
+        });
+        match added {
+            Some(target) => Err(CoreError::Invalid(format!(
+                "{} is essential to the system (sound, the network, security or the desktop), so Quiet Mode never stops it. Remove it from the Services list to save",
+                target.name.trim()
+            ))),
+            None => Ok(()),
+        }
     }
 
     /// Names come from a text field in the webview: bound their length, refuse
@@ -215,6 +239,35 @@ mod tests {
         assert!(value.as_object_mut().unwrap().remove("auto_scan").is_some());
         std::fs::write(Settings::path(dir.path()), value.to_string()).unwrap();
         assert!(Settings::load(dir.path(), Os::Linux).unwrap().auto_scan);
+    }
+
+    #[test]
+    fn a_new_essential_service_is_refused_but_one_already_saved_is_not() {
+        let saved = Settings::default_for(Os::Windows);
+        let mut edited = saved.clone();
+        edited.profile.services.push(crate::profile::ServiceTarget {
+            name: "audiosrv".into(),
+            enabled: true,
+        });
+        let error = edited
+            .refuse_new_critical_services(&saved, Os::Windows)
+            .unwrap_err();
+        assert!(
+            error.to_string().contains("audiosrv is essential"),
+            "{error}"
+        );
+        // The same name on another platform is just a name.
+        edited
+            .refuse_new_critical_services(&saved, Os::Linux)
+            .unwrap();
+        // An earlier release let it in; saving something else still works.
+        edited
+            .refuse_new_critical_services(&edited.clone(), Os::Windows)
+            .unwrap();
+        // ...and the file that holds it still loads.
+        let dir = tempfile::tempdir().unwrap();
+        edited.save(dir.path()).unwrap();
+        assert_eq!(Settings::load(dir.path(), Os::Windows).unwrap(), edited);
     }
 
     #[test]

@@ -170,9 +170,9 @@
               <label class="check"><input type="checkbox" id="opt-power" /> <span>Switch to the performance power plan</span></label>
               <label class="check"><input type="checkbox" id="opt-purge" /> <span>Purge cached memory once everything is parked</span></label>
               <h4>Never touch</h4>
-              <p class="muted">The desktop, input, audio, security and terminals are always protected. Add your own here.</p>
+              <p class="muted">The desktop, input, audio, security and terminals are always protected. Add your own programs or services here. Anything you remove from the lists lands here too, so a scan does not park it again; take it off this list to allow that.</p>
               <form id="keep-add" class="row">
-                <label class="grow"><span class="sr-only">Program to keep alive</span><input id="keep-name" placeholder="Program name" autocomplete="off" /></label>
+                <label class="grow"><span class="sr-only">Program or service to keep alive</span><input id="keep-name" placeholder="Program or service name" autocomplete="off" /></label>
                 <button type="submit" class="small">Add</button>
               </form>
               <ul id="keep-alive" class="chips"></ul>
@@ -214,7 +214,7 @@
               <h3 class="group">When you free up this PC</h3>
               <label class="choice"><input type="checkbox" id="set-auto-scan" />
                 <span>Also park low-risk finds from a quick scan</span>
-                <span class="choice-help">For that run only. Medium-risk programs are never parked unless you tick them on Scan, and the saved park list is not edited.</span>
+                <span class="choice-help">For that run only. Medium-risk programs are never parked unless you tick them on Scan, and the saved park list is not edited. The power plan and memory purge follow your Targets settings, never the scan.</span>
               </label>
               <label class="row-label"><span>Theme</span>
                 <select id="set-theme"><option value="system">Match system</option><option value="dark">Dark</option><option value="light">Light</option></select>

@@ -1,7 +1,8 @@
 /**
  * The scanner against the fake machine: finds are listed with the right
  * defaults, accepted finds become targets and are parked in the same click,
- * and auto-scan parks low-risk finds without touching the saved targets.
+ * and auto-scan parks low-risk finds without touching the saved targets, but
+ * never brings back a target the user removed.
  */
 import { strict as assert } from "node:assert";
 
@@ -19,7 +20,11 @@ interface Journal {
 
 interface SavedSettings {
   auto_scan: boolean;
-  profile: { processes: { name: string }[]; services: { name: string }[] };
+  profile: {
+    processes: { name: string }[];
+    services: { name: string }[];
+    keep_alive: string[];
+  };
 }
 
 interface Row {
@@ -51,6 +56,28 @@ function journalKinds(): string[] {
   return journal.done.map(
     (step) => `${step.kind}${step.name ? `:${step.name}` : ""}`,
   );
+}
+
+async function saveTargets(): Promise<void> {
+  await $("#targets-save").click();
+  await browser.waitUntil(
+    async () => (await $("#targets-status").getText()) === "",
+    { timeout: 5_000, timeoutMsg: "the save did not settle" },
+  );
+}
+
+async function setAutoScan(on: boolean): Promise<void> {
+  await clickTab("settings");
+  if ((await $("#set-auto-scan").isSelected()) !== on)
+    await $("#set-auto-scan").click();
+  await browser.waitUntil(
+    async () => readJson<SavedSettings>("settings.json")?.auto_scan === on,
+    {
+      timeout: 5_000,
+      timeoutMsg: `settings.json did not record auto_scan ${on}`,
+    },
+  );
+  await clickTab("dashboard");
 }
 
 describe("Scan", () => {
@@ -130,35 +157,53 @@ describe("Scan", () => {
     await waitForPill("Ready");
   });
 
-  it("auto-scan parks low-risk finds without changing the saved targets", async () => {
+  it("a removed program and service are not parked again by auto-scan", async () => {
     await clickTab("targets");
     await $('button[aria-label="Remove GoogleUpdate.exe"]').click();
-    await $("#targets-save").click();
-    await browser.waitUntil(
-      async () => (await $("#targets-status").getText()) === "",
-      {
+    await $('button[aria-label="Remove WSearch"]').click();
+    // The promise is on show, and can be taken back.
+    for (const name of ["GoogleUpdate.exe", "WSearch"]) {
+      await $(`button[aria-label="Stop protecting ${name}"]`).waitForExist({
         timeout: 5_000,
-        timeoutMsg: "the save did not settle",
-      },
-    );
+        timeoutMsg: `${name} was not listed under Never touch`,
+      });
+    }
+    await saveTargets();
+    const saved = readJson<SavedSettings>("settings.json")!;
+    assert.ok(saved.profile.keep_alive.includes("GoogleUpdate.exe"));
+    assert.ok(saved.profile.keep_alive.includes("WSearch"));
 
-    await clickTab("settings");
-    await $("#set-auto-scan").click();
-    await browser.waitUntil(
-      async () => readJson<SavedSettings>("settings.json")?.auto_scan === true,
-      {
-        timeout: 5_000,
-        timeoutMsg: "settings.json did not record auto_scan",
-      },
+    await setAutoScan(true);
+    await $("#toggle").click();
+    await waitForPill("Quiet");
+    const kinds = journalKinds();
+    assert.ok(
+      !kinds.includes("process_suspended:GoogleUpdate.exe"),
+      kinds.join(", "),
     );
+    assert.ok(!kinds.includes("service_stopped:WSearch"), kinds.join(", "));
+    assert.doesNotMatch(await $("#log").getText(), /Scan added/);
+    await $("#toggle").click();
+    await waitForPill("Ready");
+  });
 
-    await clickTab("dashboard");
+  it("auto-scan parks low-risk finds without changing the saved targets", async () => {
+    // Taking a program off Never touch lets the scan see it again.
+    await clickTab("targets");
+    await $('button[aria-label="Stop protecting GoogleUpdate.exe"]').click();
+    await saveTargets();
+
+    await setAutoScan(true);
     await $("#toggle").click();
     await waitForPill("Quiet");
     const kinds = journalKinds();
     assert.ok(
       kinds.includes("process_suspended:GoogleUpdate.exe"),
       kinds.join(", "),
+    );
+    assert.ok(
+      !kinds.includes("service_stopped:WSearch"),
+      "the service is still protected",
     );
     assert.match(await $("#log").getText(), /Scan added/);
     const saved = readJson<SavedSettings>("settings.json")!;
@@ -169,14 +214,15 @@ describe("Scan", () => {
 
     await $("#toggle").click();
     await waitForPill("Ready");
-    await clickTab("settings");
-    await $("#set-auto-scan").click();
-    await browser.waitUntil(
-      async () => readJson<SavedSettings>("settings.json")?.auto_scan === false,
-      {
-        timeout: 5_000,
-        timeoutMsg: "settings.json did not record auto_scan off",
-      },
+    await setAutoScan(false);
+
+    // Leave Never touch as it was seeded for the specs that follow.
+    await clickTab("targets");
+    await $('button[aria-label="Stop protecting WSearch"]').click();
+    await saveTargets();
+    assert.deepEqual(
+      readJson<SavedSettings>("settings.json")!.profile.keep_alive,
+      ["game"],
     );
     await clickTab("dashboard");
   });

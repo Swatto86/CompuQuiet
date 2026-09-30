@@ -22,8 +22,10 @@ Dependencies point inward: `src-tauri` → `cq-platform` → `cq-core`.
    threads), the state of the profile's services, and the active power plan.
 2. **Plan.** `cq_core::build_plan` turns profile + snapshot + capabilities into
    ordered `Step`s and a list of skipped targets with reasons. Order: power
-   plan, services, processes, memory purge. Critical processes, keep-alive
-   entries and the app itself are never planned.
+   plan, services, processes, memory purge. Critical processes and services
+   (`policy.rs`), keep-alive entries (a process is also spared when only its
+   own name matches, as a truncated Linux name does) and the app itself are
+   never planned.
 3. **Execute and journal.** Each step's `DoneStep` is written to
    `journal.json` (atomic write) before the platform carries it out
    (`DoneStep::intended`, `Engine::run_journaled`), corrected afterwards if
@@ -75,15 +77,21 @@ profile into ranked `Recommendation`s: catalogue matches (`catalogue.rs`, per
 OS, each with a reason and a `Risk`), running services from the catalogue, a
 non-performance power plan, a file cache above 1 GB, and, only when the
 platform can report windows, unknown processes over 200 MB or 3% CPU that
-own none. Anything the profile already covers is returned marked
-`already_targeted` so the page can grey it out. `recommend::apply` folds
-accepted finds into a profile without touching existing entries.
+own none, except the workloads in `catalogue::WORKLOADS` (interpreters, local
+AI servers, the WSL VM) and the family of the program in front. Names on the
+keep-alive list, services included, are skipped. Anything the profile already
+covers is returned marked `already_targeted` so the page can grey it out.
+`recommend::apply` folds accepted finds into a profile without touching
+existing entries.
 
 The engine exposes `scan()` (fresh snapshot) and `apply_recommendations()`
 (saves the profile). With `Settings::auto_scan` on, `go_quiet` reuses its own
 snapshot to compute the report and plans against the profile plus the
-low-risk, not-yet-targeted finds for that run only; the journal records what
-actually happened, so Restore is unchanged. Window ownership comes from
+low-risk, not-yet-targeted program and service finds for that run only (the
+power plan and the purge stay the saved switches); the journal records what
+actually happened, so Restore is unchanged. Removing a target on the Targets
+tab adds its name to the keep-alive list ("Never touch"), because the scan
+would otherwise find a known target again on every run. Window ownership comes from
 `EnumWindows` on Windows (a Store app's own process owns only a child window
 of its frame, so those are read too); Linux and macOS report
 `Activity::known = false` and the scanner then names only recognised software.
