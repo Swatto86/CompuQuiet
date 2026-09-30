@@ -62,12 +62,18 @@ pub fn here() -> Option<&'static str> {
         os: Os::CURRENT,
         development: cfg!(debug_assertions) || cfg!(feature = "fake-platform"),
         appimage: std::env::var_os("APPIMAGE").is_some_and(|path| !path.is_empty()),
-        uninstaller: exe
-            .parent()
-            .is_some_and(|dir| dir.join("uninstall.exe").is_file()),
+        uninstaller: crate::autostart::installed_by_setup(&exe),
         exe: &exe,
     }
     .unavailable()
+}
+
+/// Whether installing an update raises Windows' permission prompt: the setup
+/// of an all-users install (the copy is under Program Files) needs
+/// administrator rights, which only an already elevated copy has. It is asked
+/// for while the window is hidden, so the caller must say so beforehand.
+pub fn asks_permission(os: Os, all_users: bool, elevated: bool) -> bool {
+    os == Os::Windows && all_users && !elevated
 }
 
 #[cfg(test)]
@@ -99,6 +105,24 @@ mod tests {
         running.exe = Path::new(r"C:\Program Files\CompuQuiet\compuquiet.exe");
         running.uninstaller = true;
         assert_eq!(running.unavailable(), None, "an installed copy");
+    }
+
+    #[test]
+    fn only_an_unelevated_all_users_install_on_windows_asks_permission() {
+        assert!(asks_permission(Os::Windows, true, false));
+        assert!(
+            !asks_permission(Os::Windows, true, true),
+            "already elevated"
+        );
+        assert!(
+            !asks_permission(Os::Windows, false, false),
+            "a per-user copy"
+        );
+        assert!(
+            !asks_permission(Os::Linux, true, false),
+            "no prompt off Windows"
+        );
+        assert!(!asks_permission(Os::MacOs, true, false));
     }
 
     #[test]

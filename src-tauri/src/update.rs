@@ -14,6 +14,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError};
 use std::time::{Duration, Instant};
 
+use cq_core::Os;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_notification::NotificationExt;
@@ -61,9 +62,12 @@ pub enum Status {
         version: String,
     },
     /// Downloaded. It installs once no run is going, Quiet Mode is off and
-    /// the window is closed to the tray.
+    /// the window is closed to the tray. `asks_permission`: Windows will show
+    /// its permission prompt then, because this copy sits in Program Files
+    /// and is not running as administrator.
     Ready {
         version: String,
+        asks_permission: bool,
     },
     /// The last attempt failed; the next one waits out the cool-down.
     Failed {
@@ -218,9 +222,15 @@ async fn attempt(app: &AppHandle) -> tauri_plugin_updater::Result<()> {
     // The plugin leaves the download without a limit unless it is set here.
     update.timeout = Some(DOWNLOAD_TIMEOUT);
     let bytes = update.download(|_, _| {}, || {}).await?;
-    set(app, Status::Ready { version });
-
     let engine = app.state::<Arc<Engine>>().inner().clone();
+    let asks = asks_permission(&engine);
+    set(
+        app,
+        Status::Ready {
+            version,
+            asks_permission: asks,
+        },
+    );
     loop {
         if may_install(idle(app), window_open(app)) {
             // On Windows `install` runs the installer and exits this process,
@@ -236,10 +246,7 @@ async fn attempt(app: &AppHandle) -> tauri_plugin_updater::Result<()> {
                         .notification()
                         .builder()
                         .title("CompuQuiet")
-                        .body(format!(
-                            "Updating to {}. CompuQuiet will restart.",
-                            update.version
-                        ))
+                        .body(installing_text(&update.version, asks))
                         .show();
                 }
                 update.install(&bytes).map_err(Some)
@@ -249,12 +256,51 @@ async fn attempt(app: &AppHandle) -> tauri_plugin_updater::Result<()> {
                     restart(app);
                     return Ok(());
                 }
+                // Declined at the permission prompt: the server answered, so
+                // the next look is the ordinary one, not the hourly retry.
+                Some(Err(Some(error))) if asks => {
+                    log::warn!("update: the installer did not start: {error}");
+                    set(
+                        app,
+                        Status::Failed {
+                            error: declined_text(&error),
+                        },
+                    );
+                    return Ok(());
+                }
                 Some(Err(Some(error))) => return Err(error),
                 Some(Err(None)) | None => {}
             }
         }
         tokio::time::sleep(INSTALL_POLL).await;
     }
+}
+
+/// Installing will raise Windows' permission prompt ([`guard::asks_permission`]).
+fn asks_permission(engine: &Engine) -> bool {
+    std::env::current_exe().is_ok_and(|exe| {
+        guard::asks_permission(
+            Os::CURRENT,
+            crate::autostart::in_program_files(&exe),
+            engine.state().capabilities.elevated,
+        )
+    })
+}
+
+fn installing_text(version: &str, asks_permission: bool) -> String {
+    if asks_permission {
+        format!(
+            "Updating to {version}. Windows will ask you to allow the installer, and CompuQuiet will restart."
+        )
+    } else {
+        format!("Updating to {version}. CompuQuiet will restart.")
+    }
+}
+
+fn declined_text(error: &tauri_plugin_updater::Error) -> String {
+    format!(
+        "The installer did not start ({error}). Windows needs administrator permission to update a copy in Program Files; it asks again at the next check, and a copy running as administrator updates without asking."
+    )
 }
 
 /// Start the updated copy in place of this one. The engine stays claimed, so
@@ -303,9 +349,12 @@ mod tests {
         assert_eq!(json(Status::Idle), serde_json::json!({ "kind": "idle" }));
         assert_eq!(
             json(Status::Ready {
-                version: "2.0.0".into()
+                version: "2.0.0".into(),
+                asks_permission: true
             }),
-            serde_json::json!({ "kind": "ready", "version": "2.0.0" })
+            serde_json::json!({
+                "kind": "ready", "version": "2.0.0", "asks_permission": true
+            })
         );
         assert_eq!(
             json(Status::Unavailable {

@@ -53,9 +53,13 @@ Your own "never touch" list sits on top of that.
 **Windows and administrator rights.** Stopping services and purging memory
 need an elevated process. CompuQuiet starts unelevated so it can run at
 logon without a prompt; when a target needs elevation the dashboard offers
-*Relaunch as administrator*. "Start with the system" registers a logon task,
-and when created from an elevated CompuQuiet that task starts it elevated
-without a prompt.
+*Relaunch as administrator*. "Start with the system" registers a logon task.
+Created from an elevated CompuQuiet that runs from Program Files (where the
+installer puts it), the task starts it elevated without a prompt. From any
+other folder, such as a portable copy, the task is made without
+administrator rights, because a program running as you could otherwise
+replace that copy and be started with administrator rights at every sign-in;
+the setting says so.
 
 **Start with the system** is available on all three platforms (logon task on
 Windows, LaunchAgent on macOS, XDG autostart for the Linux AppImage). It
@@ -70,7 +74,7 @@ the `release` workflow from the tagged commit after the full gate passes:
 
 | Platform | Installer | Portable |
 | --- | --- | --- |
-| Windows 10/11 x64 | `CompuQuiet_<version>_x64-setup.exe` (NSIS, per-user) | `CompuQuiet-portable-windows-x64.exe` |
+| Windows 10/11 x64 | `CompuQuiet_<version>_x64-setup.exe` (NSIS, all users, into Program Files) | `CompuQuiet-portable-windows-x64.exe` |
 | Linux x64 | `CompuQuiet_<version>_amd64.deb` | `CompuQuiet-portable-linux-x64` / `.AppImage` |
 | macOS (Apple silicon) | `CompuQuiet_<version>_aarch64.dmg` | `CompuQuiet-portable-macos-arm64.app.tar.gz` |
 
@@ -78,11 +82,22 @@ Portable builds keep their settings and undo journal in the normal per-user
 configuration folder unless `COMPUQUIET_DATA_DIR` points somewhere else,
 for example a folder beside the executable on a USB stick.
 
+The Windows installer asks for administrator permission once, because it
+installs for all users. Releases up to 1.1.7 installed per user, into
+`%LOCALAPPDATA%\CompuQuiet`; the new installer removes that copy and its
+shortcuts, keeps your settings and undo journal (they live elsewhere), and
+points an existing sign-in task at the new copy. Uninstalling removes the
+sign-in task too. A portable copy is untouched: switch "Start with the
+system" off before deleting one.
+
 The Windows installer, the Linux AppImage and the macOS app check GitHub for
 a newer signed release when Quiet Mode is off (at launch, then every few
 hours while CompuQuiet stays running), download it, and install it and
-restart once nothing is running and the window is closed to the tray. The
-`.deb` and the portable copies do not update themselves. A copy built before
+restart once nothing is running and the window is closed to the tray. On
+Windows an unelevated copy in Program Files shows the permission prompt for
+that install (a notification says so first); a copy running as administrator
+installs without one. The `.deb` and the portable copies do not update
+themselves. A copy built before
 this check existed has to be replaced by hand once; after that, later
 releases install on their own.
 

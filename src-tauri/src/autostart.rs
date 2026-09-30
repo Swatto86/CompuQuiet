@@ -3,8 +3,9 @@
 //! Windows uses a logon task rather than the Run key: a task can start the
 //! app with administrator rights without a UAC prompt at every logon, which
 //! is what stopping services needs. It is created elevated only when this
-//! process is elevated, and the status says which. Linux and macOS use the
-//! autostart plugin (XDG desktop entry / LaunchAgent).
+//! process is elevated and the program sits under Program Files, where only
+//! administrators can replace it ([`windows`]); the status says which. Linux
+//! and macOS use the autostart plugin (XDG desktop entry / LaunchAgent).
 //!
 //! Whichever mechanism, the entry records *this* executable, so the toggle
 //! refuses to register a copy that lives somewhere temporary — a debug build
@@ -28,6 +29,10 @@ pub struct AutostartStatus {
     /// Why this process cannot change the entry that is there, on or off:
     /// the entry needs administrator rights and this process has none.
     pub locked: Option<String>,
+    /// Why an entry made from this copy starts without administrator rights
+    /// although this process has them: the copy is not where only
+    /// administrators can replace it.
+    pub limited_because: Option<String>,
 }
 
 /// Why this executable must not be registered, if it must not.
@@ -109,6 +114,33 @@ fn resolved(path: &Path) -> std::path::PathBuf {
     path.to_path_buf()
 }
 
+/// Whether `exe` lies under Program Files, where only administrators can
+/// write. Always false off Windows, where those variables do not exist.
+pub(crate) fn in_program_files(exe: &Path) -> bool {
+    let roots: Vec<_> = ["ProgramFiles", "ProgramFiles(x86)", "ProgramW6432"]
+        .into_iter()
+        .filter_map(std::env::var_os)
+        .map(std::path::PathBuf::from)
+        .collect();
+    under_any(exe, &roots)
+}
+
+/// A root has to be a folder below a drive, so a variable set to `C:\` cannot
+/// make every path protected.
+fn under_any(exe: &Path, roots: &[std::path::PathBuf]) -> bool {
+    roots
+        .iter()
+        .filter(|root| root.components().count() >= 3)
+        .any(|root| inside(exe, root))
+}
+
+/// The Windows setup program wrote an uninstaller beside this executable
+/// (a per-user or an all-users install alike, never a portable copy).
+pub(crate) fn installed_by_setup(exe: &Path) -> bool {
+    exe.parent()
+        .is_some_and(|dir| dir.join("uninstall.exe").is_file())
+}
+
 fn current_exe() -> Result<std::path::PathBuf, AppError> {
     std::env::current_exe()
         .map_err(|e| AppError::new("app", format!("locating this executable: {e}")))
@@ -124,7 +156,20 @@ pub fn status(app: &AppHandle) -> Result<AutostartStatus, AppError> {
         allowed: reason.is_none(),
         reason,
         locked: locked_now(enabled, elevated),
+        limited_because: platform::limited_because(&exe),
     })
+}
+
+/// At start-up, an installed copy takes over a sign-in entry that starts
+/// another program: the copy it replaced, or a portable one. Windows only;
+/// development builds never reach the lookup (no uninstaller beside them).
+pub fn reconcile() {
+    #[cfg(windows)]
+    match current_exe().and_then(|exe| platform::repoint(&exe)) {
+        Ok(true) => log::info!("the sign-in entry now starts this copy"),
+        Ok(false) => {}
+        Err(error) => log::warn!("the sign-in entry was not updated: {}", error.message),
+    }
 }
 
 pub fn set(app: &AppHandle, enabled: bool) -> Result<AutostartStatus, AppError> {
@@ -145,65 +190,8 @@ pub fn set(app: &AppHandle, enabled: bool) -> Result<AutostartStatus, AppError> 
 }
 
 #[cfg(windows)]
-mod platform {
-    use std::path::Path;
-
-    use tauri::AppHandle;
-
-    use crate::error::AppError;
-
-    const TASK: &str = "CompuQuiet";
-    const LEGACY_TASK: &str = "ComputeQuiet";
-
-    /// Through the platform's runner, so a hung schtasks times out.
-    fn schtasks(args: &[&str]) -> Result<String, AppError> {
-        cq_platform::run_tool("schtasks", args)
-            .map_err(|error| AppError::new("autostart", error.to_string()))
-    }
-
-    fn query_task(name: &str) -> Result<(bool, bool), AppError> {
-        match schtasks(&["/Query", "/TN", name, "/XML"]) {
-            Ok(xml) => Ok((true, xml.contains("<RunLevel>HighestAvailable</RunLevel>"))),
-            Err(_) => Ok((false, false)),
-        }
-    }
-
-    /// (registered, elevated). A missing task is simply "not registered".
-    pub fn query(_app: &AppHandle) -> Result<(bool, bool), AppError> {
-        let current = query_task(TASK)?;
-        if current.0 {
-            return Ok(current);
-        }
-        query_task(LEGACY_TASK)
-    }
-
-    pub fn enable(_app: &AppHandle, exe: &Path) -> Result<(), AppError> {
-        let elevated = cq_platform::native().capabilities().elevated;
-        let command = format!("\"{}\" --hidden", exe.display());
-        let level = if elevated { "HIGHEST" } else { "LIMITED" };
-        schtasks(&[
-            "/Create", "/F", "/TN", TASK, "/SC", "ONLOGON", "/RL", level, "/TR", &command,
-        ])
-        .map(drop)?;
-        let _ = schtasks(&["/Delete", "/F", "/TN", LEGACY_TASK]);
-        Ok(())
-    }
-
-    pub fn disable(_app: &AppHandle) -> Result<(), AppError> {
-        let mut saw_error = None;
-        for name in [TASK, LEGACY_TASK] {
-            match schtasks(&["/Delete", "/F", "/TN", name]) {
-                Ok(_) => {}
-                Err(error) => saw_error = Some(error),
-            }
-        }
-        if query(_app)?.0 {
-            return Err(saw_error
-                .unwrap_or_else(|| AppError::new("autostart", "could not remove the logon task")));
-        }
-        Ok(())
-    }
-}
+#[path = "autostart/windows.rs"]
+mod platform;
 
 #[cfg(not(windows))]
 mod platform {
@@ -228,6 +216,11 @@ mod platform {
 
     pub fn disable(app: &AppHandle) -> Result<(), AppError> {
         app.autolaunch().disable().map_err(map)
+    }
+
+    /// Only Windows has an entry that carries administrator rights.
+    pub fn limited_because(_exe: &Path) -> Option<String> {
+        None
     }
 }
 
@@ -284,6 +277,32 @@ mod tests {
         let base = std::env::temp_dir();
         assert!(inside(&base.join("x").join("app.exe"), &base.join("x")));
         assert!(!inside(&base.join("x2").join("app.exe"), &base.join("x")));
+    }
+
+    #[test]
+    fn only_a_folder_below_a_drive_counts_as_protected() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("Program Files");
+        let exe = root.join("CompuQuiet").join("compuquiet.exe");
+        assert!(under_any(&exe, std::slice::from_ref(&root)));
+        // Whole components, not a string prefix, and not somewhere else.
+        let sibling = dir.path().join("Program Files (x86)").join("a.exe");
+        assert!(!under_any(&sibling, std::slice::from_ref(&root)));
+        let elsewhere = dir.path().join("Projects").join("compuquiet.exe");
+        assert!(!under_any(&elsewhere, std::slice::from_ref(&root)));
+        // A variable set to a drive root must not protect the whole drive.
+        let drive = std::path::PathBuf::from(if cfg!(windows) { r"C:\" } else { "/" });
+        assert!(!under_any(&elsewhere, &[drive]));
+        assert!(!under_any(&exe, &[]), "no variables, no protection");
+    }
+
+    #[test]
+    fn a_copy_is_installed_by_setup_only_beside_an_uninstaller() {
+        let dir = tempfile::tempdir().unwrap();
+        let exe = dir.path().join("compuquiet.exe");
+        assert!(!installed_by_setup(&exe));
+        std::fs::write(dir.path().join("uninstall.exe"), b"").unwrap();
+        assert!(installed_by_setup(&exe));
     }
 
     #[cfg(windows)]

@@ -174,15 +174,36 @@ exist only with the `fake-platform` feature.
   Quiet Mode is off and the window is hidden (installing ends the process), and
   the restart goes through `single::restart`, as `reopen` does. `update::Status`
   (commands `update_status`, `check_for_updates`; event `update-status`) is
-  what the window shows.
-- Autostart: `schtasks` logon task on Windows (elevated when created by an
-  elevated process), `tauri-plugin-autostart` elsewhere, always guarded
+  what the window shows. The Windows setup is per-machine, so an unelevated
+  copy's install raises the permission prompt (`ShellExecute` "open" on an
+  administrator-manifest installer): `Status::Ready.asks_permission` and the
+  "Updating to ..." notification say so beforehand, and a refusal is a `Failed`
+  status with the ordinary 6-hour look next, not the hourly retry. An
+  elevated copy installs silently.
+- Autostart: `schtasks` logon task on Windows (elevated only when created by
+  an elevated process *and* the exe is under Program Files, where only
+  administrators can replace it; otherwise unelevated, and
+  `AutostartStatus.limited_because` says why), `tauri-plugin-autostart`
+  elsewhere, always guarded
   against registering a temporary or build-directory executable (on Linux also
   an AppImage path a login entry would split or expand: spaces, `%`, quotes).
   An entry made with administrator rights is `locked` for an unelevated copy,
   which cannot delete or replace it: `set` refuses (`autostart_locked`) and the
   switch is disabled with the reason. The task always passes `--hidden`, so a
-  sign-in starts in the tray whatever "Start hidden" says.
+  sign-in starts in the tray whatever "Start hidden" says. At start-up an
+  installed copy (`uninstall.exe` beside it) points a task that names another
+  exe at itself (`autostart::reconcile`, `windows.rs`): the entry keeps its
+  rights, an unelevated one is never upgraded, and an elevated one that an
+  unelevated copy cannot change is only logged.
+- Windows setup (`bundle.windows.nsis`): NSIS with `installMode: perMachine`
+  (Program Files, one permission prompt) and `src-tauri/windows/hooks.nsh`.
+  Before installing, the hook uninstalls a per-user copy found under `HKCU`
+  (release 1.1.7 and earlier) silently and without touching the data folder,
+  then recreates its Start menu and desktop shortcuts for all users and runs
+  `schtasks /Change` on the sign-in task, which the elevated setup can do to an
+  elevated task and the unelevated app it starts afterwards cannot.
+  Uninstalling deletes the task (not on an update). The setup itself is not
+  exercised by the gate; it is checked by hand at the local handoff.
 
 ## State
 

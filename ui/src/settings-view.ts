@@ -60,6 +60,9 @@ export class SettingsView {
     const note = byId("autostart-note");
     try {
       const status = await api.getAutostart();
+      const because = status.limited_because
+        ? `: ${status.limited_because}`
+        : "";
       input.checked = status.enabled;
       // Refused for this copy: it may still be switched off. Locked: not at all.
       input.disabled =
@@ -71,8 +74,10 @@ export class SettingsView {
           : status.enabled && status.elevated
             ? "(starts with administrator rights)"
             : status.enabled
-              ? "(starts without administrator rights)"
-              : "";
+              ? `(starts without administrator rights${because})`
+              : status.limited_because
+                ? `(will start without administrator rights${because})`
+                : "";
     } catch (error) {
       note.textContent = `(${errorMessage(error)})`;
     }

@@ -146,6 +146,11 @@ export interface AutostartStatus {
   reason: string | null;
   /** Why this copy cannot change the entry at all, when it cannot. */
   locked: string | null;
+  /**
+   * Why an entry made from this copy starts without administrator rights
+   * although this copy has them (it is not in Program Files).
+   */
+  limited_because: string | null;
 }
 
 /** Where self-updating stands; mirrors `update::Status` in src-tauri. */
@@ -155,7 +160,7 @@ export type UpdateStatus =
   | { kind: "checking" }
   | { kind: "up_to_date" }
   | { kind: "downloading"; version: string }
-  | { kind: "ready"; version: string }
+  | { kind: "ready"; version: string; asks_permission: boolean }
   | { kind: "failed"; error: string };
 
 export interface AppInfo {

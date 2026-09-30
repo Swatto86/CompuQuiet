@@ -46,7 +46,8 @@
     "longDescription": "Parks background services and processes, switches to a performance power plan and reclaims memory so games and local AI get the whole machine, then restores everything it changed with one click.",
     "windows": {
       "nsis": {
-        "installMode": "currentUser",
+        "installMode": "perMachine",
+        "installerHooks": "windows/hooks.nsh",
         "languages": ["English"]
       }
     },

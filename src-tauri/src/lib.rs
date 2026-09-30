@@ -127,6 +127,8 @@ pub fn run() {
             tray::install(app.handle())?;
             tray::refresh(app.handle(), &engine.state());
             update::schedule(app.handle());
+            // The sign-in entry may still start the copy this one replaced.
+            tauri::async_runtime::spawn_blocking(autostart::reconcile);
             let handle = app.handle().clone();
             single::serve(data_dir, move |command| match command {
                 instance::Command::Show => tray::reveal(&handle),
