@@ -77,6 +77,13 @@ done < <(git ls-files -s -- '*.sh')
 [ "$notexec" -eq 0 ] || exit 1
 echo "script permissions OK"
 
+say "sources are plain text"
+# A raw control byte (a NUL in a string, say) makes git and GitHub treat the
+# file as binary, so its diffs can no longer be reviewed. Write it as an escape.
+binary=$(git ls-files --eol -- '*.ts' '*.rs' '*.css' '*.html' | grep -E '[[:space:]]w/-text' || true)
+[ -z "$binary" ] || { echo "$binary"; echo "these sources contain a raw control byte; use an escape such as \u0000"; exit 1; }
+echo "sources are plain text OK"
+
 say "file sizes"
 # 400 lines is the hard cap for Rust and TypeScript sources. awk's NR counts an
 # unterminated final line too, which `wc -l` does not.
