@@ -53,13 +53,16 @@ describe("the window, by keyboard", () => {
 
   describe("failure text", () => {
     it("can be selected and copied", async () => {
+      // WebKit has only the prefixed name; the page sets both.
       const selectable = await browser.execute(() =>
-        ["#log", "#skipped", "#toast"].map(
-          (sel) =>
-            getComputedStyle(document.querySelector(sel) as Element).userSelect,
-        ),
+        ["body", "#log", "#skipped", "#toast"].map((sel) => {
+          const style = getComputedStyle(
+            document.querySelector(sel) as Element,
+          );
+          return style.userSelect || style.webkitUserSelect;
+        }),
       );
-      assert.deepEqual(selectable, ["text", "text", "text"]);
+      assert.deepEqual(selectable, ["none", "text", "text", "text"]);
     });
   });
 
@@ -114,7 +117,10 @@ describe("the window, by keyboard", () => {
       await browser.keys("ArrowDown");
       assert.equal(await $(select).getValue(), "close");
       assert.equal(await focused(), "Action for Slack");
-      await browser.keys(["ArrowUp", "ArrowUp"]);
+      // Two presses, as a person makes them. One call with the key twice
+      // holds it down, and WebKit acts on only one of the two.
+      await browser.keys("ArrowUp");
+      await browser.keys("ArrowUp");
       assert.equal(await $(select).getValue(), "suspend");
       assert.equal(await focused(), "Action for Slack");
     });

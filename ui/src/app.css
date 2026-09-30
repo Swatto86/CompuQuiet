@@ -14,6 +14,8 @@ body {
   font-size: 14px;
   line-height: 1.45;
   -webkit-font-smoothing: antialiased;
+  /* The WebKit on Linux ignores the plain name, so every rule sets both. */
+  -webkit-user-select: none;
   user-select: none;
 }
 
@@ -25,6 +27,7 @@ body {
 .recovery,
 .toast,
 .dialog p {
+  -webkit-user-select: text;
   user-select: text;
 }
 
@@ -632,6 +635,7 @@ table.targets tr:last-child td {
 
 table.targets td.name {
   font-weight: 500;
+  -webkit-user-select: text;
   user-select: text;
 }
 
@@ -809,11 +813,13 @@ code.path {
   border: 1px solid var(--border);
   border-radius: 8px;
   word-break: break-all;
+  -webkit-user-select: text;
   user-select: text;
 }
 
 .about p {
   max-width: 640px;
+  -webkit-user-select: text;
   user-select: text;
 }
 
@@ -830,6 +836,7 @@ textarea.report {
   border: 1px solid var(--border);
   border-radius: 8px;
   resize: vertical;
+  -webkit-user-select: text;
   user-select: text;
 }
 
@@ -855,6 +862,7 @@ textarea.report:focus-visible {
 
 .facts dd {
   margin: 0;
+  -webkit-user-select: text;
   user-select: text;
 }
 
