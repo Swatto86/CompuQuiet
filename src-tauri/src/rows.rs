@@ -1,7 +1,9 @@
-//! The process picker's rows: every instance of a program folded into one
-//! line, heaviest first, so a user can see what is worth parking.
+//! The pickers' rows: every instance of a program folded into one line,
+//! heaviest first, so a user can see what is worth parking; and the machine's
+//! services, by name, so one can be chosen instead of typed.
 
-use cq_core::ProcessInfo;
+use cq_core::policy::is_critical_service;
+use cq_core::{Os, ProcessInfo, ServiceInfo, ServiceState};
 use serde::Serialize;
 
 #[derive(Debug, Clone, Serialize)]
@@ -39,6 +41,40 @@ pub fn fold_processes(processes: Vec<ProcessInfo>) -> Vec<ProcessRow> {
     list
 }
 
+/// One service the machine has, for the Park list's picker.
+#[derive(Debug, Clone, Serialize)]
+pub struct ServiceRow {
+    pub name: String,
+    pub display_name: String,
+    pub state: ServiceState,
+    /// Sound, the network, security or the desktop: Quiet Mode never stops
+    /// it, so the picker does not offer it. It stays in the list so that a
+    /// row already on the Park list can still say what state it is in.
+    pub essential: bool,
+}
+
+/// No machine has more; a limit keeps a broken listing from flooding the page.
+const MOST_SERVICES: usize = 2000;
+
+/// The services by name, each once. A name that is not installed is not one
+/// a profile could park.
+pub fn service_rows(services: Vec<ServiceInfo>, os: Os) -> Vec<ServiceRow> {
+    let mut rows: Vec<ServiceRow> = services
+        .into_iter()
+        .filter(|service| service.state != ServiceState::NotInstalled)
+        .map(|service| ServiceRow {
+            essential: is_critical_service(&service.name, os),
+            name: service.name,
+            display_name: service.display_name,
+            state: service.state,
+        })
+        .collect();
+    rows.sort_by_cached_key(|row| row.name.to_lowercase());
+    rows.dedup_by(|a, b| a.name.eq_ignore_ascii_case(&b.name));
+    rows.truncate(MOST_SERVICES);
+    rows
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -70,5 +106,44 @@ mod tests {
         assert_eq!(rows[1].instances, 2);
         assert_eq!(rows[1].memory_bytes, 400);
         assert_eq!(rows[1].cpu_percent, 2.0);
+    }
+
+    fn service(name: &str, state: ServiceState) -> ServiceInfo {
+        ServiceInfo {
+            name: name.into(),
+            display_name: format!("{name} display"),
+            state,
+            needed_by: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn services_are_listed_by_name_once_with_the_essential_ones_marked() {
+        let rows = service_rows(
+            vec![
+                service("Spooler", ServiceState::Running),
+                service("audiosrv", ServiceState::Running),
+                service("Fax", ServiceState::Stopped),
+                service("spooler", ServiceState::Running),
+                service("Gone", ServiceState::NotInstalled),
+            ],
+            Os::Windows,
+        );
+        let listed: Vec<(&str, bool)> = rows
+            .iter()
+            .map(|row| (row.name.as_str(), row.essential))
+            .collect();
+        assert_eq!(
+            listed,
+            [("audiosrv", true), ("Fax", false), ("Spooler", false)]
+        );
+        assert_eq!(rows[1].display_name, "Fax display");
+        assert_eq!(rows[1].state, ServiceState::Stopped);
+    }
+
+    #[test]
+    fn what_is_essential_depends_on_the_system_the_names_belong_to() {
+        let rows = service_rows(vec![service("AudioSrv", ServiceState::Running)], Os::Linux);
+        assert!(!rows[0].essential);
     }
 }

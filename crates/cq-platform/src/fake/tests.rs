@@ -73,3 +73,25 @@ fn programs_come_and_go_time_passes_and_the_hold_shows() {
     fake.keep_awake(false).unwrap();
     assert!(!fake.awake());
 }
+
+#[test]
+fn the_service_list_shows_each_service_in_its_current_state() {
+    let fake = Fake::new();
+    let state = |fake: &Fake, name: &str| {
+        fake.list_services()
+            .unwrap()
+            .into_iter()
+            .find(|service| service.name == name)
+            .map(|service| (service.display_name, service.state))
+    };
+    assert_eq!(
+        state(&fake, "Spooler"),
+        Some(("Print Spooler".to_string(), ServiceState::Running))
+    );
+    assert_eq!(state(&fake, "Nope"), None);
+    fake.stop_service("spooler").unwrap();
+    assert_eq!(
+        state(&fake, "Spooler").map(|(_, state)| state),
+        Some(ServiceState::Stopped)
+    );
+}

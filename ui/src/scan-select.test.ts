@@ -3,13 +3,17 @@ import { test } from "node:test";
 
 import type { Recommendation } from "./bridge.ts";
 import {
+  carryClosing,
   carrySelection,
+  chosenKind,
   defaultSelection,
   kindLabel,
+  riskyCloses,
   rowKey,
   selectedItems,
   summarize,
   tickLabel,
+  withChoices,
 } from "./scan-select.ts";
 
 function item(
@@ -117,4 +121,61 @@ test("a tick box is named for what ticking it does", () => {
     }),
     "Add Power plan: High performance",
   );
+});
+
+test("a program marked close instead is applied as a close and nothing else changes", () => {
+  const items = [
+    item("OneDrive", "low"),
+    item("Slack", "low"),
+    { ...item("WSearch", "low"), kind: { kind: "service" } as const },
+  ];
+  const closing = new Set([rowKey(items[0]!), rowKey(items[2]!)]);
+  assert.deepEqual(chosenKind(items[0]!, closing), {
+    kind: "process",
+    action: "close",
+  });
+  assert.equal(kindLabel(chosenKind(items[0]!, closing)), "Close & relaunch");
+  assert.deepEqual(
+    withChoices(items, closing).map((found) => found.kind),
+    [
+      { kind: "process", action: "close" },
+      { kind: "process", action: "suspend" },
+      { kind: "service" },
+    ],
+    "a service has no close, whatever is marked",
+  );
+  assert.equal(
+    items[0]!.kind.kind === "process" && items[0]!.kind.action,
+    "suspend",
+    "the scan's own finds are not changed",
+  );
+});
+
+test("only a close of a medium-risk program asks for a second look", () => {
+  const items = withChoices(
+    [
+      item("Discord", "medium"),
+      item("OneDrive", "low"),
+      item("Zoom", "medium"),
+    ],
+    new Set([
+      rowKey(item("Discord", "medium")),
+      rowKey(item("OneDrive", "low")),
+    ]),
+  );
+  assert.deepEqual(
+    riskyCloses(items).map((found) => found.name),
+    ["Discord"],
+    "OneDrive closes without asking, Zoom is only suspended",
+  );
+});
+
+test("a mark follows its find to the next scan and goes when the find does", () => {
+  const before = new Set([
+    rowKey(item("Discord", "medium")),
+    rowKey(item("Slack", "low")),
+  ]);
+  const after = [item("Discord", "medium"), item("Slack", "low", true)];
+  assert.deepEqual([...carryClosing(before, after)], [rowKey(after[0]!)]);
+  assert.equal(carryClosing(before, []).size, 0);
 });

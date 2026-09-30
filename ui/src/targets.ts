@@ -1,15 +1,15 @@
 /** The profile editor: which programs and services Quiet Mode touches. */
 import {
-  api,
   errorMessage,
   type Capabilities,
   type Os,
   type ProcessAction,
-  type ProcessRow,
   type Profile,
 } from "./bridge.ts";
 import { showDialog, toast } from "./dialog.ts";
-import { formatBytes } from "./format.ts";
+import { awakeHint, matchesFilter, serviceHint } from "./park-list.ts";
+import { orNote, processRow, serviceRow } from "./park-rows.ts";
+import { Pickers } from "./pickers.ts";
 import {
   addKeepAlive,
   addProcess,
@@ -49,7 +49,9 @@ function listed(profile: Profile): number {
 export class Targets {
   private saved: Profile;
   private working: Profile;
-  private running = new Map<string, ProcessRow>();
+  private readonly pickers = new Pickers();
+  /** What the filter box holds: only matching rows are drawn. */
+  private filter = "";
 
   constructor(
     initial: Profile,
@@ -57,6 +59,10 @@ export class Targets {
   ) {
     this.saved = initial;
     this.working = structuredClone(initial);
+    byId<HTMLInputElement>("park-filter").addEventListener("input", (event) => {
+      this.filter = (event.target as HTMLInputElement).value;
+      this.render();
+    });
     byId<HTMLFormElement>("process-add").addEventListener("submit", (event) => {
       event.preventDefault();
       const name = byId<HTMLInputElement>("process-name");
@@ -119,27 +125,11 @@ export class Targets {
   }
 
   describe(caps: Capabilities, os: Os): void {
-    const hint = byId("service-hint");
-    // Rust refuses these when the list is saved; say so before that.
-    const essential = " Essential ones (sound, network, security) are refused.";
-    if (os === "linux")
-      hint.textContent =
-        "systemd units; prefix user units with user: (e.g. user:tracker-miner-fs-3)." +
-        essential;
-    else if (os === "mac_os")
-      hint.textContent =
-        "launchd agent labels, e.g. com.microsoft.update.agent." + essential;
-    else if (!caps.services)
-      hint.textContent = "Stopping services needs administrator rights.";
-    else
-      hint.textContent =
-        "Windows service names, as shown in services.msc." + essential;
+    byId("service-hint").textContent = serviceHint(caps, os);
     // One already ticked can still be unticked; one that cannot work cannot be ticked.
     const awake = byId<HTMLInputElement>("opt-awake");
     awake.disabled = !caps.keep_awake && !awake.checked;
-    byId("awake-hint").textContent = caps.keep_awake
-      ? "Stops sleep and the screen turning off until you put everything back. Closing a laptop's lid still sleeps it. On battery it is left out unless you allow that in Settings."
-      : "Not available on this system: it has no tool CompuQuiet can ask to hold off sleep (systemd-inhibit on Linux, caffeinate on macOS).";
+    byId("awake-hint").textContent = awakeHint(caps);
   }
 
   setProfile(profile: Profile): void {
@@ -151,23 +141,10 @@ export class Targets {
     this.render();
   }
 
+  /** Ask the machine what runs and what services it has, for the pickers and the rows. */
   async refreshRunning(): Promise<void> {
-    try {
-      const rows = await api.listProcesses();
-      this.running = new Map(rows.map((row) => [normalizeName(row.name), row]));
-      const list = byId<HTMLDataListElement>("running-processes");
-      list.replaceChildren(
-        ...rows.slice(0, 200).map((row) => {
-          const option = document.createElement("option");
-          option.value = row.name;
-          option.label = `${formatBytes(row.memory_bytes)} · ${row.instances} running`;
-          return option;
-        }),
-      );
-      this.render();
-    } catch (error) {
-      toast(`Could not list processes: ${errorMessage(error)}`, true);
-    }
+    await this.pickers.refresh();
+    this.render();
   }
 
   private apply(result: EditResult, list: string, onOk: () => void): void {
@@ -177,6 +154,9 @@ export class Targets {
     }
     this.working = result.profile;
     onOk();
+    // What was just added must not be hidden by what was typed before.
+    this.filter = "";
+    byId<HTMLInputElement>("park-filter").value = "";
     this.render();
     this.reveal(list);
   }
@@ -190,7 +170,7 @@ export class Targets {
     window.setTimeout(() => row.classList.remove("fresh"), FRESH_MS);
   }
 
-  /** After a row goes, focus moves to the one that took its place. */
+  /** After a row goes, focus moves to the one that took its place; `index` counts the rows drawn. */
   private removed(list: string, index: number, fallback: string): void {
     this.render();
     const rows = byId(list).children;
@@ -252,91 +232,59 @@ export class Targets {
   private render(): void {
     this.updateStatus();
 
-    const processes = byId<HTMLTableSectionElement>("process-targets");
-    processes.replaceChildren(
-      ...this.working.processes.map((target, index) => {
-        const row = document.createElement("tr");
-        const enabled = this.checkbox(
-          target.name,
-          target.enabled,
-          (checked) => {
-            this.working = setProcess(this.working, index, {
-              enabled: checked,
-            });
-            this.updateStatus();
-          },
-        );
-        const name = document.createElement("td");
-        name.className = "name";
-        name.textContent = target.name;
-        const action = document.createElement("td");
-        const select = document.createElement("select");
-        select.setAttribute("aria-label", `Action for ${target.name}`);
-        for (const [value, label] of [
-          ["suspend", "Suspend"],
-          ["close", "Close & relaunch"],
-        ] as const) {
-          const option = document.createElement("option");
-          option.value = value;
-          option.textContent = label;
-          option.selected = target.action === value;
-          select.appendChild(option);
-        }
-        select.addEventListener("change", () => {
-          this.working = setProcess(this.working, index, {
-            action: select.value as ProcessAction,
-          });
-          this.updateStatus();
-        });
-        action.appendChild(select);
-        const now = document.createElement("td");
-        const live = this.running.get(normalizeName(target.name));
-        const state = document.createElement("span");
-        state.className = live ? "state running" : "state";
-        state.textContent = live
-          ? `${live.instances} running · ${formatBytes(live.memory_bytes)}`
-          : "not running";
-        now.appendChild(state);
-        row.append(
-          enabled,
-          name,
-          action,
-          now,
-          this.remove(`Remove ${target.name}`, () => {
-            this.working = removeProcess(this.working, index);
-            this.removed("process-targets", index, "process-name");
-          }),
-        );
-        return row;
-      }),
+    const programs = this.filtered(this.working.processes);
+    byId<HTMLTableSectionElement>("process-targets").replaceChildren(
+      ...orNote(
+        programs.map(([target, index], place) =>
+          processRow(
+            target,
+            this.pickers.running.get(normalizeName(target.name)),
+            {
+              toggle: (enabled) => {
+                this.working = setProcess(this.working, index, { enabled });
+                this.updateStatus();
+              },
+              act: (action) => {
+                this.working = setProcess(this.working, index, { action });
+                this.updateStatus();
+              },
+              remove: () => {
+                this.working = removeProcess(this.working, index);
+                this.removed("process-targets", place, "process-name");
+              },
+            },
+          ),
+        ),
+        this.working.processes.length,
+        5,
+      ),
     );
 
-    const services = byId<HTMLTableSectionElement>("service-targets");
-    services.replaceChildren(
-      ...this.working.services.map((target, index) => {
-        const row = document.createElement("tr");
-        const enabled = this.checkbox(
-          target.name,
-          target.enabled,
-          (checked) => {
-            this.working = setService(this.working, index, checked);
-            this.updateStatus();
-          },
-        );
-        const name = document.createElement("td");
-        name.className = "name";
-        name.textContent = target.name;
-        row.append(
-          enabled,
-          name,
-          this.remove(`Remove ${target.name}`, () => {
-            this.working = removeService(this.working, index);
-            this.removed("service-targets", index, "service-name");
-          }),
-        );
-        return row;
-      }),
+    const stopped = this.filtered(this.working.services, (name) =>
+      this.pickers.displayName(name),
     );
+    byId<HTMLTableSectionElement>("service-targets").replaceChildren(
+      ...orNote(
+        stopped.map(([target, index], place) =>
+          serviceRow(target, this.pickers.displayName(target.name), {
+            toggle: (enabled) => {
+              this.working = setService(this.working, index, enabled);
+              this.updateStatus();
+            },
+            remove: () => {
+              this.working = removeService(this.working, index);
+              this.removed("service-targets", place, "service-name");
+            },
+          }),
+        ),
+        this.working.services.length,
+        3,
+      ),
+    );
+    byId("park-filter-status").textContent =
+      this.filter.trim() === ""
+        ? ""
+        : `Showing ${programs.length} of ${this.working.processes.length} programs and ${stopped.length} of ${this.working.services.length} services`;
 
     const keep = byId<HTMLUListElement>("keep-alive");
     keep.replaceChildren(
@@ -357,30 +305,16 @@ export class Targets {
     );
   }
 
-  private checkbox(
-    name: string,
-    checked: boolean,
-    onChange: (checked: boolean) => void,
-  ): HTMLTableCellElement {
-    const cell = document.createElement("td");
-    const input = document.createElement("input");
-    input.type = "checkbox";
-    input.checked = checked;
-    input.setAttribute("aria-label", `Enable ${name}`);
-    input.addEventListener("change", () => onChange(input.checked));
-    cell.appendChild(input);
-    return cell;
-  }
-
-  private remove(label: string, onClick: () => void): HTMLTableCellElement {
-    const cell = document.createElement("td");
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "small ghost";
-    button.textContent = "✕";
-    button.setAttribute("aria-label", label);
-    button.addEventListener("click", onClick);
-    cell.appendChild(button);
-    return cell;
+  /** What the filter leaves of a list: each target with its place in the whole list. */
+  private filtered<T extends { name: string }>(
+    list: T[],
+    display: (name: string) => string = () => "",
+  ): [T, number][] {
+    const kept: [T, number][] = [];
+    list.forEach((target, index) => {
+      if (matchesFilter(this.filter, target.name, display(target.name)))
+        kept.push([target, index]);
+    });
+    return kept;
   }
 }

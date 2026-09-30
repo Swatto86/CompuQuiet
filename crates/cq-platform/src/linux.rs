@@ -16,6 +16,7 @@ use crate::spawn::{run_tool, run_tool_within, spawn_detached};
 use crate::unix;
 
 mod battery;
+mod units;
 
 pub struct Linux {
     sampler: Sampler,
@@ -155,13 +156,17 @@ pub(crate) fn parse_show(output: &str) -> (ServiceState, String) {
             description = value.trim().to_string();
         }
     }
-    let state = match (load, active) {
+    (service_state(load, active), description)
+}
+
+/// What `systemctl` says of a unit's `LoadState` and `ActiveState`.
+fn service_state(load: &str, active: &str) -> ServiceState {
+    match (load, active) {
         ("not-found", _) | ("", _) => ServiceState::NotInstalled,
         (_, "active" | "reloading") => ServiceState::Running,
         (_, "inactive" | "failed") => ServiceState::Stopped,
         _ => ServiceState::Transitioning,
-    };
-    (state, description)
+    }
 }
 
 fn query(name: &str) -> ServiceInfo {
@@ -220,6 +225,15 @@ impl Platform for Linux {
 
     fn processes(&self) -> Result<Vec<cq_core::ProcessInfo>> {
         Ok(self.sampler.processes())
+    }
+
+    /// The system's services and the user's. Without a session to ask, the
+    /// user's are left out; only both failing is an error.
+    fn list_services(&self) -> Result<Vec<ServiceInfo>> {
+        match (units::list(false), units::list(true)) {
+            (Err(error), Err(_)) => Err(error),
+            (system, user) => Ok(system.into_iter().chain(user).flatten().collect()),
+        }
     }
 
     fn stats(&self) -> Result<SystemStats> {

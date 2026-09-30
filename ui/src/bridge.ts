@@ -215,6 +215,18 @@ export interface ProcessRow {
   exe: string | null;
 }
 
+export type ServiceState =
+  "running" | "stopped" | "transitioning" | "not_installed";
+
+/** A service the machine has, for the Park list's picker. */
+export interface ServiceRow {
+  name: string;
+  display_name: string;
+  state: ServiceState;
+  /** Quiet Mode never stops it, so the picker does not offer it. */
+  essential: boolean;
+}
+
 export interface AutostartStatus {
   enabled: boolean;
   elevated: boolean;
@@ -272,6 +284,7 @@ export const api = {
   appInfo: () => invoke<AppInfo>("app_info"),
   getStats: () => invoke<SystemStats>("get_stats"),
   listProcesses: () => invoke<ProcessRow[]>("list_processes"),
+  listServices: () => invoke<ServiceRow[]>("list_services"),
   getSettings: () => invoke<Settings>("get_settings"),
   defaultSettings: () => invoke<Settings>("default_settings"),
   scan: () => invoke<ScanReport>("scan"),

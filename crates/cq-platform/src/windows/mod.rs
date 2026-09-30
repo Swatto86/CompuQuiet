@@ -5,8 +5,9 @@
 //! (`NtSuspendProcess`/`NtResumeProcess`, undocumented but stable since XP and
 //! what Process Explorer uses), the elevation check on the process token, the
 //! standby-list purge (`NtSetSystemInformation`, what RAMMap uses), the
-//! file-cache figure (`GetPerformanceInfo`), the service dependents list
-//! (`EnumDependentServicesW`), window enumeration, starting a program with
+//! file-cache figure (`GetPerformanceInfo`), the list of services and the
+//! dependents of one (`EnumServicesStatusExW`, `EnumDependentServicesW`),
+//! window enumeration, starting a program with
 //! the desktop shell's token (`CreateProcessWithTokenW`), holding off sleep
 //! (`SetThreadExecutionState`), and the UAC relaunch through `ShellExecuteW`
 //! with the `runas` verb.
@@ -18,6 +19,7 @@ mod launch;
 mod memory;
 mod power;
 mod process;
+mod service_list;
 mod services;
 mod session;
 
@@ -98,6 +100,10 @@ impl Platform for Windows {
 
     fn processes(&self) -> Result<Vec<cq_core::ProcessInfo>> {
         Ok(self.sampler.processes())
+    }
+
+    fn list_services(&self) -> Result<Vec<ServiceInfo>> {
+        service_list::list()
     }
 
     fn stats(&self) -> Result<SystemStats> {

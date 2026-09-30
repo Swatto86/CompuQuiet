@@ -149,6 +149,15 @@ unsafe fn entry_name(entry: &ENUM_SERVICE_STATUSW) -> String {
     } else {
         entry.lpDisplayName
     };
+    // SAFETY: as for this function.
+    unsafe { wide(pointer) }
+}
+
+/// A NUL-terminated UTF-16 string, or nothing for a null pointer.
+///
+/// SAFETY: `pointer` is null or points at a NUL-terminated string that stays
+/// valid for this call.
+pub(super) unsafe fn wide(pointer: *const u16) -> String {
     if pointer.is_null() {
         return String::new();
     }

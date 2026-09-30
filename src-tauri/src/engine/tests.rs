@@ -89,6 +89,16 @@ fn a_second_run_while_quiet_is_refused_and_rows_fold_instances() {
 }
 
 #[test]
+fn the_service_picker_lists_the_machines_services_and_marks_the_essential() {
+    let dir = tempfile::tempdir().unwrap();
+    let rows = engine(dir.path()).services().unwrap();
+    let find = |name: &str| rows.iter().find(|row| row.name == name).unwrap();
+    assert_eq!(find("Spooler").display_name, "Print Spooler");
+    assert!(!find("Spooler").essential);
+    assert!(find("AudioSrv").essential, "Quiet Mode never stops sound");
+}
+
+#[test]
 fn while_idle_holds_the_engine_and_refuses_during_a_run() {
     let dir = tempfile::tempdir().unwrap();
     let engine = engine(dir.path());

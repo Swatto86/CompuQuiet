@@ -30,6 +30,21 @@ const MIB: u64 = 1024 * 1024;
 /// deleted, and restoring it falls back to Balanced, as on Windows.
 const PLANS: [&str; 2] = ["balanced", "performance"];
 
+/// The services this machine has: name, what the Services list calls it, and
+/// the state it starts in. `AudioSrv` is one that Quiet Mode must never stop.
+const SERVICES: [(&str, &str, ServiceState); 6] = [
+    ("SysMain", "Superfetch", ServiceState::Running),
+    ("WSearch", "Windows Search", ServiceState::Running),
+    (
+        "DiagTrack",
+        "Connected User Experiences",
+        ServiceState::Stopped,
+    ),
+    ("Spooler", "Print Spooler", ServiceState::Running),
+    ("Fax", "Fax", ServiceState::Stopped),
+    ("AudioSrv", "Windows Audio", ServiceState::Running),
+];
+
 #[derive(Default)]
 struct State {
     processes: Vec<ProcessInfo>,
@@ -90,15 +105,10 @@ impl Fake {
             // scanner's heuristic is for.
             process(400, "render-farm.exe", 900),
         ];
-        let services = [
-            ("SysMain", ServiceState::Running),
-            ("WSearch", ServiceState::Running),
-            ("DiagTrack", ServiceState::Stopped),
-            ("Spooler", ServiceState::Running),
-        ]
-        .into_iter()
-        .map(|(name, state)| (name.to_ascii_lowercase(), state))
-        .collect();
+        let services = SERVICES
+            .iter()
+            .map(|(name, _, state)| (name.to_ascii_lowercase(), *state))
+            .collect();
         Fake {
             state: Mutex::new(State {
                 processes,
@@ -196,6 +206,19 @@ impl Platform for Fake {
             services,
             power_plan: state.power.clone(),
         })
+    }
+
+    fn list_services(&self) -> Result<Vec<ServiceInfo>> {
+        let state = self.lock();
+        Ok(SERVICES
+            .iter()
+            .map(|(name, display, _)| ServiceInfo {
+                name: (*name).to_string(),
+                display_name: (*display).to_string(),
+                state: state.services[&name.to_ascii_lowercase()],
+                needed_by: Vec::new(),
+            })
+            .collect())
     }
 
     fn stats(&self) -> Result<SystemStats> {

@@ -106,8 +106,9 @@ describe("the window", () => {
     });
 
     it("says a scan figure is a share of one core, and lets it pass 100", async () => {
+      // The CPU column: the seventh, now that the row buttons have the last.
       assert.match(
-        await text("#view-scan th.num:last-child"),
+        await text("#view-scan th.num:nth-child(7)"),
         /100% = one core/,
       );
     });

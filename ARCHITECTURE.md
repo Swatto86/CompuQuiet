@@ -140,14 +140,22 @@ of its frame, so those are read too); Linux and macOS report
 
 `cq-platform` is the only crate allowed `unsafe`, and only in its Windows
 module: `NtSuspendProcess`/`NtResumeProcess`, the token elevation check, the
-standby-list purge, the file-cache figure (`GetPerformanceInfo`), a service's
-running dependents, window enumeration, starting a program with the desktop
+standby-list purge, the file-cache figure (`GetPerformanceInfo`), the list
+of services and a service's running dependents, window enumeration, starting a program with the desktop
 shell's token (`CreateProcessWithTokenW`, so an elevated CompuQuiet does not
 hand its rights on), holding off sleep (`SetThreadExecutionState`) and the
 `runas` relaunch. Everything else uses safe crates
 (`windows-service`, `sysinfo`, `nix`) or structured subprocess calls with
 validated arguments (`powercfg`, `taskkill`, `systemctl`, `powerprofilesctl`,
 `launchctl`, `schtasks`).
+
+`Platform::list_services` names every service the machine has for the Park
+list's picker (`EnumServicesStatusExW`; `systemctl list-units`, system and
+user; `launchctl list`). The engine turns it into `ServiceRow`s (`rows.rs`),
+marking those `policy::is_critical_service` refuses as `essential`, which the
+page keeps out of the picker but still uses to name a listed service. It is
+a listing, not a check: on Linux and macOS a stopped or unloaded unit may be
+missing from it, so an absent name is never reported as not installed.
 
 `Capabilities` reports what this process can do at its privilege level; the
 planner skips what it cannot with the reason shown ("needs administrator
@@ -167,15 +175,23 @@ timed and auto-quiet specs drive.
 No framework: one module per view (`dashboard`, `scan`, `targets`,
 `settings-view`, `run-length`, `auto-quiet`, `updates`, `diagnostics`), `main.ts` for boot and the flows that span views,
 `tabs.ts` for the tab bar, and pure helpers with `node --test` tests
-(`format`, `scan-select`, `profile-edit`). Conventions that are not visible in
-the code:
+(`format`, `scan-select`, `profile-edit`, `park-list`). The Park list's rows
+are built in `park-rows.ts` and its pickers (running programs, the machine's
+services) live in `pickers.ts`. Conventions that are not visible in the code:
 
 - A control inside a row (a tick, an Action select) updates the state and the
   save button only; it never rebuilds the rows, which would drop the keyboard
   focus it was just used from. Rows are rebuilt on add, remove and reset, and
   a remove moves focus to the row that took its place.
 - Scan ticks are keyed by kind and name, so they survive a rescan (a visit to
-  another tab starts one) and rows moving.
+  another tab starts one) and rows moving. So do the "Close instead" marks,
+  which only apply when a find is added: `Recommendation`s stay as the scan
+  made them. Scan's *Never touch* saves through the page's settings like the
+  Park list does, and `rebase` carries it into unsaved Park list edits.
+- The Park list's filter draws only the rows that match (by name, and for a
+  service by the machine's name for it) and clears itself when a row is
+  added, so a new row is never hidden; the row's place for focus after a
+  remove counts the rows drawn, not the whole list.
 - One dialog at a time: a new request replaces the one showing, which ends as
   cancelled. While it shows, the header, banner and main view are `inert` and
   the Ctrl+1..4 shortcuts stand aside.

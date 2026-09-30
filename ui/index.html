@@ -142,14 +142,14 @@
               <div>
                 <h3>What is using resources right now</h3>
                 <p class="muted" id="scan-summary">Scan to list background programs and services you can park safely.</p>
-                <p class="muted scan-legend">Low risk starts ticked. Medium risk (browsers, launchers, Office) stays off until you tick it. Already on your park list is shown greyed out.</p>
+                <p class="muted scan-legend">Low risk starts ticked. Medium risk (browsers, launchers, Office) stays off until you tick it. Already on your park list is shown greyed out. Close instead quits a program and opens it again when you restore, so anything unsaved in it is lost. Never touch keeps a program or service off every list.</p>
               </div>
               <button id="scan-run" type="button" class="primary">Scan now</button>
             </div>
             <div class="card">
               <table class="targets scan">
                 <caption class="sr-only">Programs and services that could be parked</caption>
-                <thead><tr><th scope="col">Park</th><th scope="col">What</th><th scope="col">Action</th><th scope="col">Why</th><th scope="col">Risk</th><th scope="col" class="num">Memory</th><th scope="col" class="num">CPU (100% = one core)</th></tr></thead>
+                <thead><tr><th scope="col">Park</th><th scope="col">What</th><th scope="col">Action</th><th scope="col">Why</th><th scope="col">Risk</th><th scope="col" class="num">Memory</th><th scope="col" class="num">CPU (100% = one core)</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead>
                 <tbody id="scan-rows"></tbody>
               </table>
             </div>
@@ -164,6 +164,10 @@
 
         <section id="view-targets" class="view with-actions" role="tabpanel" aria-labelledby="tab-targets" hidden>
           <div class="view-body">
+          <div class="filter-bar">
+            <label class="grow"><span class="sr-only">Filter the programs and services below</span><input id="park-filter" type="search" placeholder="Filter programs and services by name" autocomplete="off" /></label>
+            <span class="muted" id="park-filter-status" aria-live="polite"></span>
+          </div>
           <div class="cards">
             <div class="card card-wide">
               <div class="card-head">
@@ -191,7 +195,11 @@
             <div class="card">
               <div class="card-head"><h3>Services to stop</h3><span class="muted" id="service-hint"></span></div>
               <form id="service-add" class="row">
-                <label class="grow"><span class="sr-only">Service name</span><input id="service-name" placeholder="Service name" autocomplete="off" /></label>
+                <label class="grow">
+                  <span class="sr-only">Service name</span>
+                  <input id="service-name" list="running-services" placeholder="Add a service (or pick one)" autocomplete="off" />
+                  <datalist id="running-services"></datalist>
+                </label>
                 <button type="submit" class="small">Add</button>
               </form>
               <table class="targets">

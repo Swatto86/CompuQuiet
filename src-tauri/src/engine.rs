@@ -19,7 +19,7 @@ pub use self::ending::{EndingState, Watching};
 pub use self::preview::Preview;
 pub use self::report::{RunReport, notification};
 use crate::error::AppError;
-use crate::rows::{ProcessRow, fold_processes};
+use crate::rows::{ProcessRow, ServiceRow, fold_processes, service_rows};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct LogLine {
@@ -245,6 +245,13 @@ impl Engine {
     pub fn processes(&self) -> Result<Vec<ProcessRow>, AppError> {
         let snapshot = self.platform.snapshot(&[])?;
         Ok(fold_processes(snapshot.processes))
+    }
+
+    pub fn services(&self) -> Result<Vec<ServiceRow>, AppError> {
+        Ok(service_rows(
+            self.platform.list_services()?,
+            self.platform.os(),
+        ))
     }
 
     /// Run `f` holding the engine, so no run is cut short by it or starts

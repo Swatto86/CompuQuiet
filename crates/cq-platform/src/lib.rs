@@ -27,7 +27,9 @@ use std::time::Duration;
 pub use error::{PlatformError, Result};
 pub use spawn::run_tool;
 
-use cq_core::{Activity, Capabilities, Marker, Os, PowerPlan, ProcessInfo, Snapshot, SystemStats};
+use cq_core::{
+    Activity, Capabilities, Marker, Os, PowerPlan, ProcessInfo, ServiceInfo, Snapshot, SystemStats,
+};
 
 pub trait Platform: Send + Sync {
     /// The operating system this adapter models. The native adapters answer
@@ -50,6 +52,11 @@ pub trait Platform: Send + Sync {
     }
 
     fn stats(&self) -> Result<SystemStats>;
+
+    /// The services the machine has, each with its state, for the Park list's
+    /// picker: every name a profile could hold, not only the ones it does.
+    /// `needed_by` is left empty. Reading needs no rights.
+    fn list_services(&self) -> Result<Vec<ServiceInfo>>;
 
     /// Whether the machine is running on its own battery right now. `None`
     /// where that cannot be told or there is no battery to speak of, which

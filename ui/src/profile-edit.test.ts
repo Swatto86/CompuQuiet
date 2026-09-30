@@ -166,3 +166,30 @@ test("a program joins the auto-quiet list once, whatever its spelling, up to the
     `The list holds at most ${MOST_PROGRAMS} programs`,
   );
 });
+
+test("a name protected from Scan is carried into unsaved edits and takes the program off them", () => {
+  const saved = profile();
+  // Unsaved: a service switched off, and Dropbox added by hand.
+  const typed = addProcess(setService(saved, 0, false), "Dropbox", "suspend");
+  assert.ok(typed.ok);
+  if (!typed.ok) return;
+  // Saved elsewhere: Scan's Never touch on Dropbox and on SysMain.
+  const protectedNames = addKeepAlive(saved, "dropbox.exe");
+  assert.ok(protectedNames.ok);
+  if (!protectedNames.ok) return;
+  const after = addKeepAlive(protectedNames.profile, "SysMain");
+  assert.ok(after.ok);
+  if (!after.ok) return;
+
+  const next = rebase(typed.profile, saved, after.profile);
+  assert.deepEqual(next.keep_alive, ["dropbox.exe", "SysMain"]);
+  assert.deepEqual(
+    next.processes.map((target) => target.name),
+    ["OneDrive"],
+    "protection wins over the unsaved add",
+  );
+  assert.deepEqual(next.services, [], "and over the service, edit or not");
+  // A name that was already protected when the edits began is not re-added.
+  const again = rebase(next, after.profile, after.profile);
+  assert.deepEqual(again.keep_alive, next.keep_alive);
+});

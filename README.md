@@ -39,10 +39,16 @@ Your own "never touch" list sits on top of that.
    window, stoppable services that are running, a non-performance power plan
    and (not on Linux, which gives its cache up on demand) a large file cache. Each row shows its cost, why it is safe and a risk
    level. Low risk starts ticked; medium risk stays off until you tick it.
-   *Add and free up this PC* adds the ticked finds and parks them.
+   *Add and free up this PC* adds the ticked finds and parks them. On a
+   row, *Never touch* keeps that program or service off every list for good,
+   and *Close instead* adds a program to be closed rather than suspended
+   (it asks first for a browser, launcher or Office, which can hold unsaved
+   work).
 3. Review **Park list**: the built-in list of background hogs for your platform,
    with a running/not-running indicator. Add any running program by name,
-   choose Suspend or Close & relaunch, add services, and save. Removing a row
+   choose Suspend or Close & relaunch, add services (typed, or picked from
+   the services the machine has, minus the essential ones), find a row with
+   the filter box, and save. Removing a row
    adds it to *Never touch*, so a scan does not bring it back; take it off
    that list to allow that.
 4. Press the big button. With *Also park low-risk finds from a quick scan* on

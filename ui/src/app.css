@@ -559,6 +559,30 @@ ol.log .detail {
   width: 100%;
 }
 
+/* One filter for both tables of the Park list. */
+.filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.filter-bar .grow {
+  flex: 1;
+  display: flex;
+}
+
+.filter-bar .grow input {
+  width: 100%;
+}
+
+/* What the machine calls a service, under the name it is listed by. */
+.display-name {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--fg-muted);
+}
+
 table.targets {
   width: 100%;
   border-collapse: collapse;
@@ -891,6 +915,16 @@ table.scan td.num {
 
 table.scan td.num {
   white-space: nowrap;
+}
+
+/* Never touch and Close instead: small buttons that stay on one line. */
+table.scan td.row-actions {
+  white-space: nowrap;
+  text-align: right;
+}
+
+table.scan td.row-actions button + button {
+  margin-left: 4px;
 }
 
 /* A row or chip that was just added, until the highlight is taken off. */

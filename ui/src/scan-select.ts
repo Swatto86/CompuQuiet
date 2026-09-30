@@ -38,6 +38,53 @@ export function carrySelection(
   return next;
 }
 
+/**
+ * What a row will do if it is added: a program marked "close instead" is
+ * closed (and opened again when Quiet Mode ends), every other find is as the
+ * scan suggested it.
+ */
+export function chosenKind(
+  item: Recommendation,
+  closing: Set<string>,
+): RecommendationKind {
+  return item.kind.kind === "process" && closing.has(rowKey(item))
+    ? { kind: "process", action: "close" }
+    : item.kind;
+}
+
+export function withChoices(
+  items: Recommendation[],
+  closing: Set<string>,
+): Recommendation[] {
+  return items.map((item) => ({ ...item, kind: chosenKind(item, closing) }));
+}
+
+/** The marks that still apply on a fresh scan: a find that is gone or already on the list takes its mark with it. */
+export function carryClosing(
+  closing: Set<string>,
+  after: Recommendation[],
+): Set<string> {
+  const open = new Set(
+    after
+      .filter((item) => item.kind.kind === "process" && !item.already_targeted)
+      .map(rowKey),
+  );
+  return new Set([...closing].filter((key) => open.has(key)));
+}
+
+/**
+ * Closes that could lose work. A medium-risk find is a browser, a launcher,
+ * voice chat or Office: the programs that hold something unsaved.
+ */
+export function riskyCloses(items: Recommendation[]): Recommendation[] {
+  return items.filter(
+    (item) =>
+      item.risk === "medium" &&
+      item.kind.kind === "process" &&
+      item.kind.action === "close",
+  );
+}
+
 export function selectedItems(
   items: Recommendation[],
   selected: Set<string>,

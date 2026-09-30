@@ -186,6 +186,7 @@ pub fn run() {
             commands::app_info,
             commands::get_stats,
             commands::list_processes,
+            commands::list_services,
             commands::get_settings,
             commands::default_settings,
             commands::save_settings,

@@ -95,6 +95,34 @@ pub(crate) fn parse_print(output: &str) -> ServiceState {
     ServiceState::Stopped
 }
 
+/// Rows of `launchctl list`: `PID Status Label`, with a dash for the PID
+/// while the agent is not running. The header, and the throwaway labels
+/// launchd gives programs that are not agents, are left out.
+pub(crate) fn parse_list(output: &str) -> Vec<ServiceInfo> {
+    output
+        .lines()
+        .filter_map(|line| {
+            let mut columns = line.split_whitespace();
+            let (pid, _status, label) = (columns.next()?, columns.next()?, columns.next()?);
+            let running = pid != "-";
+            let throwaway = label.starts_with("application.") || label.starts_with("0x");
+            if (running && pid.parse::<u32>().is_err()) || throwaway || !valid_label(label) {
+                return None;
+            }
+            Some(ServiceInfo {
+                name: label.to_string(),
+                display_name: label.to_string(),
+                state: if running {
+                    ServiceState::Running
+                } else {
+                    ServiceState::Stopped
+                },
+                needed_by: Vec::new(),
+            })
+        })
+        .collect()
+}
+
 impl Platform for MacOs {
     fn os(&self) -> cq_core::Os {
         cq_core::Os::MacOs
@@ -136,6 +164,13 @@ impl Platform for MacOs {
             services,
             power_plan: None,
         })
+    }
+
+    /// The agents launchd has loaded for the signed-in user. Asked when the
+    /// Park list opens, so a stuck tool must not hold it.
+    fn list_services(&self) -> Result<Vec<ServiceInfo>> {
+        run_tool_within("launchctl", &["list"], Duration::from_secs(15))
+            .map(|output| parse_list(&output))
     }
 
     fn stats(&self) -> Result<SystemStats> {
@@ -281,6 +316,30 @@ mod tests {
         assert_eq!(parse_pmset(&report("UPS Power")), Some(false));
         assert_eq!(parse_pmset(""), None);
         assert_eq!(parse_pmset("pmset: no such thing"), None);
+    }
+
+    #[test]
+    fn launchctl_list_gives_each_agent_and_whether_it_is_running() {
+        let listing = "PID\tStatus\tLabel\n\
+            -\t0\tcom.google.keystone.agent\n\
+            412\t0\tcom.microsoft.update.agent\n\
+            -\t78\tcom.apple.SafariHistoryServiceAgent\n\
+            977\t0\tapplication.com.apple.Terminal.1234.5678\n\
+            -\t0\t0x100aa.anonymous.zsh\n\
+            not-a-pid\t0\tcom.example.odd\n\
+            -\t0\t-bootout\n";
+        let all = parse_list(listing);
+        let labels: Vec<&str> = all.iter().map(|s| s.name.as_str()).collect();
+        assert_eq!(
+            labels,
+            [
+                "com.google.keystone.agent",
+                "com.microsoft.update.agent",
+                "com.apple.SafariHistoryServiceAgent"
+            ]
+        );
+        assert_eq!(all[0].state, ServiceState::Stopped);
+        assert_eq!(all[1].state, ServiceState::Running);
     }
 
     #[test]

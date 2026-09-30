@@ -30,12 +30,14 @@ function checkName(name: string, kind: string): string | null {
   return null;
 }
 
+function hasName(list: string[], name: string): boolean {
+  const key = normalizeName(name);
+  return list.some((kept) => normalizeName(kept) === key);
+}
+
 /** `list` plus `name`, unless a name that compares equal is already in it. */
 function withName(list: string[], name: string): string[] {
-  const key = normalizeName(name);
-  return list.some((kept) => normalizeName(kept) === key)
-    ? list
-    : [...list, name];
+  return hasName(list, name) ? list : [...list, name];
 }
 
 export function addProcess(
@@ -198,7 +200,8 @@ export function setService(
 /**
  * Carry a change saved elsewhere (Scan adding its finds) from `before` to
  * `after` into a working copy with unsaved edits, instead of discarding the
- * edits. Scan only adds targets and switches options on.
+ * edits. Scan adds targets, switches options on, and puts names under Never
+ * touch (which, as when typed in, takes them off the lists).
  */
 export function rebase(
   working: Profile,
@@ -218,6 +221,15 @@ export function rebase(
   for (const target of after.services) {
     if (!has(before.services, target.name) && !has(next.services, target.name))
       next.services.push(structuredClone(target));
+  }
+  for (const name of after.keep_alive) {
+    if (hasName(before.keep_alive, name)) continue;
+    next.keep_alive = withName(next.keep_alive, name);
+    const key = normalizeName(name);
+    next.processes = next.processes.filter(
+      (t) => normalizeName(t.name) !== key,
+    );
+    next.services = next.services.filter((t) => normalizeName(t.name) !== key);
   }
   if (after.power !== before.power) next.power = after.power;
   if (after.purge_memory !== before.purge_memory)

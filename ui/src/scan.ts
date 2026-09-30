@@ -6,15 +6,19 @@ import {
   type ScanReport,
   type Settings,
 } from "./bridge.ts";
-import { toast } from "./dialog.ts";
+import { showDialog, toast } from "./dialog.ts";
 import { formatBytes, formatCoreShare } from "./format.ts";
 import {
+  carryClosing,
   carrySelection,
+  chosenKind,
   kindLabel,
+  riskyCloses,
   rowKey,
   selectedItems,
   summarize,
   tickLabel,
+  withChoices,
 } from "./scan-select.ts";
 
 function byId<T extends HTMLElement>(id: string): T {
@@ -26,6 +30,8 @@ function byId<T extends HTMLElement>(id: string): T {
 export interface ScanHost {
   /** The new settings after finds were added to the park list. */
   onSettings(settings: Settings): void;
+  /** Save a program or service under Never touch, as the Park list does. */
+  neverTouch(name: string): Promise<void>;
   /** Switch Quiet Mode on now (the dashboard's toggle). */
   goQuiet(): Promise<void>;
 }
@@ -33,6 +39,8 @@ export interface ScanHost {
 export class Scan {
   private report: ScanReport | null = null;
   private selected = new Set<string>();
+  /** Programs the user marked to be closed rather than suspended. */
+  private closing = new Set<string>();
   private busy = false;
   private quiet = false;
 
@@ -76,13 +84,19 @@ export class Scan {
       this.selected,
       report.recommendations,
     );
+    this.closing = carryClosing(this.closing, report.recommendations);
     this.report = report;
   }
 
   private async apply(thenQuiet: boolean): Promise<void> {
     if (!this.report || this.busy) return;
-    const accepted = selectedItems(this.report.recommendations, this.selected);
+    const accepted = withChoices(
+      selectedItems(this.report.recommendations, this.selected),
+      this.closing,
+    );
     if (accepted.length === 0) return;
+    const risky = riskyCloses(accepted);
+    if (risky.length > 0 && !(await this.confirmClose(risky))) return;
     this.setBusy(true, "Adding…");
     let added = false;
     try {
@@ -105,6 +119,45 @@ export class Scan {
     // what it promised, and going quiet on the old list would park programs
     // the user did not choose. A failed re-scan does not undo the add.
     if (thenQuiet && added) await this.host.goQuiet();
+  }
+
+  /** Closing a browser, a launcher or Office can lose what is open in it. */
+  private async confirmClose(items: Recommendation[]): Promise<boolean> {
+    const many = items.length > 1;
+    const choice = await showDialog({
+      title: "Close instead of suspend?",
+      body: `${items.map((item) => item.name).join(", ")} will be closed when Quiet Mode runs, and opened again when you restore. Anything unsaved in ${many ? "them" : "it"} is lost; suspending would have kept it.`,
+      buttons: [
+        { label: "Add and close", value: "yes", primary: true },
+        { label: "Cancel", value: "no" },
+      ],
+    });
+    return choice === "yes";
+  }
+
+  /** Keep a find off every list for good; it then no longer turns up here. */
+  private async neverTouch(item: Recommendation): Promise<void> {
+    if (this.busy) return;
+    this.setBusy(true, "Saving…");
+    let saved = false;
+    try {
+      await this.host.neverTouch(item.name);
+      saved = true;
+      toast(
+        this.quiet
+          ? `${item.name} will never be touched. Quiet Mode is on, so that starts from the next run.`
+          : `${item.name} will never be touched`,
+      );
+      await this.rescan();
+    } catch (error) {
+      toast(
+        saved ? `Scan failed: ${errorMessage(error)}` : errorMessage(error),
+        true,
+      );
+    } finally {
+      this.setBusy(false, "");
+      this.render();
+    }
   }
 
   private setBusy(busy: boolean, status: string): void {
@@ -182,9 +235,11 @@ export class Scan {
     name.textContent =
       item.instances > 1 ? `${item.name} ×${item.instances}` : item.name;
     const action = document.createElement("td");
-    action.textContent = item.already_targeted
-      ? "already on the list"
-      : kindLabel(item.kind);
+    const shown = (): string =>
+      item.already_targeted
+        ? "already on the list"
+        : kindLabel(chosenKind(item, this.closing));
+    action.textContent = shown();
     const why = document.createElement("td");
     why.className = "why";
     why.textContent = item.reason;
@@ -201,14 +256,55 @@ export class Scan {
     cpu.className = "num";
     cpu.textContent =
       item.kind.kind === "process" ? formatCoreShare(item.cpu_percent) : "—";
-    row.append(tick, name, action, why, risk, memory, cpu);
+    const more = document.createElement("td");
+    more.className = "row-actions";
+    if (!item.already_targeted && item.kind.kind === "process") {
+      const close = this.rowButton("Close instead", () => {
+        if (this.closing.has(key)) this.closing.delete(key);
+        else this.closing.add(key);
+        const closes = this.closing.has(key);
+        close.textContent = closes ? "Suspend instead" : "Close instead";
+        close.setAttribute(
+          "aria-label",
+          `${closes ? "Suspend" : "Close"} ${item.name} instead`,
+        );
+        action.textContent = shown();
+        input.setAttribute(
+          "aria-label",
+          tickLabel({ ...item, kind: chosenKind(item, this.closing) }),
+        );
+      });
+      close.setAttribute("aria-label", `Close ${item.name} instead`);
+      more.appendChild(close);
+    }
+    if (
+      !item.already_targeted &&
+      (item.kind.kind === "process" || item.kind.kind === "service")
+    ) {
+      const never = this.rowButton(
+        "Never touch",
+        () => void this.neverTouch(item),
+      );
+      never.setAttribute("aria-label", `Never touch ${item.name}`);
+      more.appendChild(never);
+    }
+    row.append(tick, name, action, why, risk, memory, cpu, more);
     return row;
+  }
+
+  private rowButton(label: string, onClick: () => void): HTMLButtonElement {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "small ghost";
+    button.textContent = label;
+    button.addEventListener("click", onClick);
+    return button;
   }
 
   private emptyRow(text: string): HTMLTableRowElement {
     const row = document.createElement("tr");
     const cell = document.createElement("td");
-    cell.colSpan = 7;
+    cell.colSpan = 8;
     cell.className = "muted";
     cell.textContent = text;
     row.appendChild(cell);

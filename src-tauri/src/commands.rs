@@ -11,7 +11,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use crate::autostart::{self, AutostartStatus};
 use crate::engine::{Engine, EngineState, LogLine, Preview};
 use crate::error::AppError;
-use crate::rows::ProcessRow;
+use crate::rows::{ProcessRow, ServiceRow};
 use crate::tray;
 
 #[cfg(feature = "fake-platform")]
@@ -78,6 +78,13 @@ pub async fn get_stats(engine: State<'_, Arc<Engine>>) -> Result<SystemStats, Ap
 pub async fn list_processes(engine: State<'_, Arc<Engine>>) -> Result<Vec<ProcessRow>, AppError> {
     let engine = engine.inner().clone();
     tauri::async_runtime::spawn_blocking(move || engine.processes()).await?
+}
+
+/// Every service on the machine, for the Park list's picker.
+#[tauri::command]
+pub async fn list_services(engine: State<'_, Arc<Engine>>) -> Result<Vec<ServiceRow>, AppError> {
+    let engine = engine.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || engine.services()).await?
 }
 
 #[tauri::command]

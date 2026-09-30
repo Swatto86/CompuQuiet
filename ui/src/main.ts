@@ -17,6 +17,7 @@ import { Diagnostics } from "./diagnostics.ts";
 import { showDialog, toast } from "./dialog.ts";
 import { byId } from "./dom.ts";
 import { closeHint, homePlan } from "./format.ts";
+import { addKeepAlive } from "./profile-edit.ts";
 import { PreviewPanel } from "./preview.ts";
 import { Recovery } from "./recovery.ts";
 import { RunLength } from "./run-length.ts";
@@ -87,6 +88,12 @@ async function boot(): Promise<void> {
       settings = next;
       targets.setProfile(next.profile);
       renderAll();
+    },
+    neverTouch: async (name) => {
+      const result = addKeepAlive(settings.profile, name);
+      if (!result.ok) throw new Error(result.reason);
+      await saveSettings({ ...settings, profile: result.profile });
+      targets.setProfile(result.profile);
     },
     goQuiet: async () => {
       if (!engine.quiet) await toggle();
