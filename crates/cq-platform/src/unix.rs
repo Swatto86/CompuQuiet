@@ -15,6 +15,16 @@ pub fn is_root() -> bool {
     nix::unistd::geteuid().is_root()
 }
 
+/// The account whose per-user services this app manages. Run under `sudo`
+/// that is the person who typed it: root has no login session of its own.
+#[cfg(any(target_os = "macos", test))]
+pub fn account_uid(uid: u32, sudo_uid: Option<&str>) -> u32 {
+    if uid != 0 {
+        return uid;
+    }
+    sudo_uid.and_then(|value| value.parse().ok()).unwrap_or(uid)
+}
+
 fn signal(pid: u32, signal: Signal) -> Result<()> {
     let raw = i32::try_from(pid)
         .map_err(|_| PlatformError::Other(format!("PID {pid} is out of range")))?;
@@ -60,6 +70,14 @@ pub fn close(sampler: &Sampler, pid: u32, start_time: u64) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn under_sudo_the_services_are_the_typing_users_not_roots() {
+        assert_eq!(account_uid(501, Some("1000")), 501);
+        assert_eq!(account_uid(0, Some("501")), 501);
+        assert_eq!(account_uid(0, None), 0);
+        assert_eq!(account_uid(0, Some("not a number")), 0);
+    }
 
     #[test]
     fn suspend_resume_and_close_act_on_a_real_child_process() {

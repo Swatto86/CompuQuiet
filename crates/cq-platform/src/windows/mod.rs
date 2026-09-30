@@ -33,7 +33,8 @@ use windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
 
 use crate::Platform;
 use crate::error::{PlatformError, Result};
-use crate::procs::{Sampler, run_tool, spawn_detached};
+use crate::procs::Sampler;
+use crate::spawn::{run_tool, spawn_detached};
 
 const GRACE: Duration = Duration::from_secs(5);
 const ERROR_NOT_ALL_ASSIGNED: u32 = 1300;

@@ -1,6 +1,6 @@
 //! The macOS adapter: signals for processes and `launchctl` for the user's
-//! launch agents. Power profiles and cache purges need root on macOS and are
-//! reported as unavailable rather than half-done.
+//! launch agents. macOS has no power profile to switch, and the cache purge
+//! needs root, so both are reported as unavailable rather than half-done.
 
 use std::path::{Path, PathBuf};
 
@@ -8,7 +8,8 @@ use cq_core::{Capabilities, PowerPlan, ServiceInfo, ServiceState, Snapshot, Syst
 
 use crate::Platform;
 use crate::error::{PlatformError, Result};
-use crate::procs::{Sampler, run_tool, spawn_detached};
+use crate::procs::Sampler;
+use crate::spawn::{app_bundle, run_tool, spawn_detached};
 use crate::unix;
 
 pub struct MacOs {
@@ -20,7 +21,10 @@ impl MacOs {
     pub fn new() -> MacOs {
         MacOs {
             sampler: Sampler::new(),
-            uid: nix::unistd::getuid().as_raw(),
+            uid: unix::account_uid(
+                nix::unistd::getuid().as_raw(),
+                std::env::var("SUDO_UID").ok().as_deref(),
+            ),
         }
     }
 
@@ -93,7 +97,7 @@ impl Platform for MacOs {
         Capabilities {
             services: true,
             power: false,
-            memory_purge: false,
+            memory_purge: unix::is_root(),
             elevated: unix::is_root(),
             can_elevate: false,
         }
@@ -141,8 +145,23 @@ impl Platform for MacOs {
         unix::close(&self.sampler, pid, start_time)
     }
 
+    /// An app is opened through LaunchServices, as when the user opens it, so
+    /// it is not CompuQuiet's child: macOS would otherwise name CompuQuiet in
+    /// its microphone and file-access prompts. `open` starts it in the
+    /// folder LaunchServices chooses, so the recorded one is not used.
     fn launch(&self, exe: &Path, args: &[String], cwd: Option<&Path>) -> Result<()> {
-        spawn_detached(exe, args, cwd)
+        let Some(bundle) = app_bundle(exe).and_then(Path::to_str) else {
+            return spawn_detached(exe, args, cwd);
+        };
+        if !Path::new(bundle).is_dir() {
+            return Err(PlatformError::NotInstalled(bundle.to_string()));
+        }
+        let mut open = vec!["-a", bundle];
+        if args.len() > 1 {
+            open.push("--args");
+            open.extend(args.iter().skip(1).map(String::as_str));
+        }
+        run_tool("open", &open).map(drop)
     }
 
     fn stop_service(&self, label: &str) -> Result<()> {

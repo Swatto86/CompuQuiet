@@ -6,6 +6,7 @@
 
 pub mod error;
 mod procs;
+mod spawn;
 
 #[cfg(feature = "fake")]
 pub mod fake;
@@ -21,7 +22,7 @@ mod windows;
 use std::path::Path;
 
 pub use error::{PlatformError, Result};
-pub use procs::run_tool;
+pub use spawn::run_tool;
 
 use cq_core::{Activity, Capabilities, Marker, Os, PowerPlan, Snapshot, SystemStats};
 

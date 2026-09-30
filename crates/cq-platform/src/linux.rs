@@ -4,12 +4,14 @@
 //! `pkexec` when not root.
 
 use std::path::Path;
+use std::time::Duration;
 
 use cq_core::{Capabilities, PowerPlan, ServiceInfo, ServiceState, Snapshot, SystemStats};
 
 use crate::Platform;
 use crate::error::{PlatformError, Result};
-use crate::procs::{Sampler, run_tool, spawn_detached};
+use crate::procs::Sampler;
+use crate::spawn::{run_tool, run_tool_within, spawn_detached};
 use crate::unix;
 
 pub struct Linux {
@@ -25,12 +27,37 @@ fn on_path(program: &str) -> bool {
         .unwrap_or(false)
 }
 
+/// Whether the power-profiles daemon answers and offers a performance
+/// profile. The tool alone proves nothing: with TLP or no daemon running it
+/// is installed and fails every time, which would show as a red step on each
+/// run instead of "not available on this system".
+fn power_profiles_usable() -> bool {
+    // Asked once at start-up, so a hung D-Bus call must not stall the app.
+    const PROBE: Duration = Duration::from_secs(5);
+    if !on_path("powerprofilesctl") {
+        return false;
+    }
+    if run_tool_within("powerprofilesctl", &["get"], PROBE).is_err() {
+        return false;
+    }
+    // Hardware whose driver has no performance mode lists only the others.
+    // Output that cannot be read counts as usable: the step reports its own
+    // failure.
+    run_tool_within("powerprofilesctl", &["list"], PROBE)
+        .map(|list| offers_performance(&list))
+        .unwrap_or(true)
+}
+
+fn offers_performance(list: &str) -> bool {
+    list.contains("performance")
+}
+
 impl Linux {
     pub fn new() -> Linux {
         Linux {
             sampler: Sampler::new(),
             root: unix::is_root(),
-            power_tool: on_path("powerprofilesctl"),
+            power_tool: power_profiles_usable(),
             pkexec: on_path("pkexec"),
         }
     }
@@ -280,6 +307,14 @@ mod tests {
         assert!(denied.needs_elevation());
         let other = classify_systemctl("x.service", failure("systemctl start failed: boom"));
         assert!(matches!(other, PlatformError::Other(_)));
+    }
+
+    #[test]
+    fn a_power_daemon_without_a_performance_profile_is_not_usable() {
+        let others = "* balanced:\n    CpuDriver:\tintel_pstate\n\n  power-saver:\n    CpuDriver:\tintel_pstate\n";
+        assert!(!offers_performance(others));
+        let all = format!("  performance:\n    Degraded:\tno\n\n{others}");
+        assert!(offers_performance(&all));
     }
 
     #[test]
