@@ -73,12 +73,29 @@ Var HadDesktopShortcut
       Pop $0
     ${EndIf}
   ${EndIf}
+
+  ; A copy that was running as administrator asked for this update with
+  ; /ELEVATED and without /R (update.rs). The setup's own restart starts the
+  ; program as the desktop user, which would bring it back without those
+  ; rights until the next sign-in. This setup is elevated, so what it starts
+  ; is too. Hidden, as every restart is (cli::restart_args).
+  ClearErrors
+  ${GetOptions} $CMDLINE "/ELEVATED" $0
+  ${IfNot} ${Errors}
+  ${AndIf} $UpdateMode = 1
+    Exec '"$INSTDIR\${MAINBINARYNAME}.exe" --hidden'
+  ${EndIf}
 !macroend
 
 !macro NSIS_HOOK_PREUNINSTALL
   ; The sign-in task is made by the app, not by this setup, so it would
-  ; outlive it and start nothing at every sign-in. An update keeps it.
+  ; outlive it and start nothing at every sign-in. An update keeps it, and so
+  ; does a reinstall: a setup run by hand over an installed copy uninstalls it
+  ; first ("uninstall before installing") by running this uninstaller in place,
+  ; from the install folder, and then installs again. Someone who uninstalls
+  ; runs a copy of it that NSIS makes in a temporary folder.
   ${If} $UpdateMode <> 1
+  ${AndIf} $EXEDIR != $INSTDIR
     nsExec::Exec 'schtasks /Delete /F /TN "${PRODUCTNAME}"'
     Pop $0
     nsExec::Exec 'schtasks /Delete /F /TN "ComputeQuiet"'

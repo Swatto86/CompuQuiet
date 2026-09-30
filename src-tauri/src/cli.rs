@@ -153,14 +153,30 @@ pub fn check_profile(data_dir: &Path, launch: &Launch) -> Result<(), String> {
 const USAGE: &str = "Use one of --quiet, --restore or --toggle; --profile NAME chooses the profile for --quiet or --toggle; --hidden starts in the tray.";
 
 /// What Tauri hands to a restart and to the updater as this copy's launch
-/// arguments: the ones it was given, less the command. The updater relaunches
-/// Windows with them after an install, which would otherwise switch Quiet Mode
-/// on again at an idle moment nobody asked for. Managed before Tauri manages
-/// its own, which then leaves this one in place; `start` checks that.
+/// arguments: the ones it was given, made a plain launch to the tray
+/// ([`restart_args`]). The updater relaunches Windows with them after an
+/// install, which would otherwise switch Quiet Mode on again at an idle moment
+/// nobody asked for. Managed before Tauri manages its own, which then leaves
+/// this one in place; `start` checks that.
 pub fn launch_env() -> tauri::Env {
     let mut env = tauri::Env::default();
-    env.args_os = without_commands(env.args_os);
+    env.args_os = restart_args(env.args_os);
     env
+}
+
+/// A restart happens with the window closed to the tray (an update installs
+/// only then), so it goes back there: a copy opened from the Start menu has no
+/// `--hidden`, and a window-recovery restart's `--reopen` would show the
+/// window again. The one restart that must show it builds its own arguments.
+fn restart_args(args: Vec<OsString>) -> Vec<OsString> {
+    let mut args: Vec<OsString> = without_commands(args)
+        .into_iter()
+        .filter(|arg| arg != crate::REOPEN_ARG)
+        .collect();
+    if !args.iter().any(|arg| arg == HIDDEN_ARG) {
+        args.push(HIDDEN_ARG.into());
+    }
+    args
 }
 
 /// The profile goes with the command: left behind, it would be an argument

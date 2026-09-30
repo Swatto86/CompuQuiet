@@ -198,6 +198,39 @@ fn a_relaunch_is_never_given_the_command() {
 }
 
 #[test]
+fn a_restart_goes_back_to_the_tray_as_a_plain_launch() {
+    let args = |list: &[&str]| list.iter().map(OsString::from).collect::<Vec<_>>();
+    // A copy opened from the Start menu has no --hidden, and an update only
+    // installs with its window closed, so the restart must not show it.
+    assert_eq!(
+        restart_args(args(&["compuquiet.exe"])),
+        args(&["compuquiet.exe", "--hidden"])
+    );
+    // A window-recovery restart asked to show the window; this one did not.
+    assert_eq!(
+        restart_args(args(&["compuquiet.exe", "--reopen"])),
+        args(&["compuquiet.exe", "--hidden"])
+    );
+    assert_eq!(
+        restart_args(args(&["compuquiet.exe", "--hidden", "--reopen"])),
+        args(&["compuquiet.exe", "--hidden"])
+    );
+    // Already hidden: once, and the command is still dropped.
+    assert_eq!(
+        restart_args(args(&["compuquiet.exe", "--quiet", "--hidden"])),
+        args(&["compuquiet.exe", "--hidden"])
+    );
+    assert!(
+        parse(
+            restart_args(args(&["compuquiet.exe", "--reopen"]))
+                .into_iter()
+                .skip(1)
+        )
+        .is_ok()
+    );
+}
+
+#[test]
 fn a_failure_says_what_was_asked_and_keeps_the_code() {
     let refused = failed(
         true,

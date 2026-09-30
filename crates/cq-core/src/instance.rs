@@ -34,8 +34,11 @@ const MAX_REQUEST_BYTES: u64 = 256;
 
 /// How long a second launch waits for the running copy to answer. A copy that
 /// is still exiting (a restart, the end of an elevated relaunch) frees the lock
-/// inside this time, so the launch then runs instead.
-pub const ANSWER_WITHIN: Duration = Duration::from_secs(3);
+/// inside this time, so the launch then runs instead. A copy still starting
+/// holds the lock but reads requests only once its window exists, which takes
+/// seconds when WebView2 starts slowly at sign-in; the launch that finds it
+/// then must not give up and exit, silently in the release build.
+pub const ANSWER_WITHIN: Duration = Duration::from_secs(15);
 /// How often the running copy looks for requests.
 pub const POLL: Duration = Duration::from_millis(500);
 const ANSWER_POLL: Duration = Duration::from_millis(50);

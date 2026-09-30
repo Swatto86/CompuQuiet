@@ -41,6 +41,11 @@ const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 /// How often a downloaded update looks for the moment to install.
 const INSTALL_POLL: Duration = Duration::from_secs(15);
 
+/// Told to the Windows installer when a copy running as administrator
+/// updates, in place of its `/R` restart: `hooks.nsh` then starts the updated
+/// copy itself ([`guard::installer_keeps_rights`]).
+const KEEP_RIGHTS: &str = "/ELEVATED";
+
 static IN_FLIGHT: AtomicBool = AtomicBool::new(false);
 static UNAVAILABLE: OnceLock<Option<&'static str>> = OnceLock::new();
 
@@ -155,13 +160,19 @@ fn start(app: &AppHandle) {
 }
 
 async fn attempt(app: &AppHandle) -> tauri_plugin_updater::Result<()> {
-    let updater = app.updater_builder().timeout(CHECK_TIMEOUT).build()?;
+    let engine = app.state::<Arc<Engine>>().inner().clone();
+    let mut builder = app.updater_builder().timeout(CHECK_TIMEOUT);
+    if guard::installer_keeps_rights(Os::CURRENT, engine.state().capabilities.elevated) {
+        builder = builder
+            .installer_arg(KEEP_RIGHTS)
+            .restart_after_install(false);
+    }
+    let updater = builder.build()?;
     let Some(mut update) = updater.check().await? else {
         set(app, Status::UpToDate);
         return Ok(());
     };
     let version = update.version.clone();
-    let engine = app.state::<Arc<Engine>>().inner().clone();
     if let Some(status) = declined(engine.settings().auto_update, &version) {
         set(app, status);
         return Ok(());
@@ -273,13 +284,9 @@ fn declined_text(error: &tauri_plugin_updater::Error) -> String {
 /// nothing runs before the process is gone.
 fn restart(app: &AppHandle) {
     let handle = app.clone();
-    let queued = app.run_on_main_thread(move || {
-        let mut env = handle.env();
-        // The window was closed to get here; a copy that was itself a reopen
-        // must not show it now.
-        env.args_os.retain(|arg| arg != crate::REOPEN_ARG);
-        crate::single::restart(&handle, &env)
-    });
+    // The arguments are `cli::launch_env`'s: back to the tray, since the
+    // window was closed to get here.
+    let queued = app.run_on_main_thread(move || crate::single::restart(&handle, &handle.env()));
     if let Err(error) = queued {
         log::error!("the update is installed, but CompuQuiet could not restart: {error}");
     }
@@ -288,6 +295,12 @@ fn restart(app: &AppHandle) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_flag_the_installer_is_given_is_the_one_its_hook_looks_for() {
+        let hook = include_str!("../windows/hooks.nsh");
+        assert!(hook.contains(&format!("\"{KEEP_RIGHTS}\"")), "{hook}");
+    }
 
     #[test]
     fn an_update_installs_only_while_idle_and_out_of_sight() {

@@ -168,7 +168,7 @@ asked. Commands are done in the order they arrive, each after any run that is
 going has finished. What happened is said in the window if it is open, and in
 a notification if that is on; a failure is always notified. With CompuQuiet
 running, the command is handed to it and the program exits at once, before the run has finished (exit code 0; 1 if the running copy did
-not take it within three seconds). With none running it starts one in the tray
+not take it within fifteen seconds). With none running it starts one in the tray
 and does it there. Anything else on the command line (`--hidden` aside, which
 starts in the tray, and `--profile`) exits with 2 and does nothing, so a misspelt flag is not
 taken for a command that ran. The command names no program or setting, so it
@@ -202,8 +202,8 @@ The Windows installer asks for administrator permission once, because it
 installs for all users. Releases up to 1.1.7 installed per user, into
 `%LOCALAPPDATA%\CompuQuiet`; the new installer removes that copy and its
 shortcuts, keeps your settings and undo journal (they live elsewhere), and
-points an existing sign-in task at the new copy. Uninstalling removes the
-sign-in task too. A portable copy is untouched: switch "Start when I sign
+points an existing sign-in task at the new copy. Running the installer again
+over an installed copy keeps the sign-in task; uninstalling removes it. A portable copy is untouched: switch "Start when I sign
 in" off before deleting one.
 
 The Windows installer, the Linux AppImage and the macOS app check GitHub for

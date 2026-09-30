@@ -18,8 +18,10 @@ does not show.
   elevated logon task must start a program ordinary processes cannot replace:
   HIGHEST only for an exe under `%ProgramFiles%` made by an elevated process,
   else unelevated with the reason shown. `src-tauri/windows/hooks.nsh` removes
-  a 1.1.x per-user copy (data untouched) and re-points the task. An
-  unelevated copy's update raises UAC. Rollback: install 1.1.7; data is kept.
+  a 1.1.x per-user copy (data untouched) and re-points the task; only a
+  person's uninstall deletes it, not an update or a setup run over a copy. An
+  unelevated copy's update raises UAC; an elevated one's restarts elevated,
+  from the setup, not its `/R`. Rollback: install 1.1.7; data is kept.
 - **2026-09-30: a step that times out stays on record, and a stuck restore
   can be given up.** A timeout does not prove the step failed (a busy service
   stops late), so its entry stays and Restore undoes it harmlessly. What a
@@ -35,8 +37,8 @@ does not show.
   a request in `wake/` (`cq_core::instance`: a fixed word, no arguments),
   which crosses elevation as window messages do not. `--quiet`, `--restore`,
   `--toggle` and `--profile NAME` are a public promise: any other argument
-  exits 2, and a command acts on saved settings only. The copy that does it
-  drops them from Tauri's `Env`, or an update would replay them.
+  exits 2, and a command acts on saved settings only. Restarts drop them from
+  Tauri's `Env` (an update would replay them) and go to the tray.
 - **2026-09-30: named profiles, in a file 1.1.7 still reads.** `profile`
   stays the active one, `profile_name` names it, `other_profiles` holds the
   rest; a switch swaps them. Never touch is one list for all. A run may name
@@ -48,8 +50,8 @@ does not show.
   logon stamp), never the wall clock, which jumps by hours on this dual-boot
   PC. An earlier sign-in's journal is finished at launch; older journals
   restore everything.
-- **2026-09-30: Linux start times are from boot** (a clock step made a resume
-  look like another program); 10^9 or more is an older wall-clock value,
+- **2026-09-30: Linux start times are from boot** (a clock step faked a new
+  program); 10^9 or more is an older wall-clock value,
   still read.
 - **Every step is on record before it happens, and every undo is safe to
   repeat.** A crash mid-step or mid-restore strands and repeats nothing;
@@ -77,11 +79,10 @@ does not show.
   (public half in `tauri.conf.json`). Only a copy that can replace itself
   checks (`update/guard.rs`; never debug or fake), and installs with the
   window closed to the tray. `auto_update` off only announces a release.
-- **2026-09-30: unloading local AI models is opt-in and loopback-only.**
-  `Step::UnloadModel` has no `DoneStep`. A single-model `llama-server` cannot
-  unload: it is a journaled close (`Step::CloseModelServer`) restored with its
-  `cq_core::carried` variables, and left alone if busy, secret-bearing or run
-  by a service manager. `lms` runs only from `~/.lmstudio/bin`, never elevated.
+- **2026-09-30: unloading local AI models is opt-in and loopback-only.** A
+  single-model `llama-server` cannot unload, so it is a journaled close, left
+  alone if busy, secret-bearing or run by a service manager. `lms` runs only
+  from `~/.lmstudio/bin`, never elevated.
 - **2026-09-30: diagnostics stay local**: home folder as `~`, step names never
   arguments, clipboard only.
 - **2026-09-30: a removed target stays removed, and essential services are

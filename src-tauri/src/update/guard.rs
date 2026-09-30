@@ -76,6 +76,16 @@ pub fn asks_permission(os: Os, all_users: bool, elevated: bool) -> bool {
     os == Os::Windows && all_users && !elevated
 }
 
+/// Whether the Windows installer is left to start the updated copy from its
+/// own process (`hooks.nsh`) instead of by its `/R` restart. That restart
+/// starts the program as the desktop user, without administrator rights, so a
+/// copy that was running as administrator would come back without them and
+/// stay that way until the next sign-in. The installer of an elevated copy is
+/// itself elevated, and what it starts has the same rights.
+pub fn installer_keeps_rights(os: Os, elevated: bool) -> bool {
+    os == Os::Windows && elevated
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -123,6 +133,14 @@ mod tests {
             "no prompt off Windows"
         );
         assert!(!asks_permission(Os::MacOs, true, false));
+    }
+
+    #[test]
+    fn only_an_elevated_copy_on_windows_has_the_installer_keep_its_rights() {
+        assert!(installer_keeps_rights(Os::Windows, true));
+        assert!(!installer_keeps_rights(Os::Windows, false));
+        assert!(!installer_keeps_rights(Os::Linux, true), "root on Linux");
+        assert!(!installer_keeps_rights(Os::MacOs, true));
     }
 
     #[test]

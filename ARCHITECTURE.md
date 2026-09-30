@@ -427,8 +427,8 @@ its pickers (running programs, the machine's services) live in `pickers.ts`. Con
   copy holds an exclusive lock on `instance.lock` for the life of the process.
   A later launch leaves a request in `wake/` (one command word from a fixed
   list, and for `quiet` and `toggle` `:` and a profile's name, checked like any
-  name; never a target or a setting) and waits up to 3 s for the running copy, which polls
-  twice a second, to take it; the window is then shown (`Command::Show`), or
+  name; never a target or a setting) and waits up to 15 s for the running copy, which polls
+  twice a second once its window is being made, to take it; the window is then shown (`Command::Show`), or
   the command line's `--quiet`, `--restore` or `--toggle` is done
   (`Command::{Quiet, Restore, Toggle}`, `cli.rs`). The files carry the user's
   access list, so an unelevated launch reaches an
@@ -450,7 +450,10 @@ its pickers (running programs, the machine's services) live in `pickers.ts`. Con
   copy, hidden, and does it after the recovery of an earlier sign-in
   (`cli::start`). The updater relaunches Windows with Tauri's `Env`
   arguments, so `launch_env` is managed first and lacks the command; a
-  warning in the log says if Tauri stopped keeping it.
+  warning in the log says if Tauri stopped keeping it. It is also made a
+  plain launch to the tray (`restart_args`: `--hidden` added, `--reopen`
+  dropped), since an update installs only with the window closed; the one
+  restart that shows the window (`reopen`) builds its own arguments.
 - Updates (`update.rs`, `update/guard.rs`): only a copy that can replace itself
   checks (Windows with `uninstall.exe` beside it, Linux with `APPIMAGE`, macOS
   inside a `.app`; never a debug or fake build). A resident copy considers a
@@ -470,7 +473,11 @@ its pickers (running programs, the machine's services) live in `pickers.ts`. Con
   administrator-manifest installer): `Status::Ready.asks_permission` and the
   "Updating to ..." notification say so beforehand, and a refusal is a `Failed`
   status with the ordinary 6-hour look next, not the hourly retry. An
-  elevated copy installs silently.
+  elevated copy installs silently, and keeps its rights: the installer's own
+  `/R` restart starts the program as the desktop user, so the updater omits
+  it and passes `/ELEVATED` (`guard::installer_keeps_rights`), and
+  `hooks.nsh` starts the new copy, hidden, from the setup's own elevated
+  process.
 - Diagnostics (`diagnostics.rs`, `ui/src/diagnostics.ts`): the `diagnostics`
   command takes no argument and returns one text, which the page writes to the
   clipboard (and, if the webview refuses that, shows in a box to copy by hand).
@@ -508,8 +515,12 @@ its pickers (running programs, the machine's services) live in `pickers.ts`. Con
   then recreates its Start menu and desktop shortcuts for all users and runs
   `schtasks /Change` on the sign-in task, which the elevated setup can do to an
   elevated task and the unelevated app it starts afterwards cannot.
-  Uninstalling deletes the task (not on an update). The setup itself is not
-  exercised by the gate; it is checked by hand at the local handoff.
+  Uninstalling deletes the task, but not on an update, and not when the setup's
+  own "uninstall before installing" step runs the uninstaller (a setup run by
+  hand over an installed copy): that one runs in place, so `$EXEDIR` is the
+  install folder, where a person's uninstall runs a copy NSIS makes in
+  `%TEMP%`. The setup itself is not exercised by the gate; it is checked by
+  hand at the local handoff.
 
 ## State
 
