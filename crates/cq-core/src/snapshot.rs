@@ -71,6 +71,11 @@ pub struct ServiceInfo {
     pub name: String,
     pub display_name: String,
     pub state: ServiceState,
+    /// Running services that need this one. While any runs, Windows refuses
+    /// to stop it, and stopping them instead (a VPN, say) is not this app's
+    /// call, so the planner leaves the service alone and says who needs it.
+    #[serde(default)]
+    pub needed_by: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

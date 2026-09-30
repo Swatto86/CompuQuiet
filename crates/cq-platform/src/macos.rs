@@ -9,7 +9,7 @@ use cq_core::{Capabilities, PowerPlan, ServiceInfo, ServiceState, Snapshot, Syst
 use crate::Platform;
 use crate::error::{PlatformError, Result};
 use crate::procs::Sampler;
-use crate::spawn::{app_bundle, run_tool, spawn_detached};
+use crate::spawn::{absolute, app_bundle, run_tool, spawn_detached};
 use crate::unix;
 
 pub struct MacOs {
@@ -119,6 +119,7 @@ impl Platform for MacOs {
                     name: label.clone(),
                     display_name: label.clone(),
                     state,
+                    needed_by: Vec::new(),
                 }
             })
             .collect();
@@ -153,6 +154,7 @@ impl Platform for MacOs {
         let Some(bundle) = app_bundle(exe).and_then(Path::to_str) else {
             return spawn_detached(exe, args, cwd);
         };
+        absolute(exe)?;
         if !Path::new(bundle).is_dir() {
             return Err(PlatformError::NotInstalled(bundle.to_string()));
         }

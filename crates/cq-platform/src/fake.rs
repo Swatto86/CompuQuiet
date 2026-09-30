@@ -176,6 +176,7 @@ impl Platform for Fake {
                     .get(&name.to_ascii_lowercase())
                     .copied()
                     .unwrap_or(ServiceState::NotInstalled),
+                needed_by: Vec::new(),
             })
             .collect();
         Ok(Snapshot {

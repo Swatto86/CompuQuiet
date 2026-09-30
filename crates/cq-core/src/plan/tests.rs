@@ -21,6 +21,7 @@ fn service(name: &str, state: ServiceState) -> ServiceInfo {
         name: name.to_string(),
         display_name: name.to_string(),
         state,
+        needed_by: Vec::new(),
     }
 }
 
@@ -337,6 +338,42 @@ fn a_programs_own_process_is_closed_before_its_helpers() {
             "Close Chrome.exe (PID 22)"
         ]
     );
+}
+
+#[test]
+fn a_service_that_running_services_need_is_left_running_and_they_are_named() {
+    let mut profile = Profile::default_for(Os::Windows);
+    profile.processes.clear();
+    profile.power = PowerPolicy::Leave;
+    profile.purge_memory = false;
+    profile.services = vec![ServiceTarget {
+        name: "iphlpsvc".into(),
+        enabled: true,
+    }];
+    let snapshot = Snapshot {
+        services: vec![ServiceInfo {
+            needed_by: vec!["Tailscale".into(), "Network List".into()],
+            ..service("iphlpsvc", ServiceState::Running)
+        }],
+        ..Snapshot::default()
+    };
+    // Windows would refuse the stop, and an administrator relaunch would not
+    // change that, so the dependents are the reason whoever asks.
+    for services in [true, false] {
+        let caps = Capabilities {
+            services,
+            ..full_caps()
+        };
+        let plan = build_plan(&profile, &snapshot, 1, Os::Windows, &caps);
+        assert!(plan.steps.is_empty(), "{:?}", plan.steps);
+        assert_eq!(
+            plan.skipped,
+            vec![Skipped {
+                name: "iphlpsvc".into(),
+                reason: "running services need it: Tailscale, Network List".into(),
+            }]
+        );
+    }
 }
 
 mod park;

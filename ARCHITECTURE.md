@@ -84,14 +84,18 @@ The engine exposes `scan()` (fresh snapshot) and `apply_recommendations()`
 snapshot to compute the report and plans against the profile plus the
 low-risk, not-yet-targeted finds for that run only; the journal records what
 actually happened, so Restore is unchanged. Window ownership comes from
-`EnumWindows` on Windows; Linux and macOS report `Activity::known = false`
-and the scanner then names only recognised software.
+`EnumWindows` on Windows (a Store app's own process owns only a child window
+of its frame, so those are read too); Linux and macOS report
+`Activity::known = false` and the scanner then names only recognised software.
 
 ## Platform adapters
 
 `cq-platform` is the only crate allowed `unsafe`, and only in its Windows
 module: `NtSuspendProcess`/`NtResumeProcess`, the token elevation check, the
-standby-list purge and the `runas` relaunch. Everything else uses safe crates
+standby-list purge, the file-cache figure (`GetPerformanceInfo`), a service's
+running dependents, window enumeration, starting a program with the desktop
+shell's token (`CreateProcessWithTokenW`, so an elevated CompuQuiet does not
+hand its rights on) and the `runas` relaunch. Everything else uses safe crates
 (`windows-service`, `sysinfo`, `nix`) or structured subprocess calls with
 validated arguments (`powercfg`, `taskkill`, `systemctl`, `powerprofilesctl`,
 `launchctl`, `schtasks`).

@@ -110,20 +110,28 @@ pub fn build_plan(
 fn plan_services(profile: &Profile, snapshot: &Snapshot, caps: &Capabilities, plan: &mut Plan) {
     for target in profile.services.iter().filter(|target| target.enabled) {
         let wanted = normalize(&target.name);
-        let found = snapshot
+        let Some(service) = snapshot
             .services
             .iter()
-            .find(|service| normalize(&service.name) == wanted);
-        match found.map(|service| service.state) {
-            None | Some(ServiceState::NotInstalled) => {
-                plan.skip(&target.name, "not installed");
-            }
-            Some(ServiceState::Stopped) => plan.skip(&target.name, "already stopped"),
-            Some(ServiceState::Transitioning) => plan.skip(&target.name, "changing state"),
-            Some(ServiceState::Running) if !caps.services => {
+            .find(|service| normalize(&service.name) == wanted)
+        else {
+            plan.skip(&target.name, "not installed");
+            continue;
+        };
+        match service.state {
+            ServiceState::NotInstalled => plan.skip(&target.name, "not installed"),
+            ServiceState::Stopped => plan.skip(&target.name, "already stopped"),
+            ServiceState::Transitioning => plan.skip(&target.name, "changing state"),
+            // Stopping it would take them down with it, or be refused; either
+            // way it is theirs to say, not an elevation away.
+            ServiceState::Running if !service.needed_by.is_empty() => plan.skip(
+                &target.name,
+                &format!("running services need it: {}", service.needed_by.join(", ")),
+            ),
+            ServiceState::Running if !caps.services => {
                 plan.skip(&target.name, "needs administrator rights");
             }
-            Some(ServiceState::Running) => plan.steps.push(Step::StopService {
+            ServiceState::Running => plan.steps.push(Step::StopService {
                 name: target.name.clone(),
             }),
         }
@@ -168,7 +176,7 @@ fn plan_processes(profile: &Profile, snapshot: &Snapshot, self_pid: u32, os: Os,
         }
         // A program's own process first: its helpers end with it, and a
         // helper met before it has no window to close politely, so it would
-        // wait out the whole grace period before being forced.
+        // be forced to end while its program still runs.
         matched.sort_by_key(|process| process.program_root(&snapshot.processes).pid != process.pid);
         let steps: Vec<Step> = matched
             .iter()
@@ -179,10 +187,7 @@ fn plan_processes(profile: &Profile, snapshot: &Snapshot, self_pid: u32, os: Os,
                 .iter()
                 .any(|step| matches!(step, Step::SuspendProcess { .. }))
         {
-            plan.skip(
-                &target.name,
-                "a Flatpak or Snap app cannot be started again from outside its sandbox, so it is suspended instead of closed",
-            );
+            plan.skip(&target.name, unrelaunchable_reason(os));
         }
         plan.steps.extend(steps);
         if matched.is_empty() {
@@ -215,14 +220,35 @@ fn park_step(process: &ProcessInfo, action: ProcessAction, all: &[ProcessInfo], 
 }
 
 /// A Flatpak app's path is inside its sandbox and does not exist outside it;
-/// a Snap's runs without its confinement unless started through `snap run`.
-/// Either way the recorded command line cannot bring the program back.
+/// a Snap's runs without its confinement unless started through `snap run`;
+/// a Store (packaged) app on Windows is refused, or runs without its package,
+/// when its executable is started directly. Either way the recorded command
+/// line cannot bring the program back.
 fn sandboxed(origin: &ProcessInfo, os: Os) -> bool {
-    os == Os::Linux
-        && origin
-            .exe
-            .as_deref()
-            .is_some_and(|exe| exe.starts_with("/app") || exe.starts_with("/snap"))
+    let Some(exe) = origin.exe.as_deref() else {
+        return false;
+    };
+    match os {
+        Os::Linux => exe.starts_with("/app") || exe.starts_with("/snap"),
+        Os::Windows => {
+            let path = exe.to_string_lossy().to_ascii_lowercase();
+            path.contains(r"\windowsapps\") || path.contains(r"\systemapps\")
+        }
+        Os::MacOs => false,
+    }
+}
+
+/// Why a program that cannot be started again is suspended when closing was
+/// asked for.
+fn unrelaunchable_reason(os: Os) -> &'static str {
+    match os {
+        Os::Windows => {
+            "a Store app cannot be started again from its recorded path, so it is suspended instead of closed"
+        }
+        _ => {
+            "a Flatpak or Snap app cannot be started again from outside its sandbox, so it is suspended instead of closed"
+        }
+    }
 }
 
 impl Plan {

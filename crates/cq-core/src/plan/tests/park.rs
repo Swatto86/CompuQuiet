@@ -1,5 +1,5 @@
 //! How a program is parked where the platform changes the answer: sandboxed
-//! apps on Linux, and macOS apps with helper processes.
+//! apps on Linux, Store apps on Windows, and macOS apps with helper processes.
 
 use super::*;
 
@@ -46,6 +46,43 @@ fn a_sandboxed_app_is_suspended_when_closing_could_not_be_undone() {
     native.exe = Some(PathBuf::from("/opt/discord/Discord"));
     let plan = planned(&profile, vec![native], Os::Linux);
     assert_eq!(plan.steps[0].label(), "Close Discord (PID 12)");
+    assert!(plan.skipped.is_empty(), "{:?}", plan.skipped);
+}
+
+#[test]
+fn a_store_app_is_suspended_when_closing_could_not_be_undone() {
+    let profile = one_target("WhatsApp", ProcessAction::Close);
+    let at = |pid, exe: &str| {
+        let mut app = process(pid, "WhatsApp");
+        app.exe = Some(PathBuf::from(exe));
+        app
+    };
+    // Windows starts a packaged app through its package, not its executable.
+    let store = at(
+        20,
+        r"C:\Program Files\WindowsApps\5319275A.WhatsAppDesktop_2.2584.5.0_x64__cv1g1gvanyjgm\WhatsApp.exe",
+    );
+    let system = at(
+        21,
+        r"C:\Windows\SystemApps\MicrosoftWindows.Client\WhatsApp.exe",
+    );
+    let plan = planned(&profile, vec![store, system], Os::Windows);
+    let steps: Vec<_> = plan.steps.iter().map(Step::label).collect();
+    assert_eq!(
+        steps,
+        vec!["Suspend WhatsApp (PID 20)", "Suspend WhatsApp (PID 21)"]
+    );
+    assert_eq!(plan.skipped.len(), 1, "{:?}", plan.skipped);
+    assert!(
+        plan.skipped[0].reason.contains("Store app"),
+        "{:?}",
+        plan.skipped
+    );
+
+    // An ordinary install is closed, as asked.
+    let plain = at(22, r"C:\Program Files\WhatsApp\WhatsApp.exe");
+    let plan = planned(&profile, vec![plain], Os::Windows);
+    assert_eq!(plan.steps[0].label(), "Close WhatsApp (PID 22)");
     assert!(plan.skipped.is_empty(), "{:?}", plan.skipped);
 }
 

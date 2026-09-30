@@ -7,12 +7,35 @@ use std::time::{Duration, Instant};
 
 use crate::error::{PlatformError, Result};
 
+/// A program is started again only from the absolute path it was recorded
+/// with. A relative one would be found against wherever this app happens to
+/// be running, and the journal that holds it is a file anyone signed in as
+/// the user can edit.
+pub(crate) fn absolute(exe: &Path) -> Result<()> {
+    if exe.is_absolute() {
+        Ok(())
+    } else {
+        Err(PlatformError::Other(format!(
+            "not starting {}: its recorded path is not absolute",
+            exe.display()
+        )))
+    }
+}
+
+/// `absolute`, and the file is still there.
+pub(crate) fn launchable(exe: &Path) -> Result<()> {
+    absolute(exe)?;
+    if exe.is_file() {
+        Ok(())
+    } else {
+        Err(PlatformError::NotInstalled(exe.display().to_string()))
+    }
+}
+
 /// Start a program the way it was running before it was closed. The first
 /// recorded argument is the program itself and is not passed twice.
 pub fn spawn_detached(exe: &Path, args: &[String], cwd: Option<&Path>) -> Result<()> {
-    if !exe.is_file() {
-        return Err(PlatformError::NotInstalled(exe.display().to_string()));
-    }
+    launchable(exe)?;
     let mut command = Command::new(exe);
     command
         .args(args.iter().skip(1))
@@ -271,8 +294,29 @@ mod tests {
 
     #[test]
     fn launching_a_missing_program_is_reported_not_attempted() {
-        let error = spawn_detached(Path::new("/definitely/not/here"), &[], None).unwrap_err();
+        let missing = std::env::temp_dir().join("compuquiet-not-here").join("x");
+        let error = spawn_detached(&missing, &[], None).unwrap_err();
         assert!(matches!(error, PlatformError::NotInstalled(_)), "{error}");
+    }
+
+    #[test]
+    fn a_journal_cannot_start_a_program_from_a_relative_path() {
+        // A file that does exist relative to where the tests run: only the
+        // path being relative can be what stops it.
+        let relative = Path::new("Cargo.toml");
+        assert!(relative.is_file());
+        for path in [
+            relative,
+            Path::new("evil.exe"),
+            Path::new(".."),
+            Path::new(""),
+        ] {
+            let error = spawn_detached(path, &["x".into()], None).unwrap_err();
+            assert!(
+                error.to_string().contains("not absolute"),
+                "{path:?}: {error}"
+            );
+        }
     }
 
     #[test]

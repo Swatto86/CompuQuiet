@@ -4,11 +4,16 @@
 //! block is a single documented Win32 or NT call: process suspend/resume
 //! (`NtSuspendProcess`/`NtResumeProcess`, undocumented but stable since XP and
 //! what Process Explorer uses), the elevation check on the process token, the
-//! standby-list purge (`NtSetSystemInformation`, what RAMMap uses), and the
-//! UAC relaunch through `ShellExecuteW` with the `runas` verb.
+//! standby-list purge (`NtSetSystemInformation`, what RAMMap uses), the
+//! file-cache figure (`GetPerformanceInfo`), the service dependents list
+//! (`EnumDependentServicesW`), window enumeration, starting a program with
+//! the desktop shell's token (`CreateProcessWithTokenW`), and the UAC
+//! relaunch through `ShellExecuteW` with the `runas` verb.
 #![allow(unsafe_code)]
 
 mod activity;
+mod launch;
+mod memory;
 mod power;
 mod process;
 mod services;
@@ -20,7 +25,7 @@ use std::ptr::{null, null_mut};
 use std::time::Duration;
 
 use cq_core::{Activity, Capabilities, PowerPlan, ServiceInfo, Snapshot, SystemStats};
-use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, HANDLE, LUID, NTSTATUS};
+use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, HANDLE, LUID};
 use windows_sys::Win32::Security::{
     AdjustTokenPrivileges, GetTokenInformation, LUID_AND_ATTRIBUTES, LookupPrivilegeValueW,
     SE_PRIVILEGE_ENABLED, TOKEN_ADJUST_PRIVILEGES, TOKEN_ELEVATION, TOKEN_PRIVILEGES, TOKEN_QUERY,
@@ -34,14 +39,10 @@ use windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
 use crate::Platform;
 use crate::error::{PlatformError, Result};
 use crate::procs::Sampler;
-use crate::spawn::{run_tool, spawn_detached};
+use crate::spawn::{launchable, run_tool, spawn_detached};
 
 const GRACE: Duration = Duration::from_secs(5);
 const ERROR_NOT_ALL_ASSIGNED: u32 = 1300;
-const SYSTEM_MEMORY_LIST_INFORMATION: i32 = 80;
-const MEMORY_PURGE_STANDBY_LIST: u32 = 4;
-
-type NtSetSystemInformationFn = unsafe extern "system" fn(i32, *mut c_void, u32) -> NTSTATUS;
 
 pub struct Windows {
     sampler: Sampler,
@@ -91,7 +92,15 @@ impl Platform for Windows {
     }
 
     fn stats(&self) -> Result<SystemStats> {
-        Ok(self.sampler.stats())
+        let mut stats = self.sampler.stats();
+        // sysinfo reports no free memory on Windows (its "free" is its
+        // "available"), which hid the whole file cache. Free is what is
+        // available beyond the cache; if Windows will not say, it stays as
+        // it was and the cache reads as none.
+        if let Some(cache) = memory::file_cache_bytes() {
+            stats.memory_free = stats.memory_available.saturating_sub(cache);
+        }
+        Ok(stats)
     }
 
     fn activity(&self) -> Activity {
@@ -108,15 +117,21 @@ impl Platform for Windows {
 
     fn close(&self, pid: u32, start_time: u64) -> Result<()> {
         self.sampler.assert_identity(pid, start_time)?;
-        let pid_arg = pid.to_string();
-        // A polite WM_CLOSE first; taskkill fails for console programs, which
-        // simply means the forced path below applies.
-        let _ = run_tool("taskkill", &["/PID", &pid_arg]);
-        // Gone, or the PID now belongs to someone else: nothing left to force.
-        if self.sampler.wait_for_exit(pid, GRACE)
-            || self.sampler.assert_identity(pid, start_time).is_err()
-        {
-            return Ok(());
+        // Refused now, not after the grace period below: a program this
+        // process may not end (an elevated one, say) is not worth waiting on.
+        self.ensure_can_end(pid)?;
+        // A polite WM_CLOSE first, but only a program with a window can be
+        // asked: a helper or a windowless one would only sit out the grace
+        // period before being ended anyway. taskkill fails for console
+        // programs, which simply means the forced path below applies.
+        if activity::owns_a_window(pid) {
+            let _ = run_tool("taskkill", &["/PID", &pid.to_string()]);
+            // Gone, or the PID now belongs to someone else: nothing left to force.
+            if self.sampler.wait_for_exit(pid, GRACE)
+                || self.sampler.assert_identity(pid, start_time).is_err()
+            {
+                return Ok(());
+            }
         }
         self.terminate(pid)?;
         if self.sampler.wait_for_exit(pid, GRACE) {
@@ -126,7 +141,21 @@ impl Platform for Windows {
         }
     }
 
+    /// Elevated, this app would hand the program its own administrator
+    /// rights, so it is started with the desktop user's normal token
+    /// instead. Only when that token cannot be had (no shell, no Secondary
+    /// Logon service) does it fall back to starting it as this process would.
     fn launch(&self, exe: &Path, args: &[String], cwd: Option<&Path>) -> Result<()> {
+        if self.elevated {
+            launchable(exe)?;
+            match launch::as_shell_user(exe, args, cwd)? {
+                launch::Outcome::Started => return Ok(()),
+                launch::Outcome::Unavailable(why) => log::warn!(
+                    "starting {} with administrator rights, because the desktop user's could not be used: {why}",
+                    exe.display()
+                ),
+            }
+        }
         spawn_detached(exe, args, cwd)
     }
 
@@ -157,24 +186,7 @@ impl Platform for Windows {
         if !self.elevated {
             return Err(PlatformError::NeedsElevation);
         }
-        enable_privilege("SeProfileSingleProcessPrivilege")?;
-        let function: NtSetSystemInformationFn = ntdll_function(c"NtSetSystemInformation")?;
-        let mut command = MEMORY_PURGE_STANDBY_LIST;
-        // SAFETY: the information class takes a 4-byte command; the pointer and
-        // length describe exactly that local.
-        let status = unsafe {
-            function(
-                SYSTEM_MEMORY_LIST_INFORMATION,
-                (&raw mut command).cast::<c_void>(),
-                std::mem::size_of::<u32>() as u32,
-            )
-        };
-        if status < 0 {
-            return Err(PlatformError::Other(format!(
-                "purging the standby list failed with NTSTATUS {status:#010x}"
-            )));
-        }
-        Ok(())
+        memory::purge_standby_list()
     }
 
     fn relaunch_elevated(&self, exe: &Path, args: &[String]) -> Result<()> {
@@ -341,7 +353,11 @@ mod tests {
             Err(PlatformError::NotRunning(_))
         ));
 
+        // No window to ask, so it is ended at once, not after the grace
+        // period a polite request would have waited out.
+        let began = std::time::Instant::now();
         platform.close(pid, start_time).unwrap();
+        assert!(began.elapsed() < GRACE, "took {:?}", began.elapsed());
         assert!(!platform.sampler.is_alive(pid));
         let _ = child.wait();
     }

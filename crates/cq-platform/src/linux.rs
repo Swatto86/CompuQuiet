@@ -142,6 +142,7 @@ fn query(name: &str) -> ServiceInfo {
         name: name.to_string(),
         display_name: name.to_string(),
         state: ServiceState::NotInstalled,
+        needed_by: Vec::new(),
     };
     let Ok((user, unit)) = split_unit(name) else {
         return info;

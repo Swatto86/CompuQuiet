@@ -44,6 +44,20 @@ impl Windows {
         Ok(())
     }
 
+    /// Fail now if this process may not end `pid`, without ending it.
+    pub(super) fn ensure_can_end(&self, pid: u32) -> Result<()> {
+        // SAFETY: a handle we own, opened only to prove the right and closed
+        // at once.
+        unsafe {
+            let handle = OpenProcess(PROCESS_TERMINATE, 0, pid);
+            if handle.is_null() {
+                return Err(self.open_error(pid, std::io::Error::last_os_error()));
+            }
+            CloseHandle(handle);
+        }
+        Ok(())
+    }
+
     /// End the process outright. The Windows error code, not a tool's
     /// translated message, says why it could not be.
     pub(super) fn terminate(&self, pid: u32) -> Result<()> {

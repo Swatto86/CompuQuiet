@@ -112,11 +112,11 @@ the decisions and constraints that are not visible in the code.
 
 ## Known limits
 
-- A program closed and relaunched inherits CompuQuiet's elevation if it was
-  relaunched from an elevated instance.
+- Elevated on Windows, relaunched programs get the desktop shell's token
+  (unelevated); with none to borrow they get CompuQuiet's rights and a warning.
 - A relaunched program gets CompuQuiet's environment (minus an AppImage's
-  bundle variables), not its original launcher's. A Flatpak or Snap app is
-  suspended instead of closed: it cannot be relaunched from here.
+  bundle variables), not its original launcher's. A Flatpak, Snap or Store
+  app is suspended instead of closed: it cannot be relaunched from here.
 - Programs that respawn themselves (updater schedulers) are suspended, not
   closed, by default for that reason.
 - The Linux process name from the kernel is 15 bytes; matching also uses the

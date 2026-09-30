@@ -55,6 +55,7 @@ fn known_hogs_are_found_and_already_targeted_ones_are_marked() {
             name: "WSearch".into(),
             display_name: "Windows Search".into(),
             state: ServiceState::Running,
+            needed_by: Vec::new(),
         }],
         power_plan: Some(PowerPlan {
             id: "381b4222-f694-41f0-9685-ff5bb260df2e".into(),
@@ -146,6 +147,7 @@ fn keep_alive_hides_a_program_and_unelevated_hides_services() {
             name: "SysMain".into(),
             display_name: "SysMain".into(),
             state: ServiceState::Running,
+            needed_by: Vec::new(),
         }],
         power_plan: None,
     };
@@ -162,6 +164,36 @@ fn keep_alive_hides_a_program_and_unelevated_hides_services() {
         &unelevated,
     );
     assert!(items.is_empty(), "{items:?}");
+}
+
+#[test]
+fn a_service_that_running_services_need_is_not_suggested() {
+    let running = |name: &str, needed_by: &[&str]| ServiceInfo {
+        name: name.into(),
+        display_name: name.into(),
+        state: ServiceState::Running,
+        needed_by: needed_by.iter().map(|by| by.to_string()).collect(),
+    };
+    let snapshot = Snapshot {
+        // Windows would refuse to stop the first; the second is free to go.
+        services: vec![running("iphlpsvc", &["Tailscale"]), running("SysMain", &[])],
+        ..Snapshot::default()
+    };
+    let items = recommend(
+        &Profile::default_for(Os::Windows),
+        &snapshot,
+        &stats(0),
+        &Activity::default(),
+        1,
+        Os::Windows,
+        &caps(),
+    );
+    let services: Vec<_> = items
+        .iter()
+        .filter(|item| item.kind == RecommendationKind::Service)
+        .map(|item| item.name.as_str())
+        .collect();
+    assert_eq!(services, vec!["SysMain"]);
 }
 
 #[test]

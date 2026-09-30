@@ -254,7 +254,8 @@ fn recommend_services(
         else {
             continue;
         };
-        if service.state != ServiceState::Running {
+        // A service that others need cannot be stopped without stopping them.
+        if service.state != ServiceState::Running || !service.needed_by.is_empty() {
             continue;
         }
         out.push(Recommendation {
