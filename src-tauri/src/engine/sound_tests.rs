@@ -17,7 +17,7 @@ fn a_program_in_a_call_is_not_closed_and_is_listed_as_left_alone() {
     // Dropbox is a Close target, OneDrive a Suspend one.
     fake.set_audible(vec!["Dropbox".into()]);
 
-    let summary = engine.go_quiet(&|_| {}, None).unwrap();
+    let summary = engine.go_quiet(&|_| {}, None, None).unwrap();
     assert_eq!(summary.processes_closed, 0, "the call was not cut");
     assert_eq!(summary.processes_suspended, 1, "OneDrive, which is silent");
     assert_eq!(skipped(&engine, "Dropbox.exe").as_deref(), Some(SPARED));
@@ -65,7 +65,7 @@ fn nobody_using_sound_changes_nothing() {
     let dir = tempfile::tempdir().unwrap();
     let (fake, engine) = setup(dir.path()).unwrap();
     fake.set_audible(vec!["a-program-that-is-not-running".into()]);
-    let summary = engine.go_quiet(&|_| {}, None).unwrap();
+    let summary = engine.go_quiet(&|_| {}, None, None).unwrap();
     assert_eq!(summary.processes_closed, 1);
     assert_eq!(summary.processes_suspended, 1);
     assert_eq!(skipped(&engine, "Dropbox.exe"), None);
@@ -76,7 +76,7 @@ fn a_check_that_fails_is_reported_and_the_run_goes_on() {
     let dir = tempfile::tempdir().unwrap();
     let (fake, engine) = setup(dir.path()).unwrap();
     fake.fail(Call::AudioUsers, None, Failure::Refused);
-    let summary = engine.go_quiet(&|_| {}, None).unwrap();
+    let summary = engine.go_quiet(&|_| {}, None, None).unwrap();
     assert_eq!(summary.processes_closed, 1, "it parks as it would have");
     let reason = skipped(&engine, "Sound").unwrap();
     assert!(reason.contains("a call is not spared"), "{reason}");
@@ -90,6 +90,6 @@ fn a_plan_that_parks_no_program_does_not_ask_who_uses_sound() {
     settings.profile.processes.clear();
     engine.save_settings(settings).unwrap();
     fake.fail(Call::AudioUsers, None, Failure::Refused);
-    engine.go_quiet(&|_| {}, None).unwrap();
+    engine.go_quiet(&|_| {}, None, None).unwrap();
     assert_eq!(skipped(&engine, "Sound"), None);
 }

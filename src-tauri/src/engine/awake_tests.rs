@@ -33,7 +33,7 @@ fn the_pc_is_kept_awake_from_the_run_and_recorded_before_it_happens() {
 
     let lines = std::cell::RefCell::new(Vec::new());
     let summary = engine
-        .go_quiet(&|line| lines.borrow_mut().push(line.label), None)
+        .go_quiet(&|line| lines.borrow_mut().push(line.label), None, None)
         .unwrap();
 
     assert!(fake.awake());
@@ -52,7 +52,7 @@ fn restoring_lets_the_pc_sleep_again_and_says_so() {
     let dir = tempfile::tempdir().unwrap();
     let fake = Arc::new(Fake::new());
     let engine = keep_awake(&fake, dir.path()).unwrap();
-    engine.go_quiet(&|_| {}, None).unwrap();
+    engine.go_quiet(&|_| {}, None, None).unwrap();
 
     let lines = std::cell::RefCell::new(Vec::new());
     engine
@@ -73,7 +73,7 @@ fn a_restore_that_left_something_keeps_the_pc_awake_until_it_is_over() {
     let dir = tempfile::tempdir().unwrap();
     let fake = Arc::new(Fake::new());
     let engine = keep_awake(&fake, dir.path()).unwrap();
-    engine.go_quiet(&|_| {}, None).unwrap();
+    engine.go_quiet(&|_| {}, None, None).unwrap();
     fake.fail(Call::Resume, Some("OneDrive.exe"), Failure::Refused);
 
     assert_eq!(engine.restore(&|_| {}).unwrap(), 1);
@@ -91,7 +91,7 @@ fn a_recovered_run_takes_the_hold_up_again_but_one_from_an_earlier_sign_in_does_
     let fake = Arc::new(Fake::new());
     keep_awake(&fake, dir.path())
         .unwrap()
-        .go_quiet(&|_| {}, None)
+        .go_quiet(&|_| {}, None, None)
         .unwrap();
     // The app died: what it held went with it.
     fake.keep_awake(false).unwrap();
@@ -105,7 +105,7 @@ fn a_recovered_run_takes_the_hold_up_again_but_one_from_an_earlier_sign_in_does_
 
     keep_awake(&fake, dir.path())
         .unwrap()
-        .go_quiet(&|_| {}, None)
+        .go_quiet(&|_| {}, None, None)
         .unwrap();
     fake.keep_awake(false).unwrap();
     // Signed in again since: the run is about to be finished, not resumed.
@@ -125,7 +125,7 @@ fn on_battery_the_hold_is_left_out_with_the_reason_unless_allowed() {
     let fake = Arc::new(Fake::new());
     let engine = keep_awake(&fake, dir.path()).unwrap();
     fake.set_on_battery(Some(true));
-    engine.go_quiet(&|_| {}, None).unwrap();
+    engine.go_quiet(&|_| {}, None, None).unwrap();
     assert!(!fake.awake());
     assert!(
         skipped(&engine, "Keep awake")
@@ -137,7 +137,7 @@ fn on_battery_the_hold_is_left_out_with_the_reason_unless_allowed() {
     let mut settings = engine.settings();
     settings.allow_on_battery = true;
     engine.save_settings(settings).unwrap();
-    engine.go_quiet(&|_| {}, None).unwrap();
+    engine.go_quiet(&|_| {}, None, None).unwrap();
     assert!(fake.awake());
 }
 
@@ -150,7 +150,7 @@ fn a_hold_the_system_refuses_is_a_failed_step_and_is_not_recorded_as_held() {
 
     let lines = std::cell::RefCell::new(Vec::new());
     let summary = engine
-        .go_quiet(&|line| lines.borrow_mut().push(line), None)
+        .go_quiet(&|line| lines.borrow_mut().push(line), None, None)
         .unwrap();
 
     assert!(!summary.kept_awake && !fake.awake());

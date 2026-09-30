@@ -146,6 +146,7 @@ export const config: WebdriverIO.Config = {
       "diagnostics",
       "timed",
       "auto-quiet",
+      "profiles",
       "tray-failure",
       "cli",
       "second-launch",

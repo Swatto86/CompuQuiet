@@ -13,13 +13,20 @@ impl Engine {
     /// Switch Quiet Mode on. `ending` is how the run ends by itself, if it
     /// does; a `Trigger` one also means nobody pressed the button, which
     /// changes what the run is willing to do (see `Plan::unattended`).
+    /// `profile` names the profile to run this once. Without one, a run that
+    /// a program started uses the profile chosen for that program, and any
+    /// other the active profile.
     pub fn go_quiet(
         &self,
         progress: &dyn Fn(LogLine),
         ending: Option<Ending>,
+        profile: Option<&str>,
     ) -> Result<Summary, AppError> {
         let _guard = self.begin()?;
-        let mut settings = self.runnable_settings()?;
+        let chosen = profile
+            .map(str::to_string)
+            .or_else(|| self.profile_for_trigger(ending.as_ref()));
+        let mut settings = self.runnable_settings(chosen.as_deref())?;
         self.lock().run_report = None;
         protect_what_it_waits_for(&mut settings, ending.as_ref());
         // Planned from the machine as it is now, never from an earlier preview.
@@ -31,6 +38,8 @@ impl Engine {
         check_it_is_running(ending.as_ref(), &snapshot.processes)?;
 
         let mut log = Vec::new();
+        // With one profile there is nothing to choose between, so nothing to say.
+        let using = (!settings.other_profiles.is_empty()).then(|| used_profile(&settings));
         let started_by = match &ending {
             Some(Ending::Trigger { program }) => {
                 plan.unattended();
@@ -38,7 +47,7 @@ impl Engine {
             }
             _ => None,
         };
-        for line in started_by.into_iter().chain(scan_line(&added)) {
+        for line in started_by.into_iter().chain(using).chain(scan_line(&added)) {
             progress(line.clone());
             log.push(line);
         }
@@ -54,6 +63,7 @@ impl Engine {
         let mut journal = Journal::new(now());
         journal.began = Some(self.platform.marker());
         journal.ending = ending;
+        journal.profile = Some(settings.profile_name.clone());
         journal.save(&self.data_dir)?;
         let mut took_effect = Vec::with_capacity(plan.steps.len());
         for step in &plan.steps {
@@ -83,6 +93,18 @@ impl Engine {
         inner.run_report = run_report;
         inner.recovered = false;
         Ok(summary)
+    }
+
+    /// The profile chosen for the program that started a run, if one was.
+    fn profile_for_trigger(&self, ending: Option<&Ending>) -> Option<String> {
+        let Some(Ending::Trigger { program }) = ending else {
+            return None;
+        };
+        self.lock()
+            .settings
+            .auto_quiet
+            .profile_for(program)
+            .map(str::to_string)
     }
 
     /// A journal save failed mid-run: keep what was done where Restore can
@@ -155,6 +177,15 @@ fn check_it_is_running(
             "program_not_running",
             format!("{name} is not running, so there is nothing to wait for"),
         )),
+    }
+}
+
+/// Said at the top of the log when there is more than one profile.
+fn used_profile(settings: &Settings) -> LogLine {
+    LogLine {
+        label: format!("Using the {} profile", settings.profile_name),
+        ok: true,
+        detail: None,
     }
 }
 

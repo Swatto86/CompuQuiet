@@ -5,7 +5,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
-use cq_core::instance::{self, Command, Lock};
+use cq_core::instance::{self, Lock, Request};
 use tauri::{AppHandle, Env};
 
 static HELD: Mutex<Option<Lock>> = Mutex::new(None);
@@ -41,12 +41,12 @@ pub fn restart(app: &AppHandle, env: &Env) -> ! {
 
 /// What later launches left for this copy; `None` once it has let go, so a
 /// request meant for the copy that took over is never taken from it.
-fn asked(dir: &Path) -> Option<Vec<Result<Command, String>>> {
+fn asked(dir: &Path) -> Option<Vec<Result<Request, String>>> {
     held().as_ref().map(|_| instance::take(dir))
 }
 
 /// Do what later launches ask, until the lock is released.
-pub fn serve(dir: PathBuf, on: impl Fn(Command) + Send + 'static) {
+pub fn serve(dir: PathBuf, on: impl Fn(Request) + Send + 'static) {
     let watcher = std::thread::Builder::new()
         .name("requests".into())
         .spawn(move || {
@@ -55,7 +55,7 @@ pub fn serve(dir: PathBuf, on: impl Fn(Command) + Send + 'static) {
                 let Some(requests) = asked(&dir) else { return };
                 for request in requests {
                     match request {
-                        Ok(command) => on(command),
+                        Ok(request) => on(request),
                         Err(reason) => log::warn!("a request to CompuQuiet was ignored: {reason}"),
                     }
                 }
@@ -75,7 +75,7 @@ mod tests {
     #[test]
     fn requests_are_only_taken_while_the_lock_is_held() {
         let dir = tempfile::tempdir().unwrap();
-        let start = |wait| instance::start(dir.path(), Command::Show, wait).unwrap();
+        let start = |wait| instance::start(dir.path(), instance::Command::Show, wait).unwrap();
         let instance::Start::First(lock) = start(std::time::Duration::from_millis(300)) else {
             panic!("the first launch did not get the data directory");
         };

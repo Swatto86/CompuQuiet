@@ -33,7 +33,7 @@ fn quiet_then_restore_round_trips_through_the_journal_on_disk() {
         .collect();
     engine.save_settings(settings).unwrap();
 
-    let summary = engine.go_quiet(&|_| {}, None).unwrap();
+    let summary = engine.go_quiet(&|_| {}, None, None).unwrap();
     assert_eq!(summary.services_stopped, 1);
     assert_eq!(summary.processes_suspended, 2, "OneDrive, Slack");
     assert_eq!(summary.processes_closed, 1, "Dropbox");
@@ -75,9 +75,9 @@ fn saving_an_essential_service_is_refused_with_the_reason_and_saves_nothing() {
 fn a_second_run_while_quiet_is_refused_and_rows_fold_instances() {
     let dir = tempfile::tempdir().unwrap();
     let engine = engine(dir.path());
-    engine.go_quiet(&|_| {}, None).unwrap();
+    engine.go_quiet(&|_| {}, None, None).unwrap();
     assert_eq!(
-        engine.go_quiet(&|_| {}, None).unwrap_err().code,
+        engine.go_quiet(&|_| {}, None, None).unwrap_err().code,
         "already_quiet"
     );
     let rows = engine.processes().unwrap();
@@ -145,7 +145,7 @@ pub(super) fn quiet_with_every_kind_of_step(
     dir: &std::path::Path,
 ) -> Result<Engine, AppError> {
     let engine = engine_with_every_kind_of_target(fake, dir)?;
-    engine.go_quiet(&|_| {}, None)?;
+    engine.go_quiet(&|_| {}, None, None)?;
     Ok(engine)
 }
 
@@ -239,7 +239,7 @@ fn an_unreadable_journal_is_never_overwritten_by_a_new_run() {
     let engine = engine(dir.path());
     assert!(engine.state().startup_error.is_some());
     assert_eq!(
-        engine.go_quiet(&|_| {}, None).unwrap_err().code,
+        engine.go_quiet(&|_| {}, None, None).unwrap_err().code,
         "journal_unreadable"
     );
     assert_eq!(std::fs::read_to_string(&path).unwrap(), "{ not a journal");
@@ -259,7 +259,10 @@ fn claiming_for_exit_holds_the_engine_only_when_leaving_succeeds() {
         engine.state().busy,
         "nothing may start while the app leaves"
     );
-    assert_eq!(engine.go_quiet(&|_| {}, None).unwrap_err().code, "busy");
+    assert_eq!(
+        engine.go_quiet(&|_| {}, None, None).unwrap_err().code,
+        "busy"
+    );
     assert_eq!(engine.claim_for_exit(|| Ok::<_, ()>(())), None);
 }
 
@@ -378,6 +381,7 @@ fn a_memory_purge_that_cannot_be_recorded_does_not_fail_a_finished_run() {
                     std::fs::create_dir(&path).unwrap();
                 }
             },
+            None,
             None,
         )
         .unwrap();

@@ -25,7 +25,7 @@ fn slowing_dropbox(dir: &std::path::Path) -> Result<(Arc<Fake>, Engine), AppErro
 fn a_slowed_program_keeps_running_and_a_restored_engine_puts_its_pace_back() {
     let dir = tempfile::tempdir().unwrap();
     let (fake, engine) = slowing_dropbox(dir.path()).unwrap();
-    let summary = engine.go_quiet(&|_| {}, None).unwrap();
+    let summary = engine.go_quiet(&|_| {}, None, None).unwrap();
     assert_eq!(summary.processes_slowed, 1);
     assert_eq!(
         (summary.processes_suspended, summary.processes_closed),
@@ -64,7 +64,7 @@ fn a_slowed_program_keeps_running_and_a_restored_engine_puts_its_pace_back() {
 fn restoring_a_program_that_has_gone_is_done_with_and_not_retried_forever() {
     let dir = tempfile::tempdir().unwrap();
     let (fake, engine) = slowing_dropbox(dir.path()).unwrap();
-    engine.go_quiet(&|_| {}, None).unwrap();
+    engine.go_quiet(&|_| {}, None, None).unwrap();
     fake.stop_program("Dropbox.exe");
     assert_eq!(engine.restore(&|_| {}).unwrap(), 0);
     assert!(!engine.state().quiet);
@@ -75,7 +75,7 @@ fn a_refusal_leaves_nothing_on_record_and_a_timeout_keeps_the_entry() {
     let dir = tempfile::tempdir().unwrap();
     let (fake, engine) = slowing_dropbox(dir.path()).unwrap();
     fake.fail(Call::SlowDown, Some("Dropbox.exe"), Failure::Refused);
-    let summary = engine.go_quiet(&|_| {}, None).unwrap();
+    let summary = engine.go_quiet(&|_| {}, None, None).unwrap();
     assert_eq!(summary.processes_slowed, 0, "it did not happen");
     assert!(fake.slowed().is_empty());
     let failed = engine
@@ -91,7 +91,7 @@ fn a_refusal_leaves_nothing_on_record_and_a_timeout_keeps_the_entry() {
     // stays, so Restore speeds it up again (harmlessly if it never had).
     fake.heal();
     fake.fail(Call::SlowDown, Some("Dropbox.exe"), Failure::TimedOut);
-    let summary = engine.go_quiet(&|_| {}, None).unwrap();
+    let summary = engine.go_quiet(&|_| {}, None, None).unwrap();
     assert_eq!(summary.processes_slowed, 1, "kept on record");
     assert_eq!(fake.slowed(), vec!["Dropbox.exe"]);
     fake.heal();
@@ -103,7 +103,7 @@ fn a_refusal_leaves_nothing_on_record_and_a_timeout_keeps_the_entry() {
 fn a_restore_that_is_refused_keeps_the_entry_and_says_what_stays_slow() {
     let dir = tempfile::tempdir().unwrap();
     let (fake, engine) = slowing_dropbox(dir.path()).unwrap();
-    engine.go_quiet(&|_| {}, None).unwrap();
+    engine.go_quiet(&|_| {}, None, None).unwrap();
     fake.fail(Call::SpeedUp, None, Failure::Refused);
     assert_eq!(engine.restore(&|_| {}).unwrap(), 1);
     let state = engine.state();

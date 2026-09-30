@@ -80,6 +80,10 @@ pub struct Journal {
     /// recovered run takes it up again.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub awake: bool,
+    /// The profile this run was made from, as it was named then. Journals
+    /// from 1.1.7 and earlier neither have it nor mind it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile: Option<String>,
     pub done: Vec<DoneStep>,
 }
 
@@ -91,6 +95,7 @@ impl Journal {
             began: None,
             ending: None,
             awake: false,
+            profile: None,
             done: Vec::new(),
         }
     }

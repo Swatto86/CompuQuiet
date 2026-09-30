@@ -134,6 +134,32 @@ export interface PlanContext {
   autoScan: boolean;
   /** The Park list has edits that are not saved, so the button ignores them. */
   unsaved: boolean;
+  /** The profile in use, named when there is more than one to choose between. */
+  profile?: string;
+}
+
+/** `text` said of a profile: "Gaming: one press will…". */
+function ofProfile(text: string, profile: string | undefined): string {
+  return profile === undefined
+    ? text
+    : `${profile}: ${text.charAt(0).toLowerCase()}${text.slice(1)}`;
+}
+
+/**
+ * What the hero says under its title while Quiet Mode is on, naming the
+ * profile the run was made from when there is more than one.
+ */
+export function quietSub(
+  recovered: boolean,
+  runProfile: string | null,
+  profiles: number,
+): string {
+  if (recovered)
+    return "A previous session left changes in place. Restore puts everything back.";
+  const done = "Background work is parked. Press again when you are done.";
+  return runProfile !== null && profiles > 1
+    ? `${runProfile} profile: ${done.charAt(0).toLowerCase()}${done.slice(1)}`
+    : done;
 }
 
 /**
@@ -166,12 +192,18 @@ export function homePlan(
   if (profile.unload_ai_models) actions.push("unload local AI models");
   const found = "low-risk programs and services a quick scan finds";
   if (actions.length === 0) {
-    return context.autoScan
-      ? `Your park list is empty, so one press will park only the ${found}. Open Park list to choose your own.${unsaved}`
-      : `Nothing is selected yet. Open Park list and tick what this button should touch.${unsaved}`;
+    return ofProfile(
+      context.autoScan
+        ? `Your park list is empty, so one press will park only the ${found}. Open Park list to choose your own.${unsaved}`
+        : `Nothing is selected yet. Open Park list and tick what this button should touch.${unsaved}`,
+      context.profile,
+    );
   }
   const extra = context.autoScan ? `, plus any ${found}` : "";
-  return `One press will ${joinAnd(actions)}${extra}. Press again to undo it.${unsaved}`;
+  return ofProfile(
+    `One press will ${joinAnd(actions)}${extra}. Press again to undo it.${unsaved}`,
+    context.profile,
+  );
 }
 
 /** What closing the window does, which follows the tray setting. */

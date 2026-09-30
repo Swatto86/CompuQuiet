@@ -13,6 +13,10 @@ use crate::profile::{Os, Profile};
 use crate::store::{read_json, write_json};
 use crate::watch::AutoQuiet;
 
+mod profiles;
+
+pub use profiles::{DEFAULT_PROFILE, MAX_PROFILES, NamedProfile, check_profile_name};
+
 pub const SETTINGS_FILE: &str = "settings.json";
 const CURRENT_VERSION: u32 = 1;
 const MAX_NAME_LEN: usize = 128;
@@ -33,7 +37,17 @@ pub enum Theme {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Settings {
     pub version: u32,
+    /// The active profile: what a press runs and the Park list edits. It
+    /// stays here, as it always was, so that 1.1.7 still loads the file.
     pub profile: Profile,
+    /// The active profile's name. Absent in files written before named
+    /// profiles existed.
+    #[serde(default = "profiles::default_profile_name")]
+    pub profile_name: String,
+    /// The profiles that are not active, which 1.1.7 ignores. Absent in
+    /// files written before named profiles existed.
+    #[serde(default)]
+    pub other_profiles: Vec<NamedProfile>,
     /// Launch straight to the tray without showing the window.
     pub start_hidden: bool,
     /// Closing the window hides it instead of quitting.
@@ -79,6 +93,8 @@ impl Settings {
         Settings {
             version: CURRENT_VERSION,
             profile: Profile::default_for(os),
+            profile_name: DEFAULT_PROFILE.to_string(),
+            other_profiles: Vec::new(),
             start_hidden: false,
             close_to_tray: true,
             theme: Theme::System,
@@ -110,8 +126,9 @@ impl Settings {
                 path.display(),
             )));
         }
-        let settings: Settings = serde_json::from_value(value)
+        let mut settings: Settings = serde_json::from_value(value)
             .map_err(|e| CoreError::json(format!("parsing {}", path.display()), e))?;
+        settings.normalize();
         settings.validate()?;
         Ok(settings)
     }
@@ -165,49 +182,13 @@ impl Settings {
                 "the still-on reminder is at most {MAX_STILL_ON_HOURS} hours"
             )));
         }
-        let names = self
-            .profile
-            .processes
-            .iter()
-            .map(|target| ("process", target.name.as_str()))
-            .chain(
-                self.profile
-                    .services
-                    .iter()
-                    .map(|target| ("service", target.name.as_str())),
-            )
-            .chain(
-                self.profile
-                    .keep_alive
-                    .iter()
-                    .map(|name| ("keep-alive", name.as_str())),
-            )
-            .chain(
-                self.auto_quiet
-                    .programs
-                    .iter()
-                    .map(|name| ("auto-quiet", name.as_str())),
-            );
-        for (kind, name) in names {
-            let trimmed = name.trim();
-            if trimmed.is_empty() {
-                return Err(CoreError::Invalid(format!("a {kind} name is empty")));
-            }
-            if trimmed.len() > MAX_NAME_LEN {
-                return Err(CoreError::Invalid(format!(
-                    "{kind} name is longer than {MAX_NAME_LEN} characters"
-                )));
-            }
-            if trimmed.chars().any(char::is_control) {
-                return Err(CoreError::Invalid(format!(
-                    "{kind} name {trimmed:?} contains control characters"
-                )));
-            }
-        }
-        Ok(())
+        self.check_profiles()?;
+        self.check_names()
     }
 }
 
+#[cfg(test)]
+mod profiles_tests;
 #[cfg(test)]
 mod watch_tests;
 

@@ -7,11 +7,13 @@ import {
   onNotice,
   onProgress,
   onRunError,
+  onSettingsChanged,
   onState,
   type AppInfo,
   type EngineState,
   type Settings,
 } from "./bridge.ts";
+import { Banner } from "./banner.ts";
 import { Dashboard } from "./dashboard.ts";
 import { Diagnostics } from "./diagnostics.ts";
 import { showDialog, toast } from "./dialog.ts";
@@ -20,6 +22,7 @@ import { closeHint, homePlan } from "./format.ts";
 import { GpuGauge } from "./gpu.ts";
 import { addKeepAlive } from "./profile-edit.ts";
 import { PreviewPanel } from "./preview.ts";
+import { ProfilesView } from "./profiles.ts";
 import { Recovery } from "./recovery.ts";
 import { RunLength } from "./run-length.ts";
 import { Scan } from "./scan.ts";
@@ -55,6 +58,15 @@ let targets: Targets;
 let settingsView: SettingsView;
 let scanView: Scan;
 let tabs: Tabs;
+let profiles: ProfilesView;
+const banner = new Banner({
+  engine: () => engine,
+  settings: () => settings,
+  reload: async () => {
+    engine = await api.getState();
+    renderAll();
+  },
+});
 
 async function boot(): Promise<void> {
   [settings, engine, info] = await Promise.all([
@@ -85,6 +97,10 @@ async function boot(): Promise<void> {
     save: saveSettings,
     quit: () => void quitFlow(),
   });
+  profiles = new ProfilesView({
+    unsaved: () => unsaved,
+    changed: takeSettings,
+  });
   scanView = new Scan({
     onSettings: (next) => {
       settings = next;
@@ -103,7 +119,6 @@ async function boot(): Promise<void> {
   });
 
   renderAll();
-  wireBanner();
   wireE2eHooks();
 
   await onProgress((line) => {
@@ -120,6 +135,18 @@ async function boot(): Promise<void> {
       dashboard.setBusy(false);
     }
     renderAll();
+  });
+  await onSettingsChanged((next) => {
+    // A profile chosen from the tray: what was being edited belonged to the
+    // one that is left.
+    const lost = unsaved;
+    takeSettings(next, false)
+      .then(() =>
+        toast(
+          `Now using ${next.profile_name}.${lost ? " Unsaved Park list changes were dropped." : ""}`,
+        ),
+      )
+      .catch((error: unknown) => toast(errorMessage(error), true));
   });
   await onRunError((error) => toast(error.message, true));
   await onNotice((text) => toast(text));
@@ -156,16 +183,19 @@ function renderAll(): void {
   recovery.render(engine);
   runLength.render(engine);
   targets.describe(engine.capabilities, engine.os);
+  targets.setProfileCount(engine.profiles.length);
+  profiles.render(engine);
   settingsView.render(settings, info);
   renderPlan();
   renderAbout();
-  renderBanner();
+  banner.render();
 }
 
 function renderPlan(): void {
   byId("hero-plan").textContent = homePlan(engine.quiet, settings.profile, {
     autoScan: settings.auto_scan,
     unsaved,
+    ...(engine.profiles.length > 1 ? { profile: engine.profile } : {}),
   });
   byId("close-hint").textContent = closeHint(settings.close_to_tray);
 }
@@ -185,55 +215,6 @@ function renderAbout(): void {
       : "not required on this platform";
 }
 
-function needsElevation(): boolean {
-  const caps = engine.capabilities;
-  if (caps.elevated || !caps.can_elevate) return false;
-  // A journal recovered from an elevated session holds stopped services that
-  // only an elevated copy can start again.
-  if (engine.quiet) return engine.summary.services_stopped > 0;
-  const profile = settings.profile;
-  return profile.services.some((s) => s.enabled) || profile.purge_memory;
-}
-
-function renderBanner(): void {
-  const banner = byId("banner");
-  const text = byId("banner-text");
-  const action = byId<HTMLButtonElement>("banner-action");
-  const dismiss = byId<HTMLButtonElement>("banner-dismiss");
-  // Not dismissible: nothing is saved and Quiet Mode is off until it is dealt with.
-  dismiss.hidden = engine.settings_unreadable !== null;
-  if (engine.settings_unreadable !== null) {
-    text.textContent = `CompuQuiet could not read its settings file (${engine.settings_unreadable}), so it saves nothing and will not go quiet. Set the file aside to keep a copy as settings.json.bad and start fresh, or fix it and restart.`;
-    action.textContent = "Set the file aside";
-    action.hidden = false;
-    banner.hidden = false;
-    return;
-  }
-  if (banner.dataset["dismissed"] === "1") return;
-  if (needsElevation()) {
-    text.textContent = engine.quiet
-      ? "Restoring the stopped services needs administrator rights; the elevated copy picks up this session."
-      : "Stopping services and purging memory need administrator rights.";
-    action.textContent = "Relaunch as administrator";
-    action.hidden = false;
-    banner.hidden = false;
-  } else {
-    banner.hidden = true;
-  }
-}
-
-function wireBanner(): void {
-  byId("banner-action").addEventListener("click", () => {
-    if (engine.settings_unreadable !== null) void setAsideSettings();
-    else void relaunchElevated();
-  });
-  byId("banner-dismiss").addEventListener("click", () => {
-    const banner = byId("banner");
-    banner.dataset["dismissed"] = "1";
-    banner.hidden = true;
-  });
-}
-
 /** Acceptance-suite only: same path as the tray Quit menu item. */
 function wireE2eHooks(): void {
   const button = document.getElementById("e2e-tray-quit");
@@ -247,29 +228,6 @@ function wireE2eHooks(): void {
   });
 }
 
-async function setAsideSettings(): Promise<void> {
-  try {
-    const kept = await api.setAsideSettings();
-    engine = await api.getState();
-    renderAll();
-    toast(
-      kept === null
-        ? "The settings file was already gone. CompuQuiet is on its built-in settings."
-        : `Kept the unreadable settings file as ${kept}. CompuQuiet is on its built-in settings.`,
-    );
-  } catch (error) {
-    toast(errorMessage(error), true);
-  }
-}
-
-async function relaunchElevated(): Promise<void> {
-  try {
-    await api.relaunchElevated();
-  } catch (error) {
-    toast(errorMessage(error), true);
-  }
-}
-
 async function saveSettings(next: Settings): Promise<void> {
   // Applied before the round trip, so a second quick change builds on this
   // one rather than on the settings before it; put back if the save fails.
@@ -279,11 +237,30 @@ async function saveSettings(next: Settings): Promise<void> {
     await api.saveSettings(next);
   } catch (error) {
     if (settings === next) settings = previous;
+    // The profile in use changed under the page (from the tray): what it
+    // holds is out of date, so take the engine's.
+    if (isAppError(error) && error.code === "profile_changed")
+      await takeSettings(await api.getSettings(), false);
     renderAll();
     throw error;
   }
-  renderBanner();
+  banner.render();
   renderPlan();
+}
+
+/**
+ * Take settings the engine changed (a profile chosen, added, renamed or
+ * deleted, here or from the tray) in place of the page's own. The profile in
+ * use may be another now, so what was being edited is dropped, unless it was
+ * only renamed.
+ */
+async function takeSettings(next: Settings, keepEdits: boolean): Promise<void> {
+  settings = next;
+  if (keepEdits) targets.setProfile(next.profile);
+  else targets.replace(next.profile);
+  engine = await api.getState();
+  preview.refreshIfOpen();
+  renderAll();
 }
 
 /**
@@ -330,10 +307,7 @@ async function toggle(): Promise<void> {
     }
   } catch (error) {
     toast(errorMessage(error), true);
-    if (isAppError(error) && error.code === "needs_elevation") {
-      const banner = byId("banner");
-      delete banner.dataset["dismissed"];
-    }
+    if (isAppError(error) && error.code === "needs_elevation") banner.reshow();
     engine = await api.getState();
   } finally {
     busy = false;

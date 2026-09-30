@@ -6,62 +6,9 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
-export type Os = "windows" | "linux" | "mac_os";
-export type ProcessAction = "suspend" | "close";
-export type PowerPolicy = "leave" | "performance";
-export type Theme = "system" | "dark" | "light";
+import type { Os, ProcessAction, Settings } from "./settings-types.ts";
 
-export interface ProcessTarget {
-  name: string;
-  action: ProcessAction;
-  enabled: boolean;
-  /**
-   * Keep it running at the lowest priority instead of freezing it. Saved on a
-   * suspend, so a release that does not know it reads the file as a suspend.
-   */
-  slow_down?: boolean;
-}
-
-export interface ServiceTarget {
-  name: string;
-  enabled: boolean;
-}
-
-export interface Profile {
-  processes: ProcessTarget[];
-  services: ServiceTarget[];
-  power: PowerPolicy;
-  purge_memory: boolean;
-  /** Hold off sleep and screen-off while Quiet Mode is on. */
-  keep_awake: boolean;
-  /** Ask Ollama and LM Studio to unload the models they hold in memory. */
-  unload_ai_models: boolean;
-  keep_alive: string[];
-}
-
-/** Go quiet by itself while one of these programs runs. */
-export interface AutoQuiet {
-  enabled: boolean;
-  programs: string[];
-}
-
-export interface Settings {
-  version: number;
-  profile: Profile;
-  start_hidden: boolean;
-  close_to_tray: boolean;
-  theme: Theme;
-  notifications: boolean;
-  restore_on_quit: boolean;
-  auto_scan: boolean;
-  /** Run the performance plan and the memory purge on battery too. */
-  allow_on_battery: boolean;
-  /** Download and install a newer release without being asked. */
-  auto_update: boolean;
-  auto_quiet: AutoQuiet;
-  /** Hours of Quiet Mode nothing will end before it is mentioned; 0 never. */
-  still_on_hours: number;
-}
+export type * from "./settings-types.ts";
 
 export type Risk = "low" | "medium";
 
@@ -213,6 +160,12 @@ export interface EngineState {
   /** What the last restore could not put back; empty once one succeeds. */
   unrestored: Unrestored[];
   ending: EndingState | null;
+  /** The profile in use. */
+  profile: string;
+  /** Every profile's name, alphabetically. */
+  profiles: string[];
+  /** The profile the run in progress was made from, when its journal says. */
+  run_profile: string | null;
 }
 
 export interface SystemStats {
@@ -329,6 +282,13 @@ export const api = {
   setAsideSettings: () => invoke<string | null>("set_aside_settings"),
   giveUpRestoring: () => invoke<EngineState>("give_up_restoring"),
   setAsideJournal: () => invoke<string | null>("set_aside_journal"),
+  /** The profile commands return the settings as they are now. */
+  switchProfile: (name: string) => invoke<Settings>("switch_profile", { name }),
+  addProfile: (name: string, copy: boolean) =>
+    invoke<Settings>("add_profile", { name, copy }),
+  renameProfile: (from: string, to: string) =>
+    invoke<Settings>("rename_profile", { from, to }),
+  deleteProfile: (name: string) => invoke<Settings>("delete_profile", { name }),
   previewPlan: () => invoke<Preview>("preview_plan"),
   goQuiet: (until: Until | null = null) =>
     invoke<EngineState>("go_quiet", { until }),
@@ -363,6 +323,15 @@ export function onState(
 /** Something the app did by itself (a timer, an auto-quiet start, a reminder). */
 export function onNotice(handler: (text: string) => void): Promise<UnlistenFn> {
   return listen<string>("quiet-notice", (event) => handler(event.payload));
+}
+
+/** The saved settings changed without the window asking (the tray chose a profile). */
+export function onSettingsChanged(
+  handler: (settings: Settings) => void,
+): Promise<UnlistenFn> {
+  return listen<Settings>("settings-changed", (event) =>
+    handler(event.payload),
+  );
 }
 
 /** A run the page did not start (the tray's) failed. */

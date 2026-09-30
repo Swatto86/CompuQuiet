@@ -11,22 +11,21 @@ does not show.
   power plan, keep-awake and purge are skipped unless `allow_on_battery`.
 - **2026-09-30: Quiet Mode can start or end by itself, safely.** Journal
   `ending` (uptime deadline, program to wait for, auto-quiet trigger) and
-  `awake` are optional: 1.1.7 ignores them. Never the wall clock. Auto-quiet
-  is off by default, suspends instead of closing, skips the purge, spares its
+  `awake` are optional: 1.1.7 ignores them. Auto-quiet is off by default, suspends instead of closing, skips the purge, spares its
   programs, and never ends or restarts a run the user pressed for.
   Keep-awake dies with the process: no undo entry.
 - **2026-09-30: the Windows setup is per-machine (Program Files).** The
   elevated logon task must start a program ordinary processes cannot replace:
   HIGHEST only for an exe under `%ProgramFiles%` made by an elevated process,
   else unelevated with the reason shown. `src-tauri/windows/hooks.nsh` removes
-  a 1.1.x per-user copy (data untouched), re-points the task and deletes it on
-  uninstall; an installed copy re-points a stale task at start-up. An
-  unelevated copy's update raises UAC. Rollback: install 1.1.7; data is kept.
+  a 1.1.x per-user copy (data untouched) and re-points the task; an installed
+  copy does too at start-up. An unelevated copy's update raises UAC.
+  Rollback: install 1.1.7; data is kept.
 - **2026-09-30: a step that times out stays on record, and a stuck restore
   can be given up.** A timeout (`PlatformError::TimedOut`) does not prove the
   step failed (a busy service stops late), so its entry stays and Restore
   undoes it harmlessly. Only what a restore could not undo can be given up,
-  after a confirmation; `journal.json` moves to `journal.json.bad`.
+  after a confirmation; the journal moves to `journal.json.bad`.
 - **2026-09-30: the memory purge is opt-in.** A new profile has no purge; a
   saved setting is kept. Scan may suggest it; auto-scan never switches it on.
 - **2026-09-30: an unreadable `settings.json` is never overwritten.** A
@@ -35,17 +34,22 @@ does not show.
 - **2026-09-30: one copy per data directory, by file lock; the command line
   rides on it.** The first copy locks `instance.lock`; a later launch leaves
   a request in `wake/` (`cq_core::instance`: a fixed word, no arguments),
-  which crosses elevation as window messages do not. `--quiet`, `--restore`
-  and `--toggle` are a public promise: any other argument exits 2, and a
-  command acts on saved settings only. The copy that does it drops the flag
-  from Tauri's `Env`, or an update would replay it (`cli.rs`).
+  which crosses elevation as window messages do not. `--quiet`, `--restore`,
+  `--toggle` and `--profile NAME` are a public promise: any other argument
+  exits 2, and a command acts on saved settings only. The copy that does it
+  drops them from Tauri's `Env`, or an update would replay them (`cli.rs`).
+- **2026-09-30: named profiles, in a file 1.1.7 still reads.** `profile`
+  stays the active one, `profile_name` names it, `other_profiles` holds the
+  rest; a switch swaps them. Never touch is one list for all, so a removed
+  row leaves every profile. A run may name its profile (`--profile`, or a
+  program in `auto_quiet.profiles`) without switching; the journal records
+  it. Profiles change only while Quiet Mode is off. Rollback: 1.1.7 runs the
+  active profile and its next save drops the rest; copy `settings.json`.
 - **2026-09-29: a restart or new sign-in ends Quiet Mode.** The journal
   records where it began (optional `began`: uptime and, on Windows, the WTS
   logon stamp), never compared with the wall clock, which jumps by hours on
-  this dual-boot PC. An earlier sign-in's journal is finished at launch:
-  closed programs are not relaunched, services restart unless uptime shows a
-  reboot, resumes are tried, the power plan is restored. Older journals, and
-  Linux/macOS sign-outs without a reboot, restore everything.
+  this dual-boot PC. An earlier sign-in's journal is finished at launch
+  (`Elapsed`); older journals restore everything.
 - **2026-09-30: Linux start times are recorded from boot** (a clock step made
   a resume look like another program): `ProcessInfo.start_time` is seconds
   since boot; 10^9 or more is an older wall-clock value, still accepted.
@@ -53,11 +57,9 @@ does not show.
   repeat.** A crash mid-step or mid-restore strands and repeats nothing;
   restore saves after each step and never relaunches a running command line.
 - **Leaving never cuts a run short.** Quit, elevated relaunch and the
-  updater's install claim the engine (`Engine::claim_for_exit`): they wait or
-  refuse during a run.
-- **2026-09-29: a window that never loaded restarts the app once.** The
-  elevated logon launch sometimes gets no WebView2, leaving a tray with
-  nothing behind it; tray actions and a second launch use `--reopen`.
+  updater's install claim the engine (`Engine::claim_for_exit`).
+- **2026-09-29: a window that never loaded restarts the app once**
+  (`--reopen`): the elevated logon launch sometimes gets no WebView2.
 - **2026-09-30: failures are kept.** `compuquiet.log` holds warnings, errors,
   failed steps (label and code) and panics; a full file becomes `.log.1`.
 - **2026-09-26: renamed to CompuQuiet.** A leftover `ComputeQuiet` settings
@@ -67,11 +69,10 @@ does not show.
   the WebDriver suite. It offers *Relaunch as administrator*.
 - **Suspend is the default process action; Close and Slow down are opt-in,
   per target.** Suspending keeps state and is reversible; closing frees
-  memory but loses unsaved state; slowing (lowest priority, Efficiency mode)
-  suits a program that breaks when frozen. A slowed target is saved as
+  memory but loses unsaved state; slowing suits a program that breaks when
+  frozen. A slowed target is saved as
   `suspend` plus `slow_down: true`, so 1.1.7 loads it as a suspend, but it
   cannot read the `process_slowed` journal kind: restore before downgrading.
-  Without root, Linux and macOS leave it running (`renice` cannot be undone).
 - **2026-09-30: a program with sound running is left alone** (`guard_audio`,
   helpers included, reason shown). It only removes steps, so a platform that
   cannot tell changes nothing.
@@ -81,16 +82,15 @@ does not show.
   releases; `Swatto86/CompuQuiet` is the source of truth; Swatto mirrors
   it to Origin. Push to `origin` (GitHub) only.
 - **2026-09-27: updates install themselves.** `tauri-plugin-updater` checks
-  `latest.json` on the GitHub release when idle; the release workflow signs
-  each bundle with the minisign key in `TAURI_SIGNING_PRIVATE_KEY` (public
-  half in `tauri.conf.json`). Only a copy that can replace itself checks
-  (`update/guard.rs`; never a debug or fake build), idle with the window
-  closed to the tray. With `auto_update` off a release is announced.
+  `latest.json` on the GitHub release when idle; bundles are signed with the
+  minisign key in `TAURI_SIGNING_PRIVATE_KEY` (public half in `tauri.conf.json`). Only a copy that can replace itself checks
+  (`update/guard.rs`; never debug or fake), with the window closed to the
+  tray. `auto_update` off only announces a release.
 - **2026-09-30: unloading local AI models is opt-in and local.**
   `Step::UnloadModel` has no `DoneStep` (a model reloads when used). Ollama
   is reached on 127.0.0.1 only. LM Studio's `lms` runs only from
   `~/.lmstudio/bin`, while LM Studio runs, and never elevated (the folder is
-  the user's, so it would gain administrator rights).
+  the user's).
 - **2026-09-30: diagnostics stay local.** `diagnostics.rs` hides the home
   folder as `~`, names steps but never arguments, and only reaches the clipboard.
 - **2026-09-19 (1.1.0): the scanner acts on low risk only.** `auto_scan` is

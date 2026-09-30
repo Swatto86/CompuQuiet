@@ -1,22 +1,27 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
 
-import type { Profile } from "./bridge.ts";
+import type { AutoQuiet, Profile, Settings } from "./bridge.ts";
 import {
+  MOST_PROFILES,
   MOST_PROGRAMS,
   addKeepAlive,
   addProgram,
   addProcess,
   addService,
+  checkProfileName,
   handlingOf,
   normalizeName,
+  profileNames,
   rebase,
   removeKeepAlive,
   removeProcess,
   removeService,
+  removeTrigger,
   sameProfile,
   setProcess,
   setService,
+  setTriggerProfile,
 } from "./profile-edit.ts";
 
 function profile(): Profile {
@@ -222,4 +227,65 @@ test("a name protected from Scan is carried into unsaved edits and takes the pro
   // A name that was already protected when the edits began is not re-added.
   const again = rebase(next, after.profile, after.profile);
   assert.deepEqual(again.keep_alive, next.keep_alive);
+});
+
+function settingsWith(active: string, others: string[]): Settings {
+  return {
+    profile_name: active,
+    profile: profile(),
+    other_profiles: others.map((name) => ({ name, profile: profile() })),
+  } as Settings;
+}
+
+test("profiles are listed alphabetically, the one in use among them", () => {
+  assert.deepEqual(
+    profileNames(settingsWith("Work", ["gaming", "Default", "Local AI"])),
+    ["Default", "gaming", "Local AI", "Work"],
+  );
+  assert.deepEqual(profileNames(settingsWith("Default", [])), ["Default"]);
+});
+
+test("a profile name is checked the way the engine checks it", () => {
+  const names = ["Default", "Gaming"];
+  assert.equal(checkProfileName("Work", names), null);
+  assert.equal(checkProfileName("  Work  ", names), null);
+  assert.match(checkProfileName("", names) ?? "", /name/);
+  assert.match(checkProfileName("   ", names) ?? "", /name/);
+  assert.match(checkProfileName("x".repeat(41), names) ?? "", /at most 40/);
+  assert.equal(checkProfileName("x".repeat(40), names), null);
+  assert.match(checkProfileName("a\u0001b", names) ?? "", /control/);
+  // The same name in another case is the same name.
+  assert.match(checkProfileName("gaming", names) ?? "", /Gaming already/);
+  const many = Array.from({ length: MOST_PROFILES }, (_, n) => `P${n}`);
+  assert.match(checkProfileName("One more", many) ?? "", /at most 16/);
+});
+
+test("renaming may change a profile's case but not take another's name", () => {
+  const names = ["Default", "Gaming"];
+  assert.equal(checkProfileName("gaming", names, "Gaming"), null);
+  assert.equal(checkProfileName("Games", names, "Gaming"), null);
+  assert.match(checkProfileName("default", names, "Gaming") ?? "", /already/);
+  // A full list can still rename.
+  const many = Array.from({ length: MOST_PROFILES }, (_, n) => `P${n}`);
+  assert.equal(checkProfileName("Other", many, "P3"), null);
+});
+
+test("a program starts the profile it was set to, and none is the one in use", () => {
+  const auto: AutoQuiet = { enabled: true, programs: ["steam", "ollama"] };
+  const set = setTriggerProfile(auto, "steam", "Gaming");
+  assert.deepEqual(set.profiles, { steam: "Gaming" });
+  assert.deepEqual(setTriggerProfile(set, "steam", "").profiles, {});
+  assert.deepEqual(auto.profiles, undefined, "the original is not edited");
+});
+
+test("removing a program takes the profile it started with it", () => {
+  const auto: AutoQuiet = {
+    enabled: true,
+    programs: ["steam", "ollama"],
+    profiles: { steam: "Gaming", ollama: "Local AI" },
+  };
+  const rest = removeTrigger(auto, "steam");
+  assert.deepEqual(rest.programs, ["ollama"]);
+  assert.deepEqual(rest.profiles, { ollama: "Local AI" });
+  assert.deepEqual(removeTrigger(rest, "nothing").programs, ["ollama"]);
 });

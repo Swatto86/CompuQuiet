@@ -92,16 +92,19 @@ fn auto_quiet_is_off_and_empty_until_the_user_says_otherwise() {
     let listed = AutoQuiet {
         enabled: false,
         programs: vec![STEAM.into()],
+        ..AutoQuiet::default()
     };
     assert!(!listed.active(), "listed but switched off");
     let empty = AutoQuiet {
         enabled: true,
         programs: vec![],
+        ..AutoQuiet::default()
     };
     assert!(!empty.active(), "on with nothing to watch for");
     let on = AutoQuiet {
         enabled: true,
         programs: vec![STEAM.into()],
+        ..AutoQuiet::default()
     };
     assert!(on.active());
 }

@@ -169,7 +169,7 @@ export function emitEvent(
  * the tray cannot be clicked through WebDriver.
  */
 export function trayMenu(
-  id: "tray-toggle" | "tray-show" | "tray-quit",
+  id: "tray-toggle" | "tray-show" | "tray-quit" | `tray-profile:${string}`,
 ): Promise<void> {
   return invokeCommand("simulate_tray_menu", { id });
 }

@@ -37,6 +37,9 @@ function state(over: Partial<EngineState>): EngineState {
     settings_unreadable: null,
     unrestored: [],
     ending: null,
+    profile: "Default",
+    profiles: ["Default"],
+    run_profile: null,
     ...over,
   };
 }

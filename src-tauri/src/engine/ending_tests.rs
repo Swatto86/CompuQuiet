@@ -45,7 +45,9 @@ fn a_timed_run_keeps_its_time_in_the_journal_and_counts_down_by_uptime() {
         }
     );
 
-    engine.go_quiet(&|_| {}, Some(ending.clone())).unwrap();
+    engine
+        .go_quiet(&|_| {}, Some(ending.clone()), None)
+        .unwrap();
     assert_eq!(on_disk(dir.path()).unwrap().ending, Some(ending.clone()));
     let shown = engine.state().ending.unwrap();
     assert_eq!(shown.kind, EndingKind::Timer);
@@ -70,7 +72,7 @@ fn a_timed_run_keeps_its_time_in_the_journal_and_counts_down_by_uptime() {
 fn a_run_with_no_ending_shows_none() {
     let dir = tempfile::tempdir().unwrap();
     let (_, engine) = setup(dir.path()).unwrap();
-    engine.go_quiet(&|_| {}, None).unwrap();
+    engine.go_quiet(&|_| {}, None, None).unwrap();
     assert!(engine.state().ending.is_none());
     assert_eq!(on_disk(dir.path()).unwrap().ending, None);
 }
@@ -82,7 +84,7 @@ fn a_program_to_wait_for_must_be_running_and_a_refusal_changes_nothing() {
     let waiting = Ending::ProgramExits {
         name: "nothing-of-the-kind.exe".into(),
     };
-    let error = engine.go_quiet(&|_| {}, Some(waiting)).unwrap_err();
+    let error = engine.go_quiet(&|_| {}, Some(waiting), None).unwrap_err();
     assert_eq!(error.code, "program_not_running");
     assert!(!engine.state().quiet);
     assert!(!Journal::path(dir.path()).exists());
@@ -97,7 +99,9 @@ fn the_program_a_run_waits_for_is_not_parked_by_it() {
     let waiting = Ending::ProgramExits {
         name: "OneDrive".into(),
     };
-    let summary = engine.go_quiet(&|_| {}, Some(waiting.clone())).unwrap();
+    let summary = engine
+        .go_quiet(&|_| {}, Some(waiting.clone()), None)
+        .unwrap();
     assert_eq!(summary.processes_suspended, 0);
     assert_eq!(summary.processes_closed, 1, "Dropbox is still parked");
     assert_eq!(
@@ -120,7 +124,7 @@ fn the_program_a_run_waits_for_is_not_parked_by_it() {
 fn the_ending_of_a_run_in_progress_can_be_changed_and_is_saved() {
     let dir = tempfile::tempdir().unwrap();
     let (_, engine) = setup(dir.path()).unwrap();
-    engine.go_quiet(&|_| {}, None).unwrap();
+    engine.go_quiet(&|_| {}, None, None).unwrap();
 
     let later = Ending::At { uptime: 9_999 };
     engine.set_ending(Some(later.clone())).unwrap();
@@ -146,7 +150,7 @@ fn an_ending_cannot_be_set_when_quiet_mode_is_off_or_a_run_is_going() {
         .unwrap_err();
     assert_eq!(error.code, "not_quiet");
 
-    engine.go_quiet(&|_| {}, None).unwrap();
+    engine.go_quiet(&|_| {}, None, None).unwrap();
     let _run = engine.begin().unwrap();
     let error = engine.set_ending(None).unwrap_err();
     assert_eq!(error.code, "busy");
@@ -156,7 +160,7 @@ fn an_ending_cannot_be_set_when_quiet_mode_is_off_or_a_run_is_going() {
 fn a_program_to_wait_for_cannot_be_one_that_is_gone_or_one_the_run_parked() {
     let dir = tempfile::tempdir().unwrap();
     let (fake, engine) = setup(dir.path()).unwrap();
-    engine.go_quiet(&|_| {}, None).unwrap();
+    engine.go_quiet(&|_| {}, None, None).unwrap();
     let wait_for = |name: &str| engine.set_ending(Some(Ending::ProgramExits { name: name.into() }));
     assert_eq!(wait_for("Dropbox").unwrap_err().code, "program_not_running");
     // Suspended by this run: it would never close on its own.
@@ -185,7 +189,11 @@ fn a_run_the_watch_starts_suspends_what_it_would_close_and_leaves_the_cache_alon
         program: "steam".into(),
     };
     let summary = engine
-        .go_quiet(&|line| lines.borrow_mut().push(line), Some(trigger.clone()))
+        .go_quiet(
+            &|line| lines.borrow_mut().push(line),
+            Some(trigger.clone()),
+            None,
+        )
         .unwrap();
 
     assert_eq!(summary.processes_closed, 0, "Dropbox is suspended instead");
@@ -224,7 +232,7 @@ fn a_run_somebody_pressed_for_still_closes_and_purges() {
     settings.profile.purge_memory = true;
     engine.save_settings(settings).unwrap();
     let summary = engine
-        .go_quiet(&|_| {}, Some(Ending::At { uptime: 99_999 }))
+        .go_quiet(&|_| {}, Some(Ending::At { uptime: 99_999 }), None)
         .unwrap();
     assert_eq!(summary.processes_closed, 1);
     assert!(summary.memory_purged);
@@ -238,6 +246,7 @@ fn the_auto_quiet_programs_are_left_alone_by_any_run_and_by_its_preview() {
     settings.auto_quiet = cq_core::watch::AutoQuiet {
         enabled: true,
         programs: vec!["Slack".into(), "OneDrive".into()],
+        ..Default::default()
     };
     settings.profile.processes.push(cq_core::ProcessTarget {
         name: "Slack".into(),
@@ -256,7 +265,7 @@ fn the_auto_quiet_programs_are_left_alone_by_any_run_and_by_its_preview() {
         !parked.contains(&"OneDrive.exe") && !parked.contains(&"Slack.exe"),
         "{parked:?}"
     );
-    engine.go_quiet(&|_| {}, None).unwrap();
+    engine.go_quiet(&|_| {}, None, None).unwrap();
     assert_eq!(
         skipped(&engine, "OneDrive").as_deref(),
         Some("on your keep-alive list")
@@ -271,5 +280,11 @@ fn the_auto_quiet_programs_are_left_alone_by_any_run_and_by_its_preview() {
     let mut settings = engine.settings();
     settings.auto_quiet.enabled = false;
     engine.save_settings(settings).unwrap();
-    assert!(engine.go_quiet(&|_| {}, None).unwrap().processes_suspended >= 2);
+    assert!(
+        engine
+            .go_quiet(&|_| {}, None, None)
+            .unwrap()
+            .processes_suspended
+            >= 2
+    );
 }

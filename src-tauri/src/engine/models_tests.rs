@@ -49,7 +49,7 @@ fn it_is_off_by_default_and_a_run_then_leaves_the_models_alone() {
             .all(|item| item.action != PreviewAction::UnloadModel)
     );
     assert_eq!(skipped(&engine, "AI models"), None);
-    engine.go_quiet(&|_| {}, None).unwrap();
+    engine.go_quiet(&|_| {}, None, None).unwrap();
     assert_eq!(fake.models().len(), 1);
 }
 
@@ -82,7 +82,7 @@ fn the_preview_lists_each_model_before_the_purge_and_the_run_unloads_it() {
     );
     assert_eq!(fake.models().len(), 2, "a look unloads nothing");
 
-    let summary = engine.go_quiet(&|_| {}, None).unwrap();
+    let summary = engine.go_quiet(&|_| {}, None, None).unwrap();
     assert!(fake.models().is_empty());
     for label in [
         "Unload llama3:8b from Ollama",
@@ -112,7 +112,7 @@ fn a_run_with_nothing_loaded_says_so() {
             .iter()
             .any(|entry| entry.name == "AI models" && entry.reason.contains("none is loaded"))
     );
-    engine.go_quiet(&|_| {}, None).unwrap();
+    engine.go_quiet(&|_| {}, None, None).unwrap();
     assert!(skipped(&engine, "AI models").is_some());
 }
 
@@ -121,7 +121,7 @@ fn a_model_that_will_not_unload_is_reported_and_the_rest_of_the_run_goes_on() {
     let dir = tempfile::tempdir().unwrap();
     let (fake, engine) = wanting_them_gone(dir.path()).unwrap();
     fake.fail(Call::UnloadModel, Some("llama3:8b"), Failure::Refused);
-    let summary = engine.go_quiet(&|_| {}, None).unwrap();
+    let summary = engine.go_quiet(&|_| {}, None, None).unwrap();
     let failed = line(&engine, "Unload llama3:8b from Ollama").unwrap();
     assert!(!failed.ok, "{failed:?}");
     assert!(failed.detail.unwrap().contains("refused"));
@@ -134,7 +134,7 @@ fn an_unload_that_times_out_is_not_promised_a_restore() {
     let dir = tempfile::tempdir().unwrap();
     let (fake, engine) = wanting_them_gone(dir.path()).unwrap();
     fake.fail(Call::UnloadModel, None, Failure::TimedOut);
-    engine.go_quiet(&|_| {}, None).unwrap();
+    engine.go_quiet(&|_| {}, None, None).unwrap();
     let detail = line(&engine, "Unload llama3:8b from Ollama")
         .and_then(|line| line.detail)
         .unwrap();
@@ -155,7 +155,7 @@ fn a_model_a_server_has_already_let_go_of_is_not_a_failure() {
     // Listed twice, so the first step unloads it and the second finds it gone.
     let held = model(ModelServer::Ollama, "llama3:8b");
     fake.set_models(vec![held.clone(), held]);
-    engine.go_quiet(&|_| {}, None).unwrap();
+    engine.go_quiet(&|_| {}, None, None).unwrap();
     let lines: Vec<_> = engine
         .state()
         .log
@@ -175,6 +175,6 @@ fn a_run_the_watch_starts_unloads_too() {
     let trigger = Ending::Trigger {
         program: "steam".into(),
     };
-    engine.go_quiet(&|_| {}, Some(trigger)).unwrap();
+    engine.go_quiet(&|_| {}, Some(trigger), None).unwrap();
     assert!(fake.models().is_empty());
 }

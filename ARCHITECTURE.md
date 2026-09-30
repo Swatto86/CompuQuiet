@@ -125,6 +125,25 @@ Dependencies point inward: `src-tauri` → `cq-platform` → `cq-core`.
    macOS start `systemd-inhibit` or `caffeinate` in their own process group,
    bound to this process's pid (`cq-platform/src/awake.rs`).
 
+8. **Profiles.** `Settings::profile` is the active profile (what a press runs
+   and the Park list edits), `profile_name` names it and `other_profiles`
+   holds the rest; `Settings::switch_to` swaps them, so 1.1.7, which knows
+   only `profile`, still loads the file and runs the active one (and forgets
+   the others if it saves). `Settings::normalize` (at load and on a save)
+   gives every profile the active one's Never touch list, taking what is on
+   it off their lists, and drops an auto-quiet choice whose program or profile
+   is gone. A run names its profile to `runnable_settings` (the tray and the
+   window: the active one; `--profile`: that one; a run the watch starts: the
+   one chosen for its program in `AutoQuiet::profiles`, else the active one),
+   which plans from `Settings::for_profile`, a copy; `Journal::profile`
+   records it (optional, 1.1.7 ignores it) and `EngineState::run_profile`
+   shows it. `engine/profiles.rs` is the only way the set of profiles
+   changes (`switch_profile`, `add_profile`, `rename_profile`,
+   `delete_profile`), and only with Quiet Mode off and no run going
+   (`quiet_on`): the page's `save_settings` keeps the engine's profile name
+   and `other_profiles`, and refuses with `profile_changed` when the page's
+   profile is no longer the one in use (the tray switched meanwhile).
+
 Processes are identified by PID plus start time so a reused PID is refused.
 
 ## The scan
@@ -246,7 +265,8 @@ running) and `fake_slowed` (which are slowed), which the slow-sound spec does.
 ## The window (`ui/`)
 
 No framework: one module per view (`dashboard`, `scan`, `targets`,
-`settings-view`, `run-length`, `auto-quiet`, `updates`, `diagnostics`), `main.ts` for boot and the flows that span views,
+`settings-view`, `run-length`, `auto-quiet`, `updates`, `diagnostics`,
+`profiles`, `banner`), `main.ts` for boot and the flows that span views,
 `tabs.ts` for the tab bar, and pure helpers with `node --test` tests
 (`format`, `scan-select`, `profile-edit`, `park-list`). The Park list's rows
 are built in `park-rows.ts` and its pickers (running programs, the machine's
@@ -305,7 +325,15 @@ services) live in `pickers.ts`. Conventions that are not visible in the code:
   still counts as "the window was in front"). Right click opens the menu on
   the event loop, not inside the icon's window procedure, because Windows
   ignores menu clicks opened from that procedure. Linux keeps the indicator
-  menu and puts it back after an icon change, which otherwise drops it.
+  menu and puts it back after an icon change, which otherwise drops it. The
+  menu's *Profile* submenu (`tray/profiles.rs`) has one ticked entry per
+  profile, its id being `tray-profile:` and the name, so a click names what
+  was chosen even after the menu went stale; it is rebuilt only when the set of
+  profiles changes, the ticks are set again on every refresh (a click ticks
+  an entry whether or not the switch was allowed), and the entries are
+  disabled while Quiet Mode is on or a run is going. A switch from the tray
+  reaches the window as the `settings-changed` event, and the toggle reads
+  "Free up this PC (Gaming)" when there is more than one profile.
 - A window whose WebView2 failed to start is only logged by Tauri; its handle
   stays registered but every query on it fails. `tray::reveal` treats that as
   "no window" and `reopen` restarts the process once with `--reopen` (shown, never
@@ -328,7 +356,8 @@ services) live in `pickers.ts`. Conventions that are not visible in the code:
 - One copy per data directory (`cq_core::instance`, `single.rs`): the first
   copy holds an exclusive lock on `instance.lock` for the life of the process.
   A later launch leaves a request in `wake/` (one command word from a fixed
-  list, never arguments) and waits up to 3 s for the running copy, which polls
+  list, and for `quiet` and `toggle` `:` and a profile's name, checked like any
+  name; never a target or a setting) and waits up to 3 s for the running copy, which polls
   twice a second, to take it; the window is then shown (`Command::Show`), or
   the command line's `--quiet`, `--restore` or `--toggle` is done
   (`Command::{Quiet, Restore, Toggle}`, `cli.rs`). The files carry the user's
@@ -341,7 +370,10 @@ services) live in `pickers.ts`. Conventions that are not visible in the code:
 - The command line (`cli.rs`): `parse` runs first and refuses any argument it
   does not know (exit 2, before the data directory is touched); a command names
   no target, so the running copy does it from its saved settings through
-  `run_transition`. Commands wait in a queue, are done in the order sent and
+  `run_transition`. `--profile NAME` (or `=NAME`) goes with `--quiet` or
+  `--toggle` only, and a name that is not among the saved profiles (read from
+  `settings.json`, `check_profile`) is refused at once with 2; the running copy
+  looks the name up again. Commands wait in a queue, are done in the order sent and
   each waits (up to 3 minutes) for a run that is going; one is skipped when the
   machine is already as asked. It reports through `announce` and `alert`
   (`watch.rs`), never bringing the window forward. A launch with a command that finds no copy becomes the running
@@ -410,7 +442,8 @@ services) live in `pickers.ts`. Conventions that are not visible in the code:
 ## State
 
 `COMPUQUIET_DATA_DIR` overrides the platform config directory. Files are
-`settings.json` (versioned) and `journal.json` (versioned). Writes are
+`settings.json` (versioned; named profiles are fields added to it, not a new
+version) and `journal.json` (versioned). Writes are
 temp-file + rename, and the rename and reads are retried briefly on the
 Windows errors a scanner holding the file causes. A newer or corrupt
 `settings.json` is an error, not a reset: the engine runs on the defaults but

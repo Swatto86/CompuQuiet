@@ -5,6 +5,7 @@ import {
   formatPercent,
   formatSince,
   memoryFreed,
+  quietSub,
   reportLines,
   summaryLines,
 } from "./format.ts";
@@ -53,9 +54,11 @@ export class Dashboard {
       this.title.textContent = state.recovered
         ? "Quiet Mode (recovered)"
         : "Quiet Mode is on";
-      this.sub.textContent = state.recovered
-        ? "A previous session left changes in place. Restore puts everything back."
-        : "Background work is parked. Press again when you are done.";
+      this.sub.textContent = quietSub(
+        state.recovered,
+        state.run_profile,
+        state.profiles.length,
+      );
     } else {
       this.title.textContent = "Ready for a game or local AI";
       this.sub.textContent =

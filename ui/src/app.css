@@ -708,9 +708,27 @@ h3.group {
   max-width: 720px;
 }
 
-.until {
+.until,
+.profile-bar {
   margin: 0 8px 8px;
   max-width: 720px;
+}
+
+.profile-row {
+  margin-bottom: 12px;
+}
+
+.card-full {
+  grid-column: 1 / -1;
+}
+
+.row .grow select {
+  width: 100%;
+}
+
+.chips select {
+  padding: 1px 4px;
+  font-size: 12px;
 }
 
 .until-row {

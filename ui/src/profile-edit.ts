@@ -4,7 +4,13 @@
  * side validates again on save; this layer exists so the page can explain a
  * refusal before the round trip.
  */
-import type { ProcessAction, ProcessTarget, Profile } from "./bridge.ts";
+import type {
+  AutoQuiet,
+  ProcessAction,
+  ProcessTarget,
+  Profile,
+  Settings,
+} from "./bridge.ts";
 
 export type EditResult =
   { ok: true; profile: Profile } | { ok: false; reason: string };
@@ -163,6 +169,70 @@ export function addProgram(programs: string[], name: string): ProgramsResult {
       reason: `The list holds at most ${MOST_PROGRAMS} programs`,
     };
   return { ok: true, programs: [...programs, name.trim()] };
+}
+
+/** Profiles one settings file holds, as the engine allows. */
+export const MOST_PROFILES = 16;
+const MOST_NAME = 40;
+
+/** Every profile's name, alphabetically, the one in use among them. */
+export function profileNames(settings: Settings): string[] {
+  const key = (name: string): string => name.toLowerCase();
+  return [
+    settings.profile_name,
+    ...settings.other_profiles.map((other) => other.name),
+  ].sort((a, b) => (key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0));
+}
+
+/**
+ * Why `name` cannot be a profile's name, or null. `names` are the profiles
+ * there are; `renaming` is the one being given a new name, which may keep its
+ * own name in another case.
+ */
+export function checkProfileName(
+  name: string,
+  names: string[],
+  renaming: string | null = null,
+): string | null {
+  const trimmed = name.trim();
+  if (trimmed === "") return "Give the profile a name";
+  if ([...trimmed].length > MOST_NAME)
+    return `A profile name is at most ${MOST_NAME} characters`;
+  if ([...trimmed].some((char) => (char.codePointAt(0) ?? 0) < 0x20))
+    return "A profile name cannot contain control characters";
+  const key = trimmed.toLowerCase();
+  const taken = names.find(
+    (other) =>
+      other.toLowerCase() === key &&
+      (renaming === null || other.toLowerCase() !== renaming.toLowerCase()),
+  );
+  if (taken !== undefined) return `There is a profile called ${taken} already`;
+  if (renaming === null && names.length >= MOST_PROFILES)
+    return `CompuQuiet keeps at most ${MOST_PROFILES} profiles`;
+  return null;
+}
+
+/** The auto-quiet list with `program` starting `profile`; empty: the profile in use. */
+export function setTriggerProfile(
+  auto: AutoQuiet,
+  program: string,
+  profile: string,
+): AutoQuiet {
+  const profiles = { ...auto.profiles };
+  if (profile === "") delete profiles[program];
+  else profiles[program] = profile;
+  return { ...auto, profiles };
+}
+
+/** The auto-quiet list without `program`, and without the profile it was set to start. */
+export function removeTrigger(auto: AutoQuiet, program: string): AutoQuiet {
+  const profiles = { ...auto.profiles };
+  delete profiles[program];
+  return {
+    ...auto,
+    programs: auto.programs.filter((listed) => listed !== program),
+    profiles,
+  };
 }
 
 /**

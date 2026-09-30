@@ -58,6 +58,13 @@
               <button id="recovery-action" type="button" class="danger small"></button>
             </div>
           </section>
+          <section id="profile-bar" class="until profile-bar" aria-label="Profile" hidden>
+            <div class="until-row">
+              <label for="profile-choice">Profile</label>
+              <select id="profile-choice"></select>
+              <span id="profile-note" class="muted"></span>
+            </div>
+          </section>
           <p id="hero-plan" class="plan"></p>
           <section id="until" class="until" aria-label="How long Quiet Mode lasts">
             <div id="until-choose" class="until-row">
@@ -168,6 +175,28 @@
 
         <section id="view-targets" class="view with-actions" role="tabpanel" aria-labelledby="tab-targets" hidden>
           <div class="view-body">
+          <div class="cards profile-row">
+            <div class="card card-full">
+              <div class="card-head">
+                <h3>Profile</h3>
+                <span class="muted">Each profile has its own park list and options: one for a game, one for local AI, one for work. The one chosen here is the one Free up this PC uses, and the one you edit below. Never touch is shared by every profile.</span>
+              </div>
+              <div class="row">
+                <select id="profile-edit-choice" aria-label="Profile to use and edit"></select>
+                <button id="profile-delete" type="button" class="small danger">Delete</button>
+              </div>
+              <form id="profile-add" class="row">
+                <label class="grow"><span class="sr-only">Name of a new profile, or a new name for this one</span><input id="profile-name" maxlength="40" placeholder="A name for a new profile (Gaming, Local AI, Work)" autocomplete="off" /></label>
+                <select id="profile-start" aria-label="What a new profile starts from">
+                  <option value="copy">Start from a copy of this one</option>
+                  <option value="defaults">Start from the built-in list</option>
+                </select>
+                <button type="submit" class="small">Add</button>
+                <button id="profile-rename" type="button" class="small">Rename this one</button>
+              </form>
+              <p id="profile-lock" class="muted" hidden>Put everything back before changing profiles: the one in use is the one Quiet Mode was made from.</p>
+            </div>
+          </div>
           <div class="filter-bar">
             <label class="grow"><span class="sr-only">Filter the programs and services below</span><input id="park-filter" type="search" placeholder="Filter programs and services by name" autocomplete="off" /></label>
             <span class="muted" id="park-filter-status" aria-live="polite"></span>
@@ -223,7 +252,7 @@
               <label class="check"><input type="checkbox" id="opt-unload" /> <span>Unload local AI models (Ollama, LM Studio)</span></label>
               <p class="muted" id="unload-hint">Frees the memory, graphics memory most of all, that a model keeps after its last reply. It loads again the next time something uses it, so there is nothing to put back, but a reply that is being written stops. LM Studio's models are unloaded only while CompuQuiet is not running as administrator.</p>
               <h4>Never touch</h4>
-              <p class="muted">The desktop, input, audio, security and terminals are always protected. Add your own programs or services here. Anything you remove from the lists lands here too, so a scan does not park it again; take it off this list to allow that.</p>
+              <p class="muted">The desktop, input, audio, security and terminals are always protected. Add your own programs or services here. Anything you remove from the lists lands here too, so a scan does not park it again; take it off this list to allow that. It applies to every profile; to park a program in one profile only, untick it in the others.</p>
               <form id="keep-add" class="row">
                 <label class="grow"><span class="sr-only">Program or service to keep alive</span><input id="keep-name" placeholder="Program or service name" autocomplete="off" /></label>
                 <button type="submit" class="small">Add</button>
@@ -286,7 +315,7 @@
               <h3>Ending Quiet Mode by itself</h3>
               <label class="choice"><input type="checkbox" id="set-auto-quiet" />
                 <span>Go quiet when one of these programs is running</span>
-                <span class="choice-help">Off by default. Ten seconds after one starts, CompuQuiet frees up the PC; thirty seconds after the last one has closed, it puts everything back. Because you did not press the button it suspends rather than closes programs and leaves cached memory alone. A Quiet Mode you started yourself is never ended this way, and these programs are never parked.</span>
+                <span class="choice-help">Off by default. Ten seconds after one starts, CompuQuiet frees up the PC; thirty seconds after the last one has closed, it puts everything back. Because you did not press the button it suspends rather than closes programs and leaves cached memory alone. A Quiet Mode you started yourself is never ended this way, and these programs are never parked. With more than one profile, each program can start its own.</span>
               </label>
               <form id="auto-quiet-add" class="row">
                 <label class="grow"><span class="sr-only">Program that starts Quiet Mode</span><input id="auto-quiet-name" list="auto-quiet-programs" placeholder="Add a program (name or pick a running one)" autocomplete="off" /></label>

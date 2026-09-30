@@ -16,6 +16,7 @@ use crate::tray;
 
 #[cfg(feature = "fake-platform")]
 pub mod fake;
+pub mod profiles;
 
 pub const EVENT_PROGRESS: &str = "quiet-progress";
 pub const EVENT_STATE: &str = "quiet-state";
@@ -28,8 +29,12 @@ pub const EVENT_NOTICE: &str = "quiet-notice";
 
 /// What one run does.
 pub enum Run {
-    /// Switch Quiet Mode on, ending by itself as given.
-    Quiet(Option<Ending>),
+    /// Switch Quiet Mode on, ending by itself as given, from the profile
+    /// named (this once) or else the one the engine picks.
+    Quiet {
+        ending: Option<Ending>,
+        profile: Option<String>,
+    },
     /// Put everything back.
     Restore,
 }
@@ -38,7 +43,10 @@ impl Run {
     /// What a toggle does: on, ending only when the user says so, or off.
     pub fn toggle(quiet: bool) -> Run {
         if quiet {
-            Run::Quiet(None)
+            Run::Quiet {
+                ending: None,
+                profile: None,
+            }
         } else {
             Run::Restore
         }
@@ -197,7 +205,11 @@ pub async fn go_quiet(
 ) -> Result<EngineState, AppError> {
     let engine = engine.inner().clone();
     let ending = until.map(|until| engine.ending_from(until)).transpose()?;
-    run_transition(app, engine, Run::Quiet(ending)).await
+    let run = Run::Quiet {
+        ending,
+        profile: None,
+    };
+    run_transition(app, engine, run).await
 }
 
 #[tauri::command]
@@ -228,7 +240,7 @@ pub async fn run_transition(
     engine: Arc<Engine>,
     run: Run,
 ) -> Result<EngineState, AppError> {
-    let quiet = matches!(run, Run::Quiet(_));
+    let quiet = matches!(run, Run::Quiet { .. });
     // The window and tray show the run as soon as it is asked for, not at its
     // first step, which can be a slow service stop away. Not when another run
     // is already going: its own log would be wiped.
@@ -248,7 +260,9 @@ pub async fn run_transition(
     };
     let worker = engine.clone();
     let result = tauri::async_runtime::spawn_blocking(move || match run {
-        Run::Quiet(ending) => worker.go_quiet(&progress, ending).map(|_| ()),
+        Run::Quiet { ending, profile } => worker
+            .go_quiet(&progress, ending, profile.as_deref())
+            .map(|_| ()),
         Run::Restore => worker.restore(&progress).map(|_| ()),
     })
     .await?;

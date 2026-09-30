@@ -115,7 +115,7 @@ fn a_press_does_what_the_preview_said_but_plans_again_from_the_machine_as_it_is(
 
     // OneDrive ends on its own between the look and the press.
     fake.close(100, 1_700_000_100).unwrap();
-    let summary = engine.go_quiet(&|_| {}, None).unwrap();
+    let summary = engine.go_quiet(&|_| {}, None, None).unwrap();
     assert_eq!(summary.processes_suspended, 0, "OneDrive is not in the run");
     assert_eq!(summary.processes_closed, 1);
     assert_eq!(summary.services_stopped, 1);
@@ -134,7 +134,7 @@ fn the_preview_and_the_run_plan_the_same_thing_from_the_same_machine() {
     let fake = Arc::new(Fake::new());
     let engine = engine(&fake, dir.path()).unwrap();
     let preview = engine.preview().unwrap();
-    let summary = engine.go_quiet(&|_| {}, None).unwrap();
+    let summary = engine.go_quiet(&|_| {}, None, None).unwrap();
 
     let count = |action| {
         preview
@@ -166,10 +166,10 @@ fn a_preview_is_refused_exactly_when_a_press_would_be() {
     assert_eq!(engine.preview().unwrap_err().code, "busy");
     drop(run);
 
-    engine.go_quiet(&|_| {}, None).unwrap();
+    engine.go_quiet(&|_| {}, None, None).unwrap();
     assert_eq!(engine.preview().unwrap_err().code, "already_quiet");
     assert_eq!(
-        engine.go_quiet(&|_| {}, None).unwrap_err().code,
+        engine.go_quiet(&|_| {}, None, None).unwrap_err().code,
         "already_quiet"
     );
     engine.restore(&|_| {}).unwrap();
@@ -180,7 +180,7 @@ fn a_preview_is_refused_exactly_when_a_press_would_be() {
     let engine = crate::engine::tests::engine(unreadable.path());
     assert_eq!(engine.preview().unwrap_err().code, "settings_unreadable");
     assert_eq!(
-        engine.go_quiet(&|_| {}, None).unwrap_err().code,
+        engine.go_quiet(&|_| {}, None, None).unwrap_err().code,
         "settings_unreadable"
     );
 }
@@ -209,7 +209,7 @@ fn on_battery_the_power_plan_and_the_purge_are_left_out_of_the_preview_and_the_r
         .collect();
     assert_eq!(held, vec!["Power plan", "Memory purge"]);
 
-    let summary = engine.go_quiet(&|_| {}, None).unwrap();
+    let summary = engine.go_quiet(&|_| {}, None, None).unwrap();
     assert!(!summary.power_changed && !summary.memory_purged);
     assert_eq!(
         fake.snapshot(&[]).unwrap().power_plan.unwrap().id,

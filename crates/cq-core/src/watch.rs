@@ -6,10 +6,12 @@
 //! Time is the machine's uptime, never the wall clock, which jumps by hours on
 //! a dual-boot PC.
 
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 
 use crate::CoreError;
-use crate::policy::matches;
+use crate::policy::{matches, normalize};
 use crate::snapshot::ProcessInfo;
 
 /// Longest timed run a page may ask for.
@@ -93,12 +95,26 @@ impl Until {
 pub struct AutoQuiet {
     pub enabled: bool,
     pub programs: Vec<String>,
+    /// The profile a program starts, by name, for one that should not start
+    /// the active one. Absent in files written before named profiles.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub profiles: BTreeMap<String, String>,
 }
 
 impl AutoQuiet {
     /// On, and with something to watch for.
     pub fn active(&self) -> bool {
         self.enabled && !self.programs.is_empty()
+    }
+
+    /// The profile to run when `program` starts Quiet Mode; `None` is the
+    /// active one.
+    pub fn profile_for(&self, program: &str) -> Option<&str> {
+        let wanted = normalize(program);
+        self.profiles
+            .iter()
+            .find(|(listed, _)| normalize(listed) == wanted)
+            .map(|(_, profile)| profile.as_str())
     }
 }
 

@@ -67,6 +67,12 @@ pub struct EngineState {
     pub unrestored: Vec<Unrestored>,
     /// How Quiet Mode ends by itself, if it does.
     pub ending: Option<EndingState>,
+    /// The active profile: the one a press runs and the Park list edits.
+    pub profile: String,
+    /// Every profile's name, alphabetically.
+    pub profiles: Vec<String>,
+    /// The profile the run in progress was made from, when its journal says.
+    pub run_profile: Option<String>,
 }
 
 struct Inner {
@@ -179,6 +185,12 @@ impl Engine {
                 .journal
                 .as_ref()
                 .and_then(|journal| self.ending_state(journal)),
+            profile: inner.settings.profile_name.clone(),
+            profiles: inner.settings.profile_names(),
+            run_profile: inner
+                .journal
+                .as_ref()
+                .and_then(|journal| journal.profile.clone()),
         }
     }
 
@@ -199,11 +211,35 @@ impl Engine {
         self.lock().settings.clone()
     }
 
-    pub fn save_settings(&self, settings: Settings) -> Result<(), AppError> {
-        if let Some(error) = &self.lock().unreadable_settings {
-            return Err(Self::settings_unreadable(error));
+    /// Save what the page holds. The page edits the active profile and the
+    /// other settings; which profiles there are, and their contents, change
+    /// only through the profile commands (`engine/profiles.rs`), so what the
+    /// page sends of those is not trusted: its copy may be older than a
+    /// switch from the tray, and then its edits were made to another profile.
+    pub fn save_settings(&self, mut settings: Settings) -> Result<(), AppError> {
+        let current = {
+            let inner = self.lock();
+            if let Some(error) = &inner.unreadable_settings {
+                return Err(Self::settings_unreadable(error));
+            }
+            inner.settings.clone()
+        };
+        if !settings
+            .profile_name
+            .eq_ignore_ascii_case(&current.profile_name)
+        {
+            return Err(AppError::new(
+                "profile_changed",
+                format!(
+                    "The profile in use is now {}, so these changes to {} were not saved. Make them again.",
+                    current.profile_name, settings.profile_name
+                ),
+            ));
         }
-        settings.refuse_new_critical_services(&self.lock().settings, self.platform.os())?;
+        settings.profile_name = current.profile_name.clone();
+        settings.other_profiles = current.other_profiles.clone();
+        settings.normalize();
+        settings.refuse_new_critical_services(&current, self.platform.os())?;
         settings.save(&self.data_dir)?;
         self.lock().settings = settings;
         Ok(())
@@ -309,6 +345,7 @@ impl Drop for BusyGuard<'_> {
 
 mod ending;
 mod preview;
+mod profiles;
 mod recovery;
 mod report;
 mod restore;

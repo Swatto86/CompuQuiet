@@ -57,6 +57,8 @@ export class Targets {
   private readonly pickers = new Pickers();
   /** What the filter box holds: only matching rows are drawn. */
   private filter = "";
+  /** More than one profile, so Never touch is something to say about a removal. */
+  private shared = false;
 
   constructor(
     initial: Profile,
@@ -147,6 +149,18 @@ export class Targets {
     slow.hidden = slow.textContent === "";
   }
 
+  /** How many profiles there are. */
+  setProfileCount(count: number): void {
+    this.shared = count > 1;
+  }
+
+  /** Another profile's lists: what was being edited belongs to the one left. */
+  replace(profile: Profile): void {
+    this.saved = profile;
+    this.working = structuredClone(profile);
+    this.render();
+  }
+
   setProfile(profile: Profile): void {
     // Unsaved edits survive a save made elsewhere (Scan adding its finds).
     this.working = sameProfile(this.saved, this.working)
@@ -174,6 +188,18 @@ export class Targets {
     byId<HTMLInputElement>("park-filter").value = "";
     this.render();
     this.reveal(list);
+  }
+
+  /**
+   * A removed row goes under Never touch, which every profile shares, so it
+   * leaves the others' lists too. Said, because that is not what removing a
+   * row from one list of several looks like.
+   */
+  private neverTouchNote(name: string): void {
+    if (this.shared)
+      toast(
+        `${name} is under Never touch now, in every profile. To stop parking it in this profile only, untick it instead.`,
+      );
   }
 
   /** The row just added goes at the bottom of a long list: bring it into view. */
@@ -268,6 +294,7 @@ export class Targets {
               remove: () => {
                 this.working = removeProcess(this.working, index);
                 this.removed("process-targets", place, "process-name");
+                this.neverTouchNote(target.name);
               },
             },
           ),
@@ -291,6 +318,7 @@ export class Targets {
             remove: () => {
               this.working = removeService(this.working, index);
               this.removed("service-targets", place, "service-name");
+              this.neverTouchNote(target.name);
             },
           }),
         ),

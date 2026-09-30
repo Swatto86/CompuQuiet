@@ -108,7 +108,11 @@ async fn start(app: &AppHandle, engine: &Arc<Engine>, program: &str, notificatio
     let ending = Ending::Trigger {
         program: program.to_string(),
     };
-    match run_transition(app.clone(), engine.clone(), Run::Quiet(Some(ending))).await {
+    let run = Run::Quiet {
+        ending: Some(ending),
+        profile: None,
+    };
+    match run_transition(app.clone(), engine.clone(), run).await {
         Ok(state) => announce(
             app,
             notifications,

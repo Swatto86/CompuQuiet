@@ -105,6 +105,18 @@ unless CompuQuiet runs as root.
    while LM Studio is running, and not when CompuQuiet has administrator rights
    (the tool sits in your user folder), which the preview says. A run that
    starts by itself unloads them too.
+10. **Profiles** (top of the Park list) keep a separate park list and options
+    for each use: one for a game, one for local AI, one for work. *Add* makes
+    one from a copy of the profile in use or from the built-in list, and starts
+    using it. Once there are two, Home has a *Profile* choice and the tray
+    menu a *Profile* submenu. The profile in use is the one the big button
+    runs and the Park list edits; it can change only while Quiet Mode is off.
+    *Never touch* is shared by every profile, so removing a row from one list
+    takes that program out of all of them: untick it to stop parking it in one
+    profile only. In Settings each program that starts Quiet Mode by itself
+    can start its own profile. The profiles are kept in `settings.json`, where
+    1.1.7 reads only the one in use: going back to it forgets the others, so
+    copy the file first.
 
 ![The Scan tab](docs/scan.png)
 
@@ -127,7 +139,9 @@ build directory.
 **From the command line.** `CompuQuiet --quiet` switches Quiet Mode on,
 `--restore` puts everything back and `--toggle` does whichever the machine is
 not in now. Point a game launcher's before-launch command, a script or a
-hotkey tool at them. Each does what one press would (your saved park list, the
+hotkey tool at them. `--profile NAME` beside `--quiet` or `--toggle` runs that
+saved profile this once, and leaves the one in use as it is (`--profile=NAME`
+also works); a name that is not saved exits with 2. Each does what one press would (your saved park list, the
 same checks), shows no window, and is skipped when the machine is already as
 asked. Commands are done in the order they arrive, each after any run that is
 going has finished. What happened is said in the window if it is open, and in
@@ -135,7 +149,7 @@ a notification if that is on; a failure is always notified. With CompuQuiet
 running, the command is handed to it and the program exits at once, before the run has finished (exit code 0; 1 if the running copy did
 not take it within three seconds). With none running it starts one in the tray
 and does it there. Anything else on the command line (`--hidden` aside, which
-starts in the tray) exits with 2 and does nothing, so a misspelt flag is not
+starts in the tray, and `--profile`) exits with 2 and does nothing, so a misspelt flag is not
 taken for a command that ran. The command names no program or setting, so it
 cannot do more than the window can. The Windows release has no console, so
 nothing is printed; use `start /wait "" "C:\Program Files\CompuQuiet\CompuQuiet.exe" --quiet`

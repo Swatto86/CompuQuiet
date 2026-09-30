@@ -22,7 +22,7 @@ fn an_unreadable_settings_file_is_kept_and_blocks_saving_and_going_quiet() {
 
         let saved = engine.save_settings(engine.settings()).unwrap_err();
         assert_eq!(saved.code, "settings_unreadable");
-        let quiet = engine.go_quiet(&|_| {}, None).unwrap_err();
+        let quiet = engine.go_quiet(&|_| {}, None, None).unwrap_err();
         assert_eq!(quiet.code, "settings_unreadable");
         assert_eq!(std::fs::read_to_string(&path).unwrap(), text);
         assert!(!Journal::path(dir.path()).exists(), "nothing was parked");
@@ -65,7 +65,7 @@ fn setting_the_file_aside_keeps_it_and_starts_fresh() {
             .unwrap()
             .start_hidden
     );
-    assert!(engine.go_quiet(&|_| {}, None).is_ok());
+    assert!(engine.go_quiet(&|_| {}, None, None).is_ok());
     assert_eq!(std::fs::read_to_string(&kept).unwrap(), "{ not settings");
 }
 

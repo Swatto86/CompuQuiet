@@ -12,22 +12,25 @@
 //! file holding one command word) and waits for the running copy to take it,
 //! which is its answer. Files there carry the user's own access list, so an
 //! unelevated launch can ask an elevated copy. A request names a command from
-//! a fixed list and never carries arguments: the running copy does what it
-//! would do for its own user, from its own saved settings. A copy that does
-//! not answer, or whose lock is released while it waits, is taken over.
+//! a fixed list and carries at most the name of a saved profile to run, which
+//! the running copy looks up in its own settings and refuses if it has no
+//! such one: it does what it would do for its own user. A copy that does not
+//! answer, or whose lock is released while it waits, is taken over.
 
 use std::fs::{self, File, OpenOptions, TryLockError};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use crate::settings::check_profile_name;
 use crate::{CoreError, store};
 
 const LOCK_FILE: &str = "instance.lock";
 const WAKE_DIR: &str = "wake";
 const REQUEST_EXT: &str = "cmd";
-/// A request is one short word; a longer file is not one of ours.
-const MAX_REQUEST_BYTES: u64 = 32;
+/// A request is a word and perhaps a profile's name; a longer file is not one
+/// of ours.
+const MAX_REQUEST_BYTES: u64 = 256;
 
 /// How long a second launch waits for the running copy to answer. A copy that
 /// is still exiting (a restart, the end of an elevated relaunch) frees the lock
@@ -73,6 +76,50 @@ impl Command {
     }
 }
 
+/// What a second launch asks for: a command, and for the two that switch
+/// Quiet Mode on, the profile to run this once instead of the active one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Request {
+    pub command: Command,
+    pub profile: Option<String>,
+}
+
+impl From<Command> for Request {
+    fn from(command: Command) -> Request {
+        Request {
+            command,
+            profile: None,
+        }
+    }
+}
+
+impl Request {
+    /// One line: the word, then `:` and the profile's name when it has one.
+    fn text(&self) -> String {
+        match &self.profile {
+            Some(profile) => format!("{}:{profile}", self.command.word()),
+            None => self.command.word().to_string(),
+        }
+    }
+
+    fn parse(text: &str) -> Result<Request, String> {
+        let text = text.trim();
+        let (word, name) = match text.split_once(':') {
+            Some((word, name)) => (word, Some(name)),
+            None => (text, None),
+        };
+        let command = Command::parse(word).ok_or_else(|| format!("unknown request {text:?}"))?;
+        let profile = match name {
+            None => None,
+            Some(_) if !matches!(command, Command::Quiet | Command::Toggle) => {
+                return Err(format!("{word} takes no profile"));
+            }
+            Some(name) => Some(check_profile_name(name).map_err(|error| error.to_string())?),
+        };
+        Ok(Request { command, profile })
+    }
+}
+
 /// The lock on the data directory. Dropping it lets another copy start.
 #[derive(Debug)]
 pub struct Lock {
@@ -90,11 +137,16 @@ pub enum Start {
     Stuck(String),
 }
 
-/// Take the data directory, or ask the copy that has it for `command`.
+/// Take the data directory, or ask the copy that has it for `request`.
 /// An error means the lock file could not be opened or locked at all.
-pub fn start(dir: &Path, command: Command, answer_within: Duration) -> Result<Start, CoreError> {
+pub fn start(
+    dir: &Path,
+    request: impl Into<Request>,
+    answer_within: Duration,
+) -> Result<Start, CoreError> {
+    let request = request.into();
     let deadline = Instant::now() + answer_within;
-    let mut request: Option<PathBuf> = None;
+    let mut left: Option<PathBuf> = None;
     loop {
         if let Some(lock) = try_lock(dir)? {
             // Whatever was left before this copy started (a crashed copy's,
@@ -102,9 +154,9 @@ pub fn start(dir: &Path, command: Command, answer_within: Duration) -> Result<St
             take(dir);
             return Ok(Start::First(lock));
         }
-        let path = match request.take() {
+        let path = match left.take() {
             Some(path) => path,
-            None => match leave(dir, command) {
+            None => match leave(dir, &request) {
                 Ok(path) => path,
                 Err(error) => {
                     return Ok(Start::Stuck(format!("could not leave a request: {error}")));
@@ -122,14 +174,14 @@ pub fn start(dir: &Path, command: Command, answer_within: Duration) -> Result<St
             });
         }
         std::thread::sleep(ANSWER_POLL);
-        request = Some(path);
+        left = Some(path);
     }
 }
 
 /// The requests left for the running copy, oldest first, each removed as it
 /// is taken. `Err` describes one that cannot be acted on. A request is acted
 /// on only by the copy that removed it, so none is acted on twice.
-pub fn take(dir: &Path) -> Vec<Result<Command, String>> {
+pub fn take(dir: &Path) -> Vec<Result<Request, String>> {
     let Ok(entries) = fs::read_dir(dir.join(WAKE_DIR)) else {
         return Vec::new();
     };
@@ -144,9 +196,7 @@ pub fn take(dir: &Path) -> Vec<Result<Command, String>> {
         .filter_map(|path| {
             let word = read_request(&path);
             match fs::remove_file(&path) {
-                Ok(()) => Some(word.and_then(|word| {
-                    Command::parse(&word).ok_or_else(|| format!("unknown request {word:?}"))
-                })),
+                Ok(()) => Some(word.and_then(|word| Request::parse(&word))),
                 // Gone already: another copy took it.
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
                 Err(error) => Some(Err(format!("could not remove {}: {error}", path.display()))),
@@ -173,7 +223,7 @@ fn try_lock(dir: &Path) -> Result<Option<Lock>, CoreError> {
 
 /// Written whole and renamed into place, so the running copy never reads half
 /// of one.
-fn leave(dir: &Path, command: Command) -> Result<PathBuf, CoreError> {
+fn leave(dir: &Path, request: &Request) -> Result<PathBuf, CoreError> {
     static LEFT: AtomicU32 = AtomicU32::new(0);
     let stamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -183,7 +233,7 @@ fn leave(dir: &Path, command: Command) -> Result<PathBuf, CoreError> {
         std::process::id(),
         LEFT.fetch_add(1, Ordering::Relaxed)
     ));
-    store::write_atomic(&path, command.word().as_bytes())?;
+    store::write_atomic(&path, request.text().as_bytes())?;
     Ok(path)
 }
 

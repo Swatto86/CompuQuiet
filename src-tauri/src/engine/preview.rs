@@ -70,8 +70,8 @@ pub struct Preview {
 impl Engine {
     /// The settings a run would use, or why no run can start now. Checked
     /// before anything is planned, so a preview refuses exactly when a press
-    /// would.
-    pub(super) fn runnable_settings(&self) -> Result<Settings, AppError> {
+    /// would. `profile` names the profile to run; `None` is the active one.
+    pub(super) fn runnable_settings(&self, profile: Option<&str>) -> Result<Settings, AppError> {
         let mut inner = self.lock();
         if inner.journal.is_some() {
             return Err(AppError::new("already_quiet", "Quiet Mode is already on"));
@@ -83,7 +83,10 @@ impl Engine {
         if let Some(error) = &inner.unreadable_settings {
             return Err(Self::settings_unreadable(error));
         }
-        let mut settings = inner.settings.clone();
+        let mut settings = inner
+            .settings
+            .for_profile(profile)
+            .map_err(|error| AppError::new("profile_unknown", error.to_string()))?;
         // A program the watch starts Quiet Mode for is not parked by it, or
         // by a press while it runs: it would freeze the game itself.
         if settings.auto_quiet.active() {
@@ -175,7 +178,7 @@ impl Engine {
         if self.busy.load(Ordering::SeqCst) {
             return Err(AppError::new("busy", "Wait for the current run to finish"));
         }
-        let settings = self.runnable_settings()?;
+        let settings = self.runnable_settings(None)?;
         let Planned {
             snapshot,
             plan,

@@ -149,7 +149,7 @@ fn giving_up_keeps_the_record_ends_quiet_mode_and_lets_it_start_again() {
     );
 
     fake.heal();
-    engine.go_quiet(&|_| {}, None).unwrap();
+    engine.go_quiet(&|_| {}, None, None).unwrap();
     assert!(engine.state().quiet);
 }
 
@@ -186,7 +186,7 @@ fn an_unreadable_journal_can_be_set_aside_and_only_then() {
     let engine = self::tests::engine(dir.path());
     assert!(engine.state().startup_error.is_some());
     assert_eq!(
-        engine.go_quiet(&|_| {}, None).unwrap_err().code,
+        engine.go_quiet(&|_| {}, None, None).unwrap_err().code,
         "journal_unreadable"
     );
 
@@ -194,7 +194,7 @@ fn an_unreadable_journal_can_be_set_aside_and_only_then() {
     assert_eq!(std::fs::read_to_string(kept).unwrap(), "{ not a journal");
     assert!(!path.exists());
     assert!(engine.state().startup_error.is_none());
-    engine.go_quiet(&|_| {}, None).unwrap();
+    engine.go_quiet(&|_| {}, None, None).unwrap();
     assert!(engine.state().quiet);
 }
 
@@ -241,6 +241,7 @@ fn a_program_that_ended_by_itself_is_not_a_failure() {
                 }
             },
             None,
+            None,
         )
         .unwrap();
 
@@ -265,7 +266,10 @@ fn a_journal_that_cannot_be_saved_refuses_the_run_before_anything_changes() {
     let temp = format!(".journal.json.tmp-{}", std::process::id());
     std::fs::create_dir(dir.path().join(temp)).unwrap();
 
-    assert_eq!(engine.go_quiet(&|_| {}, None).unwrap_err().code, "state");
+    assert_eq!(
+        engine.go_quiet(&|_| {}, None, None).unwrap_err().code,
+        "state"
+    );
     assert!(!engine.state().quiet);
     assert_eq!(sysmain(&fake), Some(ServiceState::Running));
     assert!(running(&fake, "Dropbox.exe").unwrap());
@@ -291,6 +295,7 @@ fn a_journal_that_stops_saving_mid_run_stops_the_run_and_keeps_what_was_done() {
                     std::fs::create_dir(&path).unwrap();
                 }
             },
+            None,
             None,
         )
         .unwrap_err();

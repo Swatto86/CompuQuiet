@@ -10,11 +10,11 @@ fn a_run_never_starts_over_a_journal_another_copy_wrote() {
     // A second engine over the same directory parks something after the
     // first started, which is what two copies of the app would do.
     let other = engine(dir.path());
-    other.go_quiet(&|_| {}, None).unwrap();
+    other.go_quiet(&|_| {}, None, None).unwrap();
     let parked = std::fs::read(Journal::path(dir.path())).unwrap();
     assert!(!running.state().quiet, "this copy has not seen it yet");
 
-    let refused = running.go_quiet(&|_| {}, None).unwrap_err();
+    let refused = running.go_quiet(&|_| {}, None, None).unwrap_err();
 
     assert_eq!(refused.code, "already_quiet");
     assert_eq!(std::fs::read(Journal::path(dir.path())).unwrap(), parked);
@@ -30,7 +30,7 @@ fn a_journal_that_became_unreadable_after_start_up_refuses_the_run_and_can_be_se
     assert!(engine.state().startup_error.is_none());
     std::fs::write(Journal::path(dir.path()), "{ not a journal").unwrap();
 
-    let refused = engine.go_quiet(&|_| {}, None).unwrap_err();
+    let refused = engine.go_quiet(&|_| {}, None, None).unwrap_err();
 
     assert_eq!(refused.code, "journal_unreadable");
     assert_eq!(
@@ -43,7 +43,7 @@ fn a_journal_that_became_unreadable_after_start_up_refuses_the_run_and_can_be_se
         "Home offers to set it aside"
     );
     engine.set_aside_journal().unwrap();
-    assert!(engine.go_quiet(&|_| {}, None).is_ok());
+    assert!(engine.go_quiet(&|_| {}, None, None).is_ok());
 }
 
 #[test]
@@ -53,7 +53,7 @@ fn an_emptied_journal_on_disk_does_not_stop_a_run() {
     // What a finished restore leaves when its file could not be deleted.
     Journal::new(now()).save(dir.path()).unwrap();
 
-    assert!(engine.go_quiet(&|_| {}, None).is_ok());
+    assert!(engine.go_quiet(&|_| {}, None, None).is_ok());
 }
 
 #[test]
@@ -73,7 +73,7 @@ fn the_steps_on_record_are_named_but_never_carry_a_program_path() {
         enabled: true,
     }];
     engine.save_settings(settings).unwrap();
-    engine.go_quiet(&|_| {}, None).unwrap();
+    engine.go_quiet(&|_| {}, None, None).unwrap();
 
     let steps = engine.steps_on_record();
     assert!(

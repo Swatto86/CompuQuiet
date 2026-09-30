@@ -10,15 +10,21 @@
 //! notification if not, and never brings the window forward, since it may be
 //! over the game the command was given for.
 //!
+//! `--profile NAME` beside `--quiet` or `--toggle` runs the saved profile of
+//! that name this once, leaving the active profile as it is.
+//!
 //! The page and the arguments are not trusted: an argument that is not one of
-//! the five below refuses the launch (exit 2) before anything is touched, and
-//! a command names no program, service or setting.
+//! those below refuses the launch (exit 2) before anything is touched, and a
+//! command names no program, service or setting, only a profile that is saved.
 
 use std::ffi::OsString;
+use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use cq_core::instance::Command;
+use cq_core::instance::{Command, Request};
+use cq_core::settings::check_profile_name;
+use cq_core::{Os, Settings};
 use tauri::async_runtime::{Sender, channel};
 use tauri::{AppHandle, Manager};
 
@@ -29,6 +35,7 @@ use crate::tray;
 use crate::watch::{alert, announce};
 
 const HIDDEN_ARG: &str = "--hidden";
+const PROFILE_ARG: &str = "--profile";
 /// The commands, by the flag that asks for each.
 const COMMANDS: [(&str, Command); 3] = [
     ("--quiet", Command::Quiet),
@@ -44,6 +51,18 @@ pub struct Launch {
     /// A restart that must show the window (`crate::REOPEN_ARG`).
     pub reopen: bool,
     pub command: Option<Command>,
+    /// The profile to run this once, with `--quiet` or `--toggle`.
+    pub profile: Option<String>,
+}
+
+impl Launch {
+    /// What to ask the copy that is running, or do as the one that is.
+    pub fn request(&self) -> Option<Request> {
+        self.command.map(|command| Request {
+            command,
+            profile: self.profile.clone(),
+        })
+    }
 }
 
 /// Read the arguments after the program name, refusing whatever is not
@@ -51,10 +70,18 @@ pub struct Launch {
 /// which a launcher would take for the command having been carried out.
 pub fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Launch, String> {
     let mut launch = Launch::default();
-    for arg in args {
-        let Some(arg) = arg.to_str() else {
-            return Err(format!("{arg:?} is not text. {USAGE}"));
-        };
+    let mut args = args.into_iter();
+    while let Some(arg) = args.next() {
+        let arg = text(&arg)?;
+        if let Some(value) = profile_named(arg, &mut args)? {
+            let name = check_profile_name(&value).map_err(|error| format!("{error}. {USAGE}"))?;
+            if let Some(earlier) = launch.profile.replace(name.clone())
+                && earlier != name
+            {
+                return Err(format!("only one profile can be named. {USAGE}"));
+            }
+            continue;
+        }
         let command = COMMANDS.iter().find(|(flag, _)| *flag == arg);
         match (arg, command) {
             (HIDDEN_ARG, _) => launch.hidden = true,
@@ -70,10 +97,54 @@ pub fn parse(args: impl IntoIterator<Item = OsString>) -> Result<Launch, String>
             _ => return Err(format!("unknown argument {arg:?}. {USAGE}")),
         }
     }
+    let takes_a_profile = matches!(launch.command, Some(Command::Quiet | Command::Toggle));
+    if launch.profile.is_some() && !takes_a_profile {
+        return Err(format!(
+            "{PROFILE_ARG} goes with --quiet or --toggle, and with nothing else. {USAGE}"
+        ));
+    }
     Ok(launch)
 }
 
-const USAGE: &str = "Use one of --quiet, --restore or --toggle; --hidden starts in the tray.";
+fn text(arg: &OsString) -> Result<&str, String> {
+    arg.to_str()
+        .ok_or_else(|| format!("{arg:?} is not text. {USAGE}"))
+}
+
+/// The name in `--profile NAME` (taken from the next argument) or
+/// `--profile=NAME`; `None` for any other argument.
+fn profile_named(
+    arg: &str,
+    rest: &mut impl Iterator<Item = OsString>,
+) -> Result<Option<String>, String> {
+    if arg == PROFILE_ARG {
+        // A flag in its place is a name left out, not a profile called that.
+        let value = rest
+            .next()
+            .filter(|value| !value.to_str().is_some_and(|name| name.starts_with("--")))
+            .ok_or_else(|| format!("{PROFILE_ARG} needs a name. {USAGE}"))?;
+        return text(&value).map(|name| Some(name.to_string()));
+    }
+    Ok(arg.strip_prefix("--profile=").map(str::to_string))
+}
+
+/// A profile that is not saved refuses the launch here, where a script sees
+/// the exit code, rather than after the running copy has taken the request.
+/// A settings file that cannot be read is for the running copy to report.
+pub fn check_profile(data_dir: &Path, launch: &Launch) -> Result<(), String> {
+    let Some(name) = &launch.profile else {
+        return Ok(());
+    };
+    match Settings::load(data_dir, Os::CURRENT) {
+        Ok(settings) if settings.profile_named(name).is_none() => Err(format!(
+            "there is no profile called {name}. The profiles are {}.",
+            settings.profile_names().join(", ")
+        )),
+        _ => Ok(()),
+    }
+}
+
+const USAGE: &str = "Use one of --quiet, --restore or --toggle; --profile NAME chooses the profile for --quiet or --toggle; --hidden starts in the tray.";
 
 /// What Tauri hands to a restart and to the updater as this copy's launch
 /// arguments: the ones it was given, less the command. The updater relaunches
@@ -86,30 +157,48 @@ pub fn launch_env() -> tauri::Env {
     env
 }
 
+/// The profile goes with the command: left behind, it would be an argument
+/// with nothing to go with, which `parse` refuses.
 fn without_commands(args: Vec<OsString>) -> Vec<OsString> {
-    args.into_iter()
-        .filter(|arg| !COMMANDS.iter().any(|(flag, _)| arg == flag))
-        .collect()
+    let mut kept = Vec::new();
+    let mut args = args.into_iter();
+    while let Some(arg) = args.next() {
+        if COMMANDS.iter().any(|(flag, _)| arg == *flag) {
+            continue;
+        }
+        if arg == PROFILE_ARG {
+            args.next();
+            continue;
+        }
+        if arg
+            .to_str()
+            .is_some_and(|arg| arg.starts_with("--profile="))
+        {
+            continue;
+        }
+        kept.push(arg);
+    }
+    kept
 }
 
 /// Commands wait here for their turn, so two sent close together are done in
 /// the order they were sent and neither is judged against a run still going.
 /// A few in a row is a script; more than this is noise, and is dropped.
-struct Waiting(Sender<Command>);
+struct Waiting(Sender<Request>);
 
 const WAITING: usize = 16;
 /// How long a command waits for a run that is going: a run whose steps time
 /// out takes minutes.
 const WAIT_FOR_RUN: Duration = Duration::from_secs(180);
 
-/// The running copy is asked for `command` by a later launch.
-pub fn handle(app: &AppHandle, command: Command) {
-    if command == Command::Show {
+/// The running copy is asked for something by a later launch.
+pub fn handle(app: &AppHandle, request: Request) {
+    if request.command == Command::Show {
         return tray::reveal(app);
     }
     let sent = app
         .try_state::<Waiting>()
-        .map(|waiting| waiting.0.try_send(command));
+        .map(|waiting| waiting.0.try_send(request));
     if !matches!(sent, Some(Ok(()))) {
         log::warn!("a command to CompuQuiet was dropped: {sent:?}");
     }
@@ -117,7 +206,7 @@ pub fn handle(app: &AppHandle, command: Command) {
 
 /// Take commands from now on. First finish what was left from an earlier
 /// sign-in, then do what this launch was asked, so none of it runs at once.
-pub fn start(app: &AppHandle, engine: &Arc<Engine>, first: Option<Command>) {
+pub fn start(app: &AppHandle, engine: &Arc<Engine>, first: Option<Request>) {
     if first.is_some() && app.env().args_os != launch_env().args_os {
         log::warn!("Tauri kept the command in the launch arguments; an update would repeat it");
     }
@@ -132,35 +221,39 @@ pub fn start(app: &AppHandle, engine: &Arc<Engine>, first: Option<Command>) {
             // is in the log already, and the window shows what is left.
             let _ = run_transition(app.clone(), engine.clone(), Run::Restore).await;
         }
-        if let Some(command) = first {
-            apply(&app, &engine, command).await;
+        if let Some(request) = first {
+            apply(&app, &engine, request).await;
         }
-        while let Some(command) = receive.recv().await {
-            apply(&app, &engine, command).await;
+        while let Some(request) = receive.recv().await {
+            apply(&app, &engine, request).await;
         }
     });
 }
 
-/// What `command` asks of a machine that is quiet or not: nothing when it is
+/// What `request` asks of a machine that is quiet or not: nothing when it is
 /// already as asked.
-fn run_for(command: Command, quiet: bool) -> Option<Run> {
-    match (command, quiet) {
-        (Command::Quiet | Command::Toggle, false) => Some(Run::Quiet(None)),
+fn run_for(request: &Request, quiet: bool) -> Option<Run> {
+    match (request.command, quiet) {
+        (Command::Quiet | Command::Toggle, false) => Some(Run::Quiet {
+            ending: None,
+            profile: request.profile.clone(),
+        }),
         (Command::Restore | Command::Toggle, true) => Some(Run::Restore),
         _ => None,
     }
 }
 
-/// Do `command`, once a run that is going has left the machine as it will be.
-async fn apply(app: &AppHandle, engine: &Arc<Engine>, command: Command) {
+/// Do what `request` asks, once a run that is going has left the machine as
+/// it will be.
+async fn apply(app: &AppHandle, engine: &Arc<Engine>, request: Request) {
     let waited = Instant::now();
     while engine.state().busy && waited.elapsed() < WAIT_FOR_RUN {
         tokio::time::sleep(Duration::from_millis(250)).await;
     }
-    let Some(run) = run_for(command, engine.is_quiet()) else {
+    let Some(run) = run_for(&request, engine.is_quiet()) else {
         return;
     };
-    let quiet = matches!(run, Run::Quiet(_));
+    let quiet = matches!(run, Run::Quiet { .. });
     let notifications = engine.settings().notifications;
     match run_transition(app.clone(), engine.clone(), run).await {
         Ok(state) if quiet => announce(
@@ -196,105 +289,4 @@ fn failed(quiet: bool, error: &AppError) -> AppError {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn launch(args: &[&str]) -> Result<Launch, String> {
-        parse(args.iter().map(OsString::from))
-    }
-
-    #[test]
-    fn each_command_flag_asks_for_its_command() {
-        for (flag, command) in COMMANDS {
-            assert_eq!(launch(&[flag]).unwrap().command, Some(command), "{flag}");
-        }
-        assert_eq!(launch(&[]).unwrap(), Launch::default());
-    }
-
-    #[test]
-    fn the_flags_the_app_passes_itself_are_still_understood() {
-        let both = launch(&["--hidden", "--reopen"]).unwrap();
-        assert!(both.hidden && both.reopen && both.command.is_none());
-        // A launcher may pass --hidden beside a command, and repeat one.
-        let hidden = launch(&["--quiet", "--hidden", "--quiet"]).unwrap();
-        assert!(hidden.hidden);
-        assert_eq!(hidden.command, Some(Command::Quiet));
-    }
-
-    #[test]
-    fn anything_else_refuses_the_launch_and_says_what_is_accepted() {
-        for args in [
-            &["--quite"][..],
-            &["quiet"],
-            &["-q"],
-            &["--quiet=1"],
-            &["--Quiet"],
-            &["--quiet", "extra"],
-            &["--quiet", ""],
-            &["--profile", "work"],
-            &["--quiet", "--restore"],
-            &["--toggle", "--quiet"],
-        ] {
-            let reason = launch(args).expect_err(&format!("{args:?} was accepted"));
-            assert!(reason.contains("--quiet"), "{args:?}: {reason}");
-        }
-        assert!(launch(&["--quite"]).unwrap_err().contains("\"--quite\""));
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn an_argument_that_is_not_text_is_refused() {
-        use std::os::unix::ffi::OsStringExt;
-        let args = [OsString::from_vec(vec![0x2d, 0x2d, 0xff])];
-        assert!(parse(args).is_err());
-    }
-
-    #[test]
-    fn a_command_is_done_only_when_the_machine_is_not_already_as_asked() {
-        use Command::{Quiet, Restore, Toggle};
-        assert!(matches!(run_for(Quiet, false), Some(Run::Quiet(None))));
-        assert!(run_for(Quiet, true).is_none());
-        assert!(matches!(run_for(Restore, true), Some(Run::Restore)));
-        assert!(run_for(Restore, false).is_none());
-        assert!(matches!(run_for(Toggle, false), Some(Run::Quiet(None))));
-        assert!(matches!(run_for(Toggle, true), Some(Run::Restore)));
-    }
-
-    #[test]
-    fn a_relaunch_is_never_given_the_command() {
-        let args = |list: &[&str]| list.iter().map(OsString::from).collect::<Vec<_>>();
-        assert_eq!(
-            without_commands(args(&["compuquiet.exe", "--hidden", "--quiet"])),
-            args(&["compuquiet.exe", "--hidden"])
-        );
-        for (flag, _) in COMMANDS {
-            assert_eq!(
-                without_commands(args(&["compuquiet.exe", flag])),
-                args(&["compuquiet.exe"])
-            );
-        }
-    }
-
-    #[test]
-    fn a_failure_says_what_was_asked_and_keeps_the_code() {
-        let refused = failed(
-            true,
-            &AppError::new("journal_unreadable", "it cannot be read"),
-        );
-        assert_eq!(refused.code, "journal_unreadable");
-        assert!(
-            refused.message.contains("switched on"),
-            "{}",
-            refused.message
-        );
-        assert!(refused.message.contains("it cannot be read"));
-        assert!(
-            failed(false, &AppError::new("platform", "x"))
-                .message
-                .contains("ended")
-        );
-        let busy = failed(true, &AppError::new("busy", "Wait"));
-        assert_eq!(busy.code, "busy");
-        assert!(busy.message.contains("busy"), "{}", busy.message);
-    }
-}
+mod tests;

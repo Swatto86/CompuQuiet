@@ -287,3 +287,24 @@ fn what_a_restore_leaves_still_ends_and_holds_awake_as_the_run_did() {
     assert_eq!(rest.ending, journal.ending);
     assert!(rest.awake);
 }
+
+#[test]
+fn the_profile_a_run_was_made_from_is_kept_and_a_journal_without_one_still_loads() {
+    let dir = tempfile::tempdir().unwrap();
+    let old = serde_json::json!({
+        "version": 1,
+        "started_at": 1_700_000_000,
+        "done": [{ "kind": "service_stopped", "name": "SysMain" }],
+    });
+    std::fs::write(Journal::path(dir.path()), old.to_string()).unwrap();
+    let mut journal = Journal::load(dir.path()).unwrap().unwrap();
+    assert_eq!(journal.profile, None);
+    let text = serde_json::to_value(&journal).unwrap();
+    assert!(!text.as_object().unwrap().contains_key("profile"));
+
+    journal.profile = Some("Local AI".into());
+    journal.save(dir.path()).unwrap();
+    let again = Journal::load(dir.path()).unwrap().unwrap();
+    assert_eq!(again.profile.as_deref(), Some("Local AI"));
+    assert_eq!(again.without(&HashSet::new()).profile, again.profile);
+}

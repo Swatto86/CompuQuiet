@@ -31,6 +31,9 @@ fn state() -> EngineState {
         settings_unreadable: None,
         unrestored: Vec::new(),
         ending: None,
+        profile: "Default".into(),
+        profiles: vec!["Default".into()],
+        run_profile: None,
     }
 }
 

@@ -179,7 +179,16 @@ fn machine(facts: &Facts) -> Vec<String> {
             None => "Settings file: readable".into(),
         },
         format!(
-            "Park list: programs {}, services {}, power plan {:?}, memory purge {}, AI model unload {}",
+            "Profiles: {} (in use: {}{})",
+            state.profiles.join(", "),
+            state.profile,
+            state
+                .run_profile
+                .as_ref()
+                .map_or_else(String::new, |run| format!(", Quiet Mode made from: {run}"))
+        ),
+        format!(
+            "Park list of the profile in use: programs {}, services {}, power plan {:?}, memory purge {}, AI model unload {}",
             on(
                 profile.processes.len(),
                 profile.processes.iter().filter(|p| p.enabled).count()

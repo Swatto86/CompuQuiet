@@ -35,6 +35,7 @@ fn a_file_from_before_them_loads_with_auto_quiet_off_and_keeps_later_choices() {
     settings.auto_quiet = AutoQuiet {
         enabled: true,
         programs: vec!["steam".into()],
+        ..AutoQuiet::default()
     };
     settings.still_on_hours = 0;
     settings.profile.keep_awake = true;

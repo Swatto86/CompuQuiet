@@ -11,6 +11,7 @@ import {
   gpuFill,
   homePlan,
   memoryFreed,
+  quietSub,
   reportLines,
   summaryLines,
   updateLine,
@@ -249,4 +250,51 @@ test("the report keeps what parking holds apart from what came back", () => {
     reportLines(measured({ suspended_bytes: 0, closed_bytes: 0 })).length,
     2,
   );
+});
+
+test("the home plan names the profile only when a profile is given", () => {
+  const plan = profile({
+    processes: [{ name: "Slack", action: "suspend", enabled: true }],
+    power: "leave",
+  });
+  assert.equal(
+    homePlan(false, plan, { autoScan: false, unsaved: false }),
+    "One press will park 1 program. Press again to undo it.",
+  );
+  assert.equal(
+    homePlan(false, plan, {
+      autoScan: false,
+      unsaved: false,
+      profile: "Gaming",
+    }),
+    "Gaming: one press will park 1 program. Press again to undo it.",
+  );
+  assert.match(
+    homePlan(false, profile({ power: "leave" }), {
+      autoScan: false,
+      unsaved: false,
+      profile: "Work",
+    }),
+    /^Work: nothing is selected yet\./,
+  );
+  // A run that is on says nothing of a profile: it is already running.
+  assert.equal(
+    homePlan(true, plan, {
+      autoScan: false,
+      unsaved: false,
+      profile: "Gaming",
+    }),
+    homePlan(true, plan, { autoScan: false, unsaved: false }),
+  );
+});
+
+test("what Quiet Mode says under its title names the profile only when there is a choice", () => {
+  const parked = "Background work is parked. Press again when you are done.";
+  assert.equal(quietSub(false, "Default", 1), parked);
+  assert.equal(quietSub(false, null, 3), parked, "a journal with no profile");
+  assert.equal(
+    quietSub(false, "Gaming", 2),
+    "Gaming profile: background work is parked. Press again when you are done.",
+  );
+  assert.match(quietSub(true, "Gaming", 2), /^A previous session left/);
 });

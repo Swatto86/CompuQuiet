@@ -74,10 +74,18 @@ pub(crate) fn platform_for_relaunch() -> Arc<dyn Platform> {
 }
 
 /// Take the data directory for this copy, or leave this launch to the copy
-/// that has it, asking it for `command`. `false` means this launch is
-/// finished.
-fn claim_data_dir(data_dir: &Path, command: instance::Command) -> bool {
-    let lock_error = match instance::start(data_dir, command, instance::ANSWER_WITHIN) {
+/// that has it, asking it for what the launch asked (the window, by default).
+/// `false` means this launch is finished. A profile that is not saved refuses
+/// the launch first.
+fn claim_data_dir(data_dir: &Path, launch: &cli::Launch) -> bool {
+    if let Err(reason) = cli::check_profile(data_dir, launch) {
+        eprintln!("CompuQuiet: {reason}");
+        std::process::exit(2)
+    }
+    let request = launch
+        .request()
+        .unwrap_or_else(|| instance::Command::Show.into());
+    let lock_error = match instance::start(data_dir, request, instance::ANSWER_WITHIN) {
         Ok(instance::Start::First(lock)) => {
             single::keep(lock);
             None
@@ -143,8 +151,7 @@ pub fn run() {
     });
     let data_dir = cq_core::store::data_dir()
         .unwrap_or_else(|error| panic!("CompuQuiet has nowhere to keep its state: {error}"));
-    let asked = launch.command.unwrap_or(instance::Command::Show);
-    if !claim_data_dir(&data_dir, asked) {
+    if !claim_data_dir(&data_dir, &launch) {
         return;
     }
     let engine = Arc::new(Engine::new(build_platform(), data_dir.clone()));
@@ -177,7 +184,7 @@ pub fn run() {
             // The sign-in entry may still start the copy this one replaced.
             tauri::async_runtime::spawn_blocking(autostart::reconcile);
             engine.resume_awake();
-            cli::start(app.handle(), &engine, launch.command);
+            cli::start(app.handle(), &engine, launch.request());
             let handle = app.handle().clone();
             single::serve(data_dir, move |command| cli::handle(&handle, command));
 
@@ -204,6 +211,10 @@ pub fn run() {
             commands::go_quiet,
             commands::restore,
             commands::set_ending,
+            commands::profiles::switch_profile,
+            commands::profiles::add_profile,
+            commands::profiles::rename_profile,
+            commands::profiles::delete_profile,
             commands::frontend_ready,
             commands::get_autostart,
             commands::set_autostart,
