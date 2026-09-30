@@ -218,13 +218,14 @@ impl Engine {
     /// page sends of those is not trusted: its copy may be older than a
     /// switch from the tray, and then its edits were made to another profile.
     pub fn save_settings(&self, mut settings: Settings) -> Result<(), AppError> {
-        let current = {
-            let inner = self.lock();
-            if let Some(error) = &inner.unreadable_settings {
-                return Err(Self::settings_unreadable(error));
-            }
-            inner.settings.clone()
-        };
+        // Held from the check to the store, as `change_profiles` holds it: a
+        // switch from the tray made in between would be written over by this
+        // copy, which was taken before it.
+        let mut inner = self.lock();
+        if let Some(error) = &inner.unreadable_settings {
+            return Err(Self::settings_unreadable(error));
+        }
+        let current = &inner.settings;
         if !settings
             .profile_name
             .eq_ignore_ascii_case(&current.profile_name)
@@ -240,9 +241,9 @@ impl Engine {
         settings.profile_name = current.profile_name.clone();
         settings.other_profiles = current.other_profiles.clone();
         settings.normalize();
-        settings.refuse_new_critical_services(&current, self.platform.os())?;
+        settings.refuse_new_critical_services(current, self.platform.os())?;
         settings.save(&self.data_dir)?;
-        self.lock().settings = settings;
+        inner.settings = settings;
         Ok(())
     }
 

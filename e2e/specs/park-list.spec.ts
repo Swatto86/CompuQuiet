@@ -6,7 +6,13 @@
  */
 import { strict as assert } from "node:assert";
 
-import { clickTab, screenshot, text, texts } from "./support.ts";
+import {
+  clickDialogButton,
+  clickTab,
+  screenshot,
+  text,
+  texts,
+} from "./support.ts";
 
 async function suggestions(): Promise<string[]> {
   return browser.execute(() =>
@@ -39,6 +45,13 @@ describe("Park list picker and filter", () => {
     });
     programs = (await $$("#process-targets tr").length) as number;
     services = (await $$("#service-targets tr").length) as number;
+  });
+
+  after(async () => {
+    // Restored defaults cannot be taken back out, and the next spec shares this
+    // window: start it from a fresh one rather than on top of the edit.
+    await browser.reloadSession();
+    await $("#toggle").waitForExist({ timeout: 30_000 });
   });
 
   it("offers the services the machine has, and leaves out the essential ones", async () => {
@@ -111,5 +124,24 @@ describe("Park list picker and filter", () => {
     await $('button[aria-label="Stop protecting Fax"]').click();
     assert.equal(await text("#targets-status"), "");
     await clickTab("dashboard");
+  });
+
+  it("keeps what is under Never touch when the defaults are restored", async () => {
+    await clickTab("targets");
+    await $("#keep-name").setValue("obs64");
+    await $('#keep-add button[type="submit"]').click();
+    await $('button[aria-label="Stop protecting obs64"]').waitForExist({
+      timeout: 5_000,
+    });
+
+    await $("#targets-reset").click();
+    await clickDialogButton("Restore defaults");
+    await $(".dialog-overlay").waitForExist({ reverse: true, timeout: 5_000 });
+    assert.ok(
+      (await texts("#keep-alive li")).some((entry) =>
+        entry.startsWith("obs64"),
+      ),
+      "Restore defaults emptied the Never touch list",
+    );
   });
 });

@@ -393,7 +393,12 @@ its pickers (running programs, the machine's services) live in `pickers.ts`. Con
   its first render (`frontend_ready`), with a 3 s safety net in Rust.
 - Close hides to the tray when `close_to_tray` is set; otherwise it emits
   `confirm-quit` and the page decides. The `quit` command is the one exit and
-  can restore first.
+  can restore first. On macOS, Tauri's default menu bar would end the process
+  at once on Cmd+Q, past the restore-on-quit setting and a run in progress, so
+  `tray::app_menu` replaces it with one whose Quit is the tray's (`tray-quit`;
+  the tray's event handler receives every menu event). The Dock's Quit cannot
+  be caught (tao has no `applicationShouldTerminate`) and ends the process as
+  it is: Quiet Mode stays on, and opening the app offers the restore.
 - Tray: left click shows or hides the window (a blur caused by that click
   still counts as "the window was in front"). Right click opens the menu on
   the event loop, not inside the icon's window procedure, because Windows
@@ -406,7 +411,8 @@ its pickers (running programs, the machine's services) live in `pickers.ts`. Con
   an entry whether or not the switch was allowed), and the entries are
   disabled while Quiet Mode is on or a run is going. A switch from the tray
   reaches the window as the `settings-changed` event, and the toggle reads
-  "Free up this PC (Gaming)" when there is more than one profile.
+  "Free up this PC (Gaming)" when there is more than one profile (an `&` in a
+  name is doubled, as in the submenu, since menu texts read it as a shortcut).
 - A window whose WebView2 failed to start is only logged by Tauri; its handle
   stays registered but every query on it fails. `tray::reveal` treats that as
   "no window" and `reopen` restarts the process once with `--reopen` (shown, never
@@ -513,9 +519,14 @@ its pickers (running programs, the machine's services) live in `pickers.ts`. Con
   unelevated copy cannot change is only logged.
 - Windows setup (`bundle.windows.nsis`): NSIS with `installMode: perMachine`
   (Program Files, one permission prompt) and `src-tauri/windows/hooks.nsh`.
-  Before installing, the hook uninstalls a per-user copy found under `HKCU`
-  (release 1.1.7 and earlier) silently and without touching the data folder,
-  then recreates its Start menu and desktop shortcuts for all users and runs
+  Before installing, the hook removes a per-user copy found under `HKCU`
+  (release 1.1.7 and earlier) without touching the data folder: it deletes the
+  exe and `uninstall.exe`, the shortcuts and the `HKCU` keys itself, and only
+  when the recorded folder is `%LOCALAPPDATA%\CompuQuiet`. It never runs
+  anything found there: the setup is elevated, and that folder, its `HKCU` key
+  and its uninstaller are all writable by an ordinary process. A copy in another
+  folder is left, with a message telling the person to uninstall it. The hook then
+  recreates the Start menu and desktop shortcuts for all users and runs
   `schtasks /Change` on the sign-in task, which the elevated setup can do to an
   elevated task and the unelevated app it starts afterwards cannot.
   Uninstalling deletes the task, but not on an update, and not when the setup's

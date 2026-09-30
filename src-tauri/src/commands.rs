@@ -266,13 +266,14 @@ pub async fn run_transition(
         Run::Restore => worker.restore(&progress).map(|_| ()),
     })
     .await?;
+    // Refused: a run is going and publishes itself; a state now would show the last run's log.
+    if matches!(&result, Err(error) if error.code == "busy") {
+        return result.map(|()| engine.state());
+    }
     let state = publish(&app, &engine);
     // The page shows the error of a run it started, and the tray reports its
-    // own, but only this record outlasts them. A second click while a run is
-    // going is not a fault.
-    if let Err(error) = &result
-        && error.code != "busy"
-    {
+    // own, but only this record outlasts them.
+    if let Err(error) = &result {
         log::warn!(
             "{} failed ({}): {error}",
             if quiet {

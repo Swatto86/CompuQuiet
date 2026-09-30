@@ -23,6 +23,7 @@ import {
   removeProcess,
   removeService,
   rebase,
+  restoreDefaults,
   sameProfile,
   setProcess,
   setService,
@@ -239,7 +240,7 @@ export class Targets {
   private async reset(): Promise<void> {
     const choice = await showDialog({
       title: "Restore the default park list?",
-      body: "Your own additions will be removed. Nothing is saved until you press Save changes.",
+      body: "Your own additions will be removed. Never touch is kept, and what is on it stays off the list. Nothing is saved until you press Save changes.",
       buttons: [
         { label: "Restore defaults", value: "yes", primary: true },
         { label: "Cancel", value: "no" },
@@ -247,7 +248,7 @@ export class Targets {
     });
     if (choice !== "yes") return;
     try {
-      this.working = await this.host.defaults();
+      this.working = restoreDefaults(this.working, await this.host.defaults());
       this.render();
     } catch (error) {
       toast(errorMessage(error), true);

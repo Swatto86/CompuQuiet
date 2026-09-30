@@ -12,6 +12,7 @@ import {
   attribute,
   clickTab,
   emitEvent,
+  engineState,
   focus,
   focused,
   readJson,
@@ -114,6 +115,20 @@ describe("the window", () => {
     });
   });
 
+  describe("Home", () => {
+    it("turns the button off for a run it did not start, and on when it ends", async () => {
+      await clickTab("dashboard");
+      const idle = await engineState();
+      // What a tray press sends before its first step: busy, nothing logged.
+      await emitEvent("quiet-state", { ...idle, busy: true, log: [] });
+      await waitForPill("Working");
+      assert.equal(await $("#toggle").isEnabled(), false, "clickable mid-run");
+      await emitEvent("quiet-state", idle);
+      await waitForPill("Ready");
+      assert.equal(await $("#toggle").isEnabled(), true);
+    });
+  });
+
   describe("a dialog", () => {
     it("is one dialog however often the window is closed, and holds the page behind it", async () => {
       await clickTab("dashboard");
@@ -163,6 +178,47 @@ describe("the window", () => {
 
       await $("#toggle").click();
       await waitForPill("Ready");
+    });
+
+    it("scrolls a long text and keeps its buttons in reach", async () => {
+      // A restore that cannot undo many steps lists them all. The markup is
+      // the one `showDialog` builds, under the page's own stylesheet.
+      const fit = await browser.execute(() => {
+        const overlay = document.createElement("div");
+        overlay.className = "dialog-overlay";
+        const dialog = document.createElement("div");
+        dialog.className = "dialog";
+        const body = document.createElement("p");
+        body.textContent = Array.from(
+          { length: 40 },
+          (_, i) =>
+            `• Start service S${i}: S${i} stays stopped until you start it`,
+        ).join("\n");
+        const buttons = document.createElement("div");
+        buttons.className = "dialog-buttons";
+        const button = document.createElement("button");
+        button.textContent = "Give up";
+        buttons.append(button);
+        dialog.append(document.createElement("h2"), body, buttons);
+        overlay.append(dialog);
+        document.body.append(overlay);
+        try {
+          const box = button.getBoundingClientRect();
+          return {
+            top: box.top,
+            bottom: box.bottom,
+            window: window.innerHeight,
+            scrolls: body.scrollHeight > body.clientHeight,
+          };
+        } finally {
+          overlay.remove();
+        }
+      });
+      assert.ok(fit.scrolls, "the text is cut off instead of scrolling");
+      assert.ok(
+        fit.top >= 0 && fit.bottom <= fit.window,
+        `the buttons are outside the window: ${JSON.stringify(fit)}`,
+      );
     });
   });
 

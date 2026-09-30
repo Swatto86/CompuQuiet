@@ -38,7 +38,7 @@ fn text_for(name: &str) -> String {
 /// choose between: "Free up this PC (Gaming)".
 pub(super) fn labelled(label: &str, profiles: &[String], active: &str) -> String {
     if profiles.len() > 1 {
-        format!("{label} ({active})")
+        format!("{label} ({})", text_for(active))
     } else {
         label.to_string()
     }
@@ -135,6 +135,11 @@ mod tests {
         assert_eq!(
             labelled("Free up this PC", &names(&["Default", "Gaming"]), "Gaming"),
             "Free up this PC (Gaming)"
+        );
+        // The toggle's text is a menu text too: "R&D" must not lose its R.
+        assert_eq!(
+            labelled("Free up this PC", &names(&["Default", "R&D"]), "R&D"),
+            "Free up this PC (R&&D)"
         );
     }
 }

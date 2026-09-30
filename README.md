@@ -202,8 +202,8 @@ for example a folder beside the executable on a USB stick.
 
 The Windows installer asks for administrator permission once, because it
 installs for all users. Releases up to 1.1.7 installed per user, into
-`%LOCALAPPDATA%\CompuQuiet`; the new installer removes that copy and its
-shortcuts, keeps your settings and undo journal (they live elsewhere), and
+`%LOCALAPPDATA%\CompuQuiet`; the new installer removes a copy there and its
+shortcuts (one installed in another folder is left for you to uninstall), keeps your settings and undo journal (they live elsewhere), and
 points an existing sign-in task at the new copy. Running the installer again
 over an installed copy keeps the sign-in task; uninstalling removes it. A portable copy is untouched: switch "Start when I sign
 in" off before deleting one.

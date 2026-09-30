@@ -876,23 +876,31 @@ textarea.report:focus-visible {
   box-shadow: var(--shadow);
   padding: 20px 22px;
   width: min(460px, 90vw);
+  /* A long text (a restore's stuck entries) scrolls; the buttons stay in view. */
+  max-height: calc(100vh - 48px);
+  display: flex;
+  flex-direction: column;
 }
 
 .dialog h2 {
   font-size: 16px;
   margin-bottom: 8px;
+  flex-shrink: 0;
 }
 
 .dialog p {
   margin: 0 0 16px;
   color: var(--fg-muted);
   white-space: pre-line;
+  overflow-y: auto;
+  min-height: 0;
 }
 
 .dialog-buttons {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+  flex-shrink: 0;
 }
 
 /* Toast */

@@ -141,6 +141,20 @@ fn reveal_if_the_page_never_loads(app: &tauri::AppHandle) {
     });
 }
 
+/// macOS shows a menu bar for every app, and Tauri's own would quit past the
+/// restore-on-quit setting (`tray::app_menu`). Elsewhere the window has none.
+#[cfg(target_os = "macos")]
+fn with_menu_bar(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
+    builder
+        .enable_macos_default_menu(false)
+        .menu(tray::app_menu)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn with_menu_bar(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
+    builder
+}
+
 pub fn run() {
     // Before anything is touched: a launch that is not understood does nothing.
     // Nothing prints on Windows, whose release build has no console, so the
@@ -163,7 +177,7 @@ pub fn run() {
         engine.settings().start_hidden,
     ));
 
-    let builder = tauri::Builder::default()
+    let builder = with_menu_bar(tauri::Builder::default())
         .manage(cli::launch_env())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_updater::Builder::new().build());

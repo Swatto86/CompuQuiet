@@ -27,6 +27,8 @@ export class Dashboard {
   private readonly summary = byId<HTMLUListElement>("summary");
   private readonly skipped = byId<HTMLUListElement>("skipped");
   private startedAt: number | null = null;
+  /** A run is going that the page started or has seen a step of. */
+  private working = false;
 
   constructor(onToggle: () => void) {
     this.toggle.addEventListener("click", onToggle);
@@ -38,6 +40,9 @@ export class Dashboard {
     // everything back"), and a screen reader would add "pressed" to it.
     this.toggle.dataset["quiet"] = String(state.quiet);
     this.toggle.classList.toggle("busy", state.busy);
+    // A run the tray, the command line or auto-quiet began is busy from the
+    // state that announces it, before its first step reaches the page.
+    this.toggle.disabled = state.busy || this.working;
     this.label.textContent = state.busy
       ? "Working…"
       : state.quiet
@@ -100,6 +105,7 @@ export class Dashboard {
   }
 
   setBusy(busy: boolean): void {
+    this.working = busy;
     this.toggle.classList.toggle("busy", busy);
     this.toggle.disabled = busy;
     if (busy) {

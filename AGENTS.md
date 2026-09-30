@@ -17,11 +17,12 @@ does not show.
 - **2026-09-30: the Windows setup is per-machine (Program Files).** The
   elevated logon task must start a program ordinary processes cannot replace:
   HIGHEST only for an exe under `%ProgramFiles%` made by an elevated process,
-  else unelevated with the reason shown. `src-tauri/windows/hooks.nsh` removes
-  a 1.1.x per-user copy (data untouched) and re-points the task; only a
-  person's uninstall deletes it, not an update or a setup run over a copy. An
-  unelevated copy's update raises UAC; an elevated one's restarts elevated,
-  from the setup, not its `/R`. Rollback: install 1.1.7; data is kept.
+  else unelevated with the reason shown. `src-tauri/windows/hooks.nsh` deletes
+  a 1.1.x per-user copy's files itself (it runs nothing a user can rewrite)
+  and re-points the task; only a person's uninstall deletes it, not an update
+  or a setup run over a copy. An unelevated copy's update raises UAC; an
+  elevated one's restarts elevated, from the setup, not its `/R`. Rollback:
+  install 1.1.7; data is kept.
 - **2026-09-30: a step that times out stays on record, and a stuck restore
   can be given up.** A timeout does not prove the step failed (a busy service
   stops late), so its entry stays and Restore undoes it harmlessly. What a
@@ -51,8 +52,7 @@ does not show.
   PC. An earlier sign-in's journal is finished at launch; older journals
   restore everything.
 - **2026-09-30: Linux start times are from boot** (a clock step faked a new
-  program); 10^9 or more is an older wall-clock value,
-  still read.
+  program); 10^9 or more is an older wall-clock value, still read.
 - **Every step is on record before it happens, and every undo is safe to
   repeat.** A crash mid-step or mid-restore strands and repeats nothing;
   restore saves after each step and never relaunches a running command line.
@@ -72,8 +72,7 @@ does not show.
   sound running is left alone (`guard_audio`), which only removes steps.
 - **The fake platform is a cargo feature** for the e2e suite; the gate
   asserts it is never a default.
-- **2026-09-25: GitHub is the only remote** (Origin has no runners or
-  releases); Swatto mirrors it to Origin. Push to `origin` (GitHub) only.
+- **2026-09-25: GitHub is the only remote**; push to `origin` (GitHub) only.
 - **2026-09-27: updates install themselves.** `tauri-plugin-updater` reads
   `latest.json` on the GitHub release; bundles are signed with a minisign key
   (public half in `tauri.conf.json`). Only a copy that can replace itself
@@ -111,8 +110,8 @@ does not show.
 - Single branch `main`; commit and push verified units.
 - Inner loop: `npx tauri dev`; `scripts/fastcheck.ps1`/`.sh`.
 - Full gate: `scripts/verify.ps1` / `.sh` (fmt, clippy, tests, frontend, fake
-  build, WebDriver). Windows needs
-  `scripts/setup-e2e.ps1` once per WebView2 update.
+  build, WebDriver). Windows needs `scripts/setup-e2e.ps1` once per WebView2
+  update.
 - Release: bump the version in `Cargo.toml`, `src-tauri/tauri.conf.json` and
   `package.json` (the gate checks agreement), `AGENT_RELEASE=1 npx tauri build`
   for the local install, wait for `verify` to pass on GitHub for that commit,

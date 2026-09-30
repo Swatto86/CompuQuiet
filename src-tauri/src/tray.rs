@@ -66,6 +66,52 @@ pub(crate) fn dispatch_menu(app: &AppHandle, id: &str) {
     }
 }
 
+/// The macOS menu bar. Tauri fills an unset one with a Quit that ends the
+/// process at once, past the restore-on-quit setting and a run in progress.
+/// This Quit is the tray's (`ID_QUIT`), which every menu event reaches through
+/// the tray's handler. The Dock's Quit cannot be caught: tao gives the app no
+/// say before it ends.
+#[cfg(target_os = "macos")]
+pub fn app_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
+    let quit = MenuItem::with_id(app, ID_QUIT, "Quit CompuQuiet", true, Some("CmdOrCtrl+Q"))?;
+    let app_items = Submenu::with_items(
+        app,
+        "CompuQuiet",
+        true,
+        &[
+            &PredefinedMenuItem::hide(app, None)?,
+            &PredefinedMenuItem::hide_others(app, None)?,
+            &PredefinedMenuItem::separator(app)?,
+            &quit,
+        ],
+    )?;
+    // Without an Edit menu the text fields lose copy and paste.
+    let edit = Submenu::with_items(
+        app,
+        "Edit",
+        true,
+        &[
+            &PredefinedMenuItem::undo(app, None)?,
+            &PredefinedMenuItem::redo(app, None)?,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::cut(app, None)?,
+            &PredefinedMenuItem::copy(app, None)?,
+            &PredefinedMenuItem::paste(app, None)?,
+            &PredefinedMenuItem::select_all(app, None)?,
+        ],
+    )?;
+    let window = Submenu::with_items(
+        app,
+        "Window",
+        true,
+        &[
+            &PredefinedMenuItem::minimize(app, None)?,
+            &PredefinedMenuItem::close_window(app, None)?,
+        ],
+    )?;
+    Menu::with_items(app, &[&app_items, &edit, &window])
+}
+
 pub fn install(app: &AppHandle) -> tauri::Result<()> {
     let toggle = MenuItem::with_id(app, ID_TOGGLE, "Free up this PC", true, None::<&str>)?;
     let show = MenuItem::with_id(app, ID_SHOW, "Open CompuQuiet", true, None::<&str>)?;

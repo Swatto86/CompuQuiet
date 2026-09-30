@@ -18,6 +18,7 @@ import {
   removeProcess,
   removeService,
   removeTrigger,
+  restoreDefaults,
   sameProfile,
   setProcess,
   setService,
@@ -159,6 +160,38 @@ test("a protected service leaves the service list and stays out until it is unpr
   assert.match(!refused.ok ? refused.reason : "", /Never touch/);
   const freed = addService(removeKeepAlive(kept.profile, 0), "SysMain");
   assert.ok(freed.ok && freed.profile.services.length === 1);
+});
+
+test("restoring the defaults keeps what is under Never touch and leaves it off the lists", () => {
+  const current = {
+    ...profile(),
+    processes: [],
+    services: [],
+    keep_alive: ["onedrive.exe", "obs64", "SysMain"],
+  };
+  const defaults: Profile = {
+    ...profile(),
+    processes: [
+      { name: "OneDrive", action: "suspend", enabled: true },
+      { name: "Dropbox", action: "suspend", enabled: true },
+    ],
+    services: [
+      { name: "sysmain", enabled: true },
+      { name: "Fax", enabled: true },
+    ],
+  };
+  const restored = restoreDefaults(current, defaults);
+  assert.deepEqual(restored.keep_alive, ["onedrive.exe", "obs64", "SysMain"]);
+  assert.deepEqual(
+    restored.processes.map((target) => target.name),
+    ["Dropbox"],
+  );
+  assert.deepEqual(
+    restored.services.map((target) => target.name),
+    ["Fax"],
+  );
+  assert.equal(restored.power, defaults.power, "the rest is the defaults'");
+  assert.deepEqual(defaults.processes.length, 2, "the defaults are untouched");
 });
 
 test("finds saved from Scan join unsaved edits instead of replacing them", () => {

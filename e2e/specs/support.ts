@@ -156,6 +156,11 @@ export function windowTheme(): Promise<string> {
   return invokeCommand<string>("plugin:window|theme", { label: "main" });
 }
 
+/** The engine's state as the page gets it. */
+export function engineState(): Promise<Record<string, unknown>> {
+  return invokeCommand("get_state", {});
+}
+
 /** Send an app event to every listener, the page's own included. */
 export function emitEvent(
   event: string,

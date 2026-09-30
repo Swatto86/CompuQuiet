@@ -303,6 +303,31 @@ mod tests {
     }
 
     #[test]
+    fn the_elevated_setup_runs_nothing_found_under_the_users_registry() {
+        // `$PerUserDir` comes from HKCU and names a folder the user can write
+        // to: an old copy is removed file by file, never by running what is there.
+        let hook = include_str!("../windows/hooks.nsh");
+        let runs: Vec<&str> = hook
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.starts_with(';'))
+            .filter(|line| line.starts_with("Exec") || line.starts_with("nsExec::Exec"))
+            .collect();
+        assert!(
+            runs.iter().any(|line| line.contains("$INSTDIR")),
+            "the scan must see the hook's own start of the new copy: {runs:?}"
+        );
+        assert!(
+            runs.iter().all(|line| !line.contains("PerUserDir")),
+            "{runs:?}"
+        );
+        assert!(
+            hook.contains("$PerUserDir == \"$LOCALAPPDATA\\${PRODUCTNAME}\""),
+            "only the folder a per-user setup chooses by default is touched"
+        );
+    }
+
+    #[test]
     fn an_update_installs_only_while_idle_and_out_of_sight() {
         assert!(may_install(true, false));
         assert!(!may_install(false, false), "a run or Quiet Mode");

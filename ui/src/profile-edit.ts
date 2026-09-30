@@ -150,6 +150,24 @@ export function addKeepAlive(profile: Profile, name: string): EditResult {
   };
 }
 
+/**
+ * `defaults` for a restored park list, with the Never touch list of `current`
+ * kept: it is shared by every profile, and what it holds (often something
+ * taken off the list on purpose) is not part of the defaults. Protection
+ * wins, so a default that it names is left off the lists.
+ */
+export function restoreDefaults(current: Profile, defaults: Profile): Profile {
+  const protectedNames = new Set(current.keep_alive.map(normalizeName));
+  const parked = (target: { name: string }): boolean =>
+    !protectedNames.has(normalizeName(target.name));
+  return {
+    ...defaults,
+    keep_alive: [...current.keep_alive],
+    processes: defaults.processes.filter(parked),
+    services: defaults.services.filter(parked),
+  };
+}
+
 /** Programs the auto-quiet list may hold, as the engine allows. */
 export const MOST_PROGRAMS = 32;
 

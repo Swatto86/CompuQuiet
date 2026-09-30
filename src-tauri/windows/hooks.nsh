@@ -6,6 +6,11 @@
 ; %LOCALAPPDATA%. A setup that reads only the all-users registry keys neither
 ; sees nor replaces that copy, so the hooks below move it out of the way.
 ; The data folder (%APPDATA%\CompuQuiet) is never touched.
+;
+; The setup has administrator rights, while the old copy, its registry key and
+; its uninstaller can all be rewritten by an ordinary process. So nothing found
+; there is ever run: the copy is deleted file by file, and only from the folder
+; a per-user setup picks by default.
 
 Var PerUserDir
 Var MovedFromPerUser
@@ -21,27 +26,51 @@ Var HadDesktopShortcut
   ${If} $PerUserDir != ""
   ${AndIf} $PerUserDir != $INSTDIR
   ${AndIf} ${FileExists} "$PerUserDir\uninstall.exe"
-    DetailPrint "Removing the per-user copy in $PerUserDir"
-
-    ; Its desktop shortcut, if it had one, is replaced by an all-users one
-    ; after the install.
     SetShellVarContext current
-    !insertmacro IsShortcutTarget "$DESKTOP\${PRODUCTNAME}.lnk" "$PerUserDir\${MAINBINARYNAME}.exe"
-    Pop $HadDesktopShortcut
-    SetShellVarContext all
+    ${If} $PerUserDir == "$LOCALAPPDATA\${PRODUCTNAME}"
+      DetailPrint "Removing the per-user copy in $PerUserDir"
 
-    ; Silent, in place (_?= keeps it from copying itself away, so ExecWait
-    ; waits for it). It is not told /UPDATE, so it removes its shortcuts.
-    ExecWait '"$PerUserDir\uninstall.exe" /S _?=$PerUserDir' $0
-    ${If} $0 = 0
+      ; It may be running, and the setup's own check comes after this hook.
+      !insertmacro CheckIfAppIsRunning "${MAINBINARYNAME}.exe" "${PRODUCTNAME}"
+
+      ; The folder stays if anything else is in it, as the old uninstaller
+      ; left it.
+      Delete "$PerUserDir\${MAINBINARYNAME}.exe"
       Delete "$PerUserDir\uninstall.exe"
-      RMDir "$PerUserDir"
-      DeleteRegKey HKCU "${MANUPRODUCTKEY}"
-      DeleteRegKey /ifempty HKCU "${MANUKEY}"
-      StrCpy $MovedFromPerUser 1
+      ${IfNot} ${FileExists} "$PerUserDir\${MAINBINARYNAME}.exe"
+      ${AndIfNot} ${FileExists} "$PerUserDir\uninstall.exe"
+        RMDir "$PerUserDir"
+
+        ; Its shortcuts go too. The desktop one, if it had one, is replaced by
+        ; an all-users one after the install.
+        !insertmacro IsShortcutTarget "$SMPROGRAMS\${PRODUCTNAME}.lnk" "$PerUserDir\${MAINBINARYNAME}.exe"
+        Pop $0
+        ${If} $0 = 1
+          !insertmacro UnpinShortcut "$SMPROGRAMS\${PRODUCTNAME}.lnk"
+          Delete "$SMPROGRAMS\${PRODUCTNAME}.lnk"
+        ${EndIf}
+        !insertmacro IsShortcutTarget "$DESKTOP\${PRODUCTNAME}.lnk" "$PerUserDir\${MAINBINARYNAME}.exe"
+        Pop $HadDesktopShortcut
+        ${If} $HadDesktopShortcut = 1
+          !insertmacro UnpinShortcut "$DESKTOP\${PRODUCTNAME}.lnk"
+          Delete "$DESKTOP\${PRODUCTNAME}.lnk"
+        ${EndIf}
+
+        DeleteRegKey HKCU "${UNINSTKEY}"
+        DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "${PRODUCTNAME}"
+        DeleteRegKey HKCU "${MANUPRODUCTKEY}"
+        DeleteRegKey /ifempty HKCU "${MANUKEY}"
+        StrCpy $MovedFromPerUser 1
+      ${Else}
+        DetailPrint "The per-user copy could not be removed and is left in place."
+      ${EndIf}
     ${Else}
-      DetailPrint "The per-user copy could not be removed (exit code $0) and is left in place."
+      DetailPrint "The per-user copy in $PerUserDir is left in place."
+      ${If} $UpdateMode <> 1
+        MessageBox MB_OK|MB_ICONINFORMATION "An older per-user copy of ${PRODUCTNAME} is installed in $PerUserDir. This setup does not run programs from there, so it is left as it is.$\r$\n$\r$\nUninstall it from Settings, Apps when this setup has finished." /SD IDOK
+      ${EndIf}
     ${EndIf}
+    SetShellVarContext all
   ${EndIf}
 !macroend
 
