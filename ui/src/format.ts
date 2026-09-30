@@ -1,5 +1,11 @@
 /** Pure presentation helpers, tested without a DOM. */
-import type { Profile, RunReport, Summary, UpdateStatus } from "./bridge.ts";
+import type {
+  GpuAdapter,
+  Profile,
+  RunReport,
+  Summary,
+  UpdateStatus,
+} from "./bridge.ts";
 
 const UNITS = ["B", "KB", "MB", "GB", "TB"];
 
@@ -18,6 +24,19 @@ export function formatBytes(bytes: number): string {
 export function formatPercent(value: number): string {
   if (!Number.isFinite(value)) return "—";
   return `${Math.max(0, Math.min(100, Math.round(value)))}%`;
+}
+
+/** How full an adapter's own memory is, and how to say so. */
+export function gpuFill(adapter: GpuAdapter): {
+  percent: number;
+  text: string;
+} {
+  const percent =
+    adapter.total > 0 ? Math.min(100, (adapter.used / adapter.total) * 100) : 0;
+  return {
+    percent,
+    text: `${formatBytes(adapter.used)} of ${formatBytes(adapter.total)}`,
+  };
 }
 
 /**

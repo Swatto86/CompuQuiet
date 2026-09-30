@@ -2,6 +2,7 @@
 //! plays the user and the passing of time on the fake machine with them, and
 //! makes its calls fail; the real engine, tray and window are what it drives.
 
+use cq_core::GpuInfo;
 use cq_platform::fake::{Call, Failure, Fake};
 use tauri::AppHandle;
 
@@ -41,6 +42,14 @@ pub fn fake_fail(call: String, target: Option<String>, failure: String) -> Resul
 #[tauri::command]
 pub fn fake_battery(on_battery: Option<bool>) -> Result<(), AppError> {
     machine()?.set_on_battery(on_battery);
+    Ok(())
+}
+
+/// Give the fake machine these graphics adapters, or (`None`) none whose
+/// memory can be read, so the acceptance suite can drive the Home gauge.
+#[tauri::command]
+pub fn fake_gpu(adapters: Option<Vec<GpuInfo>>) -> Result<(), AppError> {
+    machine()?.set_gpu(adapters);
     Ok(())
 }
 

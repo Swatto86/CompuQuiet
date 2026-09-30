@@ -5,6 +5,7 @@
 //! the real binary can be driven end to end without freezing anything real.
 
 pub mod error;
+mod gpu;
 mod procs;
 mod spawn;
 
@@ -28,7 +29,8 @@ pub use error::{PlatformError, Result};
 pub use spawn::run_tool;
 
 use cq_core::{
-    Activity, Capabilities, Marker, Os, PowerPlan, ProcessInfo, ServiceInfo, Snapshot, SystemStats,
+    Activity, Capabilities, GpuInfo, Marker, Os, PowerPlan, ProcessInfo, ServiceInfo, Snapshot,
+    SystemStats,
 };
 
 pub trait Platform: Send + Sync {
@@ -57,6 +59,13 @@ pub trait Platform: Send + Sync {
     /// picker: every name a profile could hold, not only the ones it does.
     /// `needed_by` is left empty. Reading needs no rights.
     fn list_services(&self) -> Result<Vec<ServiceInfo>>;
+
+    /// Each graphics adapter's own memory, in use and in all. Slower than
+    /// [`Self::stats`] (it may ask a driver's tool), so asked every few seconds
+    /// at most. An error says why nothing can be read here; it is not a failure.
+    fn gpu(&self) -> Result<Vec<GpuInfo>> {
+        gpu::read()
+    }
 
     /// Whether the machine is running on its own battery right now. `None`
     /// where that cannot be told or there is no battery to speak of, which

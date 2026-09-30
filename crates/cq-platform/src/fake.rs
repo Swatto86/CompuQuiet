@@ -12,8 +12,8 @@ use std::sync::Mutex;
 use std::time::Duration;
 
 use cq_core::{
-    Activity, Capabilities, Marker, PowerPlan, ProcessInfo, ServiceInfo, ServiceState, Snapshot,
-    SystemStats,
+    Activity, Capabilities, GpuInfo, Marker, PowerPlan, ProcessInfo, ServiceInfo, ServiceState,
+    Snapshot, SystemStats,
 };
 
 use crate::Platform;
@@ -66,6 +66,8 @@ struct State {
     on_battery: Option<bool>,
     /// Something is holding the machine awake.
     awake: bool,
+    /// The graphics adapters it reports; `None` is one whose memory cannot be read.
+    gpu: Option<Vec<GpuInfo>>,
 }
 
 pub struct Fake {
@@ -118,6 +120,7 @@ impl Fake {
                     name: "Balanced".into(),
                 }),
                 next_pid: 1000,
+                gpu: Some(controls::seeded_gpu()),
                 marker: Marker {
                     uptime: 3_600,
                     sign_in: Some(1),
@@ -135,16 +138,6 @@ impl Fake {
     fn crash_if_asked(&self, name: &str) {
         let crash = self.lock().crash_on_service.as_deref() == Some(&*name.to_ascii_lowercase());
         assert!(!crash, "the fake machine crashed while handling {name}");
-    }
-
-    /// Pretend the machine restarted or the user signed in again.
-    pub fn set_marker(&self, marker: Marker) {
-        self.lock().marker = marker;
-    }
-
-    /// Pretend the machine is on battery, on mains, or has no battery.
-    pub fn set_on_battery(&self, on_battery: Option<bool>) {
-        self.lock().on_battery = on_battery;
     }
 
     /// Programs launched so far, in order.
@@ -241,6 +234,10 @@ impl Platform for Fake {
             memory_free: 30 * GIB - used,
             process_count: state.processes.len(),
         })
+    }
+
+    fn gpu(&self) -> Result<Vec<GpuInfo>> {
+        self.gpu_reading()
     }
 
     fn on_battery(&self) -> Option<bool> {

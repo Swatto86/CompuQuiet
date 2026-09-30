@@ -247,6 +247,11 @@ describe("the window", () => {
 
   describe("the tray window", () => {
     it("stops sampling the machine while hidden, and starts again when shown", async () => {
+      // The graphics memory is asked every five seconds, so wait for it too.
+      await browser.waitUntil(async () => (await invokeCount("get_gpu")) > 0, {
+        timeout: 10_000,
+        timeoutMsg: "the graphics memory was never asked for",
+      });
       await browser.waitUntil(
         async () => (await invokeCount("get_stats")) > 0,
         {
@@ -258,11 +263,17 @@ describe("the window", () => {
       try {
         await browser.pause(500);
         const asked = await invokeCount("get_stats");
-        await browser.pause(5_000);
+        const askedGpu = await invokeCount("get_gpu");
+        await browser.pause(5_500);
         assert.equal(
           await invokeCount("get_stats"),
           asked,
           "a hidden window kept polling",
+        );
+        assert.equal(
+          await invokeCount("get_gpu"),
+          askedGpu,
+          "a hidden window kept asking the graphics driver",
         );
       } finally {
         await setWindowVisible(true);
@@ -273,6 +284,14 @@ describe("the window", () => {
         {
           timeout: 8_000,
           timeoutMsg: "the figures did not resume when the window was shown",
+        },
+      );
+      const askedGpu = await invokeCount("get_gpu");
+      await browser.waitUntil(
+        async () => (await invokeCount("get_gpu")) > askedGpu,
+        {
+          timeout: 8_000,
+          timeoutMsg: "the graphics memory did not resume when shown",
         },
       );
     });

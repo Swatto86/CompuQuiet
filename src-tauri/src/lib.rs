@@ -185,6 +185,7 @@ pub fn run() {
             commands::get_state,
             commands::app_info,
             commands::get_stats,
+            commands::get_gpu,
             commands::list_processes,
             commands::list_services,
             commands::get_settings,
@@ -216,6 +217,8 @@ pub fn run() {
             commands::fake::fake_heal,
             #[cfg(feature = "fake-platform")]
             commands::fake::fake_battery,
+            #[cfg(feature = "fake-platform")]
+            commands::fake::fake_gpu,
             #[cfg(feature = "fake-platform")]
             commands::fake::fake_program,
             #[cfg(feature = "fake-platform")]

@@ -19,7 +19,7 @@ pub use self::ending::{EndingState, Watching};
 pub use self::preview::Preview;
 pub use self::report::{RunReport, notification};
 use crate::error::AppError;
-use crate::rows::{ProcessRow, ServiceRow, fold_processes, service_rows};
+use crate::rows::{GpuReading, ProcessRow, ServiceRow, fold_processes, gpu_reading, service_rows};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct LogLine {
@@ -236,6 +236,10 @@ impl Engine {
 
     pub fn stats(&self) -> Result<SystemStats, AppError> {
         Ok(self.platform.stats()?)
+    }
+
+    pub fn gpu(&self) -> GpuReading {
+        gpu_reading(self.platform.gpu())
     }
 
     pub(crate) fn platform(&self) -> &dyn Platform {

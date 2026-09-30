@@ -449,6 +449,29 @@ main {
   color: var(--accent-text);
 }
 
+.stat-wide {
+  grid-column: 1 / -1;
+}
+
+.gpu-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.gpu-row {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr) auto;
+  align-items: center;
+  gap: 12px;
+}
+
+.gpu-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .gauge {
   height: 8px;
   background: var(--surface-2);

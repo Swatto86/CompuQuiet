@@ -127,6 +127,7 @@ export const config: WebdriverIO.Config = {
   specs: [
     [
       "boot",
+      "gpu",
       "update",
       "permissions",
       "quiet",

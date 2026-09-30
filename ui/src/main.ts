@@ -17,6 +17,7 @@ import { Diagnostics } from "./diagnostics.ts";
 import { showDialog, toast } from "./dialog.ts";
 import { byId } from "./dom.ts";
 import { closeHint, homePlan } from "./format.ts";
+import { GpuGauge } from "./gpu.ts";
 import { addKeepAlive } from "./profile-edit.ts";
 import { PreviewPanel } from "./preview.ts";
 import { Recovery } from "./recovery.ts";
@@ -40,6 +41,7 @@ let unsaved = false;
 let runElsewhere = false;
 
 const dashboard = new Dashboard(() => void toggle());
+const gpu = new GpuGauge(windowShowing);
 const preview = new PreviewPanel();
 const runLength = new RunLength((next) => {
   engine = next;
@@ -138,6 +140,7 @@ async function boot(): Promise<void> {
   await api.frontendReady();
   void pollStats();
   window.setInterval(() => void pollStats(), 2000);
+  gpu.start();
   window.setInterval(() => {
     dashboard.tick();
     runLength.tick();

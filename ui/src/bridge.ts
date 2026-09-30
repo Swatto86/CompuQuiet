@@ -207,6 +207,22 @@ export interface SystemStats {
   process_count: number;
 }
 
+/** One graphics adapter's own memory, in bytes. */
+export interface GpuAdapter {
+  name: string;
+  used: number;
+  total: number;
+}
+
+/**
+ * The machine's graphics memory. Either adapters, or `unavailable` saying why
+ * there are none: not being able to read it is a fact about the machine.
+ */
+export interface GpuReading {
+  adapters: GpuAdapter[];
+  unavailable: string | null;
+}
+
 export interface ProcessRow {
   name: string;
   instances: number;
@@ -283,6 +299,7 @@ export const api = {
   getState: () => invoke<EngineState>("get_state"),
   appInfo: () => invoke<AppInfo>("app_info"),
   getStats: () => invoke<SystemStats>("get_stats"),
+  getGpu: () => invoke<GpuReading>("get_gpu"),
   listProcesses: () => invoke<ProcessRow[]>("list_processes"),
   listServices: () => invoke<ServiceRow[]>("list_services"),
   getSettings: () => invoke<Settings>("get_settings"),

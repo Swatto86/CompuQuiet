@@ -205,6 +205,16 @@ export function fakeBattery(onBattery: boolean | null): Promise<void> {
   return invokeCommand("fake_battery", { onBattery });
 }
 
+/**
+ * Give the fake machine these graphics adapters (bytes), or none whose memory
+ * can be read (null). It starts with one: "Fake GPU", 3 GiB of 24 GiB.
+ */
+export function fakeGpu(
+  adapters: { name: string; used: number; total: number }[] | null,
+): Promise<void> {
+  return invokeCommand("fake_gpu", { adapters });
+}
+
 /** Open or close a program on the fake machine, as the user would. */
 export function fakeProgram(name: string, running: boolean): Promise<void> {
   return invokeCommand("fake_program", { name, running });

@@ -157,6 +157,16 @@ page keeps out of the picker but still uses to name a listed service. It is
 a listing, not a check: on Linux and macOS a stopped or unloaded unit may be
 missing from it, so an absent name is never reported as not installed.
 
+`Platform::gpu` reads each graphics adapter's own memory (`gpu.rs`, shared by
+the adapters as the trait's default): `nvidia-smi` on Windows and Linux (no
+tool means no NVIDIA card, not an error) and, on Linux, the amdgpu driver's
+`mem_info_vram_*` files. Any other card, and a Mac, whose graphics share the
+system's memory, answers with the reason it cannot be read, and the page shows
+that reason instead of a gauge. `get_gpu` returns a `GpuReading` (adapters, or
+`unavailable`); one adapter failing leaves the others. Per-adapter, because a
+model must fit in one card, and reading only, so nothing here changes the
+machine. Which programs hold the memory is not read.
+
 `Capabilities` reports what this process can do at its privilege level; the
 planner skips what it cannot with the reason shown ("needs administrator
 rights"), and the window offers the elevated relaunch on Windows.
@@ -198,7 +208,9 @@ services) live in `pickers.ts`. Conventions that are not visible in the code:
 - A toast is painted for the eyes and spoken through the always-present
   `#announce` live region; error toasts are assertive.
 - `document.hidden` stays false when the window is hidden to the tray in
-  WebView2, so the stats poll asks the window itself (`isVisible`).
+  WebView2, so the stats poll asks the window itself (`isVisible`). The GPU
+  gauge (`gpu.ts`) does the same, every five seconds and never two reads at
+  once, because `nvidia-smi` takes a tenth of a second or more.
 - Text colours come from the `--*-text` tokens, which the light theme darkens
   to 4.5:1; `theme.test.ts` checks both light blocks agree and every token
   passes. The window frame follows the Theme setting through `setTheme`.

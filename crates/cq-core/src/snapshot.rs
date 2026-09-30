@@ -103,6 +103,15 @@ pub struct SystemStats {
     pub process_count: usize,
 }
 
+/// One graphics adapter's own memory, in bytes. Memory an integrated adapter
+/// borrows from the system is not in it: the memory figures already count that.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GpuInfo {
+    pub name: String,
+    pub used: u64,
+    pub total: u64,
+}
+
 /// Which processes the user can see. Only some platforms can tell; when
 /// `known` is false the scanner does not guess about unknown programs.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]

@@ -11,7 +11,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use crate::autostart::{self, AutostartStatus};
 use crate::engine::{Engine, EngineState, LogLine, Preview};
 use crate::error::AppError;
-use crate::rows::{ProcessRow, ServiceRow};
+use crate::rows::{GpuReading, ProcessRow, ServiceRow};
 use crate::tray;
 
 #[cfg(feature = "fake-platform")]
@@ -72,6 +72,13 @@ pub fn app_info(app: AppHandle, engine: State<'_, Arc<Engine>>) -> AppInfo {
 pub async fn get_stats(engine: State<'_, Arc<Engine>>) -> Result<SystemStats, AppError> {
     let engine = engine.inner().clone();
     tauri::async_runtime::spawn_blocking(move || engine.stats()).await?
+}
+
+/// Graphics memory, asked slowly: the read may start a driver's tool.
+#[tauri::command]
+pub async fn get_gpu(engine: State<'_, Arc<Engine>>) -> Result<GpuReading, AppError> {
+    let engine = engine.inner().clone();
+    Ok(tauri::async_runtime::spawn_blocking(move || engine.gpu()).await?)
 }
 
 #[tauri::command]

@@ -8,6 +8,7 @@ import {
   formatCoreShare,
   formatPercent,
   formatSince,
+  gpuFill,
   homePlan,
   memoryFreed,
   reportLines,
@@ -23,6 +24,15 @@ test("bytes scale with one decimal below 100 and none above", () => {
   assert.equal(formatBytes(1024 ** 3 * 1.25), "1.3 GB");
   assert.equal(formatBytes(-1), "—");
   assert.equal(formatBytes(Number.NaN), "—");
+});
+
+test("an adapter's memory reads as a share and as used of total", () => {
+  const gib = 1024 ** 3;
+  const card = { name: "Card", used: 2.5 * gib, total: 10 * gib };
+  assert.deepEqual(gpuFill(card), { percent: 25, text: "2.5 GB of 10.0 GB" });
+  // Never past the bar's end, and never a divide by zero.
+  assert.equal(gpuFill({ ...card, used: 11 * gib }).percent, 100);
+  assert.equal(gpuFill({ ...card, total: 0 }).percent, 0);
 });
 
 test("percentages are clamped and rounded", () => {

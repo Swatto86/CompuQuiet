@@ -25,5 +25,5 @@ pub use profile::{Os, PowerPolicy, ProcessAction, ProcessTarget, Profile, Servic
 pub use recommend::{Recommendation, RecommendationKind, Risk, recommend};
 pub use settings::{Settings, Theme};
 pub use snapshot::{
-    Activity, PowerPlan, ProcessInfo, ServiceInfo, ServiceState, Snapshot, SystemStats,
+    Activity, GpuInfo, PowerPlan, ProcessInfo, ServiceInfo, ServiceState, Snapshot, SystemStats,
 };

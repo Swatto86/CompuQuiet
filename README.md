@@ -29,8 +29,9 @@ Your own "never touch" list sits on top of that.
 
 ## Using it
 
-1. Open CompuQuiet. Home shows live CPU, memory and process figures, and what
-   one press will do. *Preview what one press would do right now* looks at
+1. Open CompuQuiet. Home shows live CPU, memory and process figures, the
+   graphics card's memory (NVIDIA on Windows and Linux, AMD on Linux; it says
+   so where it cannot be read), and what one press will do. *Preview what one press would do right now* looks at
    the running machine and lists each program and service it would park, the
    command line a closed program reopens with, and what it would leave alone
    and why. It only looks: a press plans again from the machine as it is.

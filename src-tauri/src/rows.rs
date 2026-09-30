@@ -1,9 +1,11 @@
 //! The pickers' rows: every instance of a program folded into one line,
 //! heaviest first, so a user can see what is worth parking; and the machine's
-//! services, by name, so one can be chosen instead of typed.
+//! services, by name, so one can be chosen instead of typed; and the graphics
+//! memory the Home screen shows, or why it cannot.
 
 use cq_core::policy::is_critical_service;
-use cq_core::{Os, ProcessInfo, ServiceInfo, ServiceState};
+use cq_core::{GpuInfo, Os, ProcessInfo, ServiceInfo, ServiceState};
+use cq_platform::PlatformError;
 use serde::Serialize;
 
 #[derive(Debug, Clone, Serialize)]
@@ -75,6 +77,31 @@ pub fn service_rows(services: Vec<ServiceInfo>, os: Os) -> Vec<ServiceRow> {
     rows
 }
 
+/// The graphics memory on the machine, or the reason it cannot be read. Not
+/// being able to is a fact about the machine, not a failure to report.
+#[derive(Debug, Clone, Serialize)]
+pub struct GpuReading {
+    pub adapters: Vec<GpuInfo>,
+    /// Set exactly when `adapters` is empty.
+    pub unavailable: Option<String>,
+}
+
+pub fn gpu_reading(result: Result<Vec<GpuInfo>, PlatformError>) -> GpuReading {
+    match result {
+        Ok(adapters) if !adapters.is_empty() => GpuReading {
+            adapters,
+            unavailable: None,
+        },
+        other => GpuReading {
+            adapters: Vec::new(),
+            unavailable: Some(match other {
+                Err(error) => error.to_string(),
+                Ok(_) => "No graphics adapter reported its memory".to_string(),
+            }),
+        },
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -139,6 +166,24 @@ mod tests {
         );
         assert_eq!(rows[1].display_name, "Fax display");
         assert_eq!(rows[1].state, ServiceState::Stopped);
+    }
+
+    #[test]
+    fn a_reading_carries_the_adapters_or_the_reason_there_are_none() {
+        let card = GpuInfo {
+            name: "Card".into(),
+            used: 1,
+            total: 2,
+        };
+        let read = gpu_reading(Ok(vec![card.clone()]));
+        assert_eq!((read.adapters, read.unavailable), (vec![card], None));
+
+        let refused = gpu_reading(Err(PlatformError::Unsupported("no tool".into())));
+        assert!(refused.adapters.is_empty());
+        assert_eq!(refused.unavailable.as_deref(), Some("no tool"));
+
+        let silent = gpu_reading(Ok(Vec::new()));
+        assert!(silent.adapters.is_empty() && silent.unavailable.is_some());
     }
 
     #[test]

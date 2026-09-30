@@ -95,3 +95,21 @@ fn the_service_list_shows_each_service_in_its_current_state() {
         Some(ServiceState::Stopped)
     );
 }
+
+#[test]
+fn the_graphics_card_keeps_its_memory_through_a_run_and_can_be_made_unreadable() {
+    let fake = Fake::new();
+    let seeded = fake.gpu().unwrap();
+    assert_eq!(seeded.len(), 1);
+    assert_eq!((seeded[0].used, seeded[0].total), (3 * GIB, 24 * GIB));
+
+    // Freezing or closing a program on the desktop does not hand back VRAM
+    // the fake says is in use.
+    fake.suspend(300, 1_700_000_300).unwrap();
+    assert_eq!(fake.gpu().unwrap(), seeded);
+
+    fake.set_gpu(None);
+    assert!(matches!(fake.gpu(), Err(PlatformError::Unsupported(_))));
+    fake.set_gpu(Some(seeded.clone()));
+    assert_eq!(fake.gpu().unwrap(), seeded);
+}
