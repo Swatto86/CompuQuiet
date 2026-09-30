@@ -12,6 +12,7 @@ function state(over: Partial<EngineState>): EngineState {
     summary: {
       services_stopped: 0,
       processes_suspended: 0,
+      processes_slowed: 0,
       processes_closed: 0,
       power_changed: false,
       memory_purged: false,
@@ -25,6 +26,7 @@ function state(over: Partial<EngineState>): EngineState {
       power: true,
       memory_purge: true,
       keep_awake: true,
+      slow_down: true,
       elevated: true,
       can_elevate: false,
     },

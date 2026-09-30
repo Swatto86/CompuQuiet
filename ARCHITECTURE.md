@@ -33,6 +33,16 @@ Dependencies point inward: `src-tauri` → `cq-platform` → `cq-core`.
    peripheral's, `scope` Device, and a `UPS` never count) and macOS from
    `pmset -g batt` (`UPS Power` is not battery); `None`, a desktop, and a UPS
    on mains all mean mains.
+   A target set to `ProcessAction::SlowDown` plans a `Step::SlowProcess` per
+   process (none where `Capabilities::slow_down` is false: the program is
+   left running as it is, never frozen instead, with the reason shown). Then
+   `Engine::spare_sound`, only when the plan parks a program, asks
+   `Platform::audio_users` which processes have a stream of sound running and
+   `cq_core::guard_audio` drops the suspend, slow and close steps of every
+   program that has one, or a helper that does (by `ProcessInfo::program_root`
+   and the ancestors of the audible process), listing it as left alone. An
+   answer it cannot get is skipped quietly where the platform cannot tell
+   (`PlatformError::Unsupported`) and listed as "Sound" otherwise.
    With `Profile::unload_ai_models` on, `cq_core::plan_unloads` then adds a
    `Step::UnloadModel` for each model `Platform::loaded_models` finds, before
    the purge, and says what was left alone (none loaded; LM Studio's tool not
@@ -49,7 +59,10 @@ Dependencies point inward: `src-tauri` → `cq-platform` → `cq-core`.
    safe for a step that never happened. A step that times out
    (`PlatformError::TimedOut`, code `timed_out`) may still take effect, so
    its entry stays; a program that has already gone is logged as done, not
-   failed. Progress lines stream to the window; a failed step is logged and
+   failed. A slowed program's entry (`DoneStep::ProcessSlowed`) is written
+   with no `previous` pace and replaced by the one the platform read before
+   changing anything; restoring an entry that never got it puts the usual
+   pace back. Progress lines stream to the window; a failed step is logged and
    the run continues. A run with steps is measured by the engine
    (`Engine::measure`: two `stats()` readings `Platform::settle` apart, before
    the first step and after the last) into `EngineState::run_report`, in
@@ -144,8 +157,10 @@ of its frame, so those are read too); Linux and macOS report
 ## Platform adapters
 
 `cq-platform` is the only crate allowed `unsafe`, and only in its Windows
-module: `NtSuspendProcess`/`NtResumeProcess`, the token elevation check, the
-standby-list purge, the file-cache figure (`GetPerformanceInfo`), the list
+module: `NtSuspendProcess`/`NtResumeProcess`, a program's priority class and
+Efficiency mode (`SetPriorityClass`, `SetProcessInformation` with process
+power throttling, the two that Task Manager's Efficiency mode sets), the token
+elevation check, the standby-list purge, the file-cache figure (`GetPerformanceInfo`), the list
 of services and a service's running dependents, window enumeration, starting a program with the desktop
 shell's token (`CreateProcessWithTokenW`, so an elevated CompuQuiet does not
 hand its rights on), holding off sleep (`SetThreadExecutionState`) and the
@@ -153,6 +168,20 @@ hand its rights on), holding off sleep (`SetThreadExecutionState`) and the
 (`windows-service`, `sysinfo`, `nix`) or structured subprocess calls with
 validated arguments (`powercfg`, `taskkill`, `systemctl`, `powerprofilesctl`,
 `launchctl`, `schtasks`).
+
+`Platform::slow_down` lowers a process to the lowest priority and returns how
+it ran before (`Pace`); `speed_up` puts that back, but only what is still as
+slow_down set it, so a priority or mode the program or the user has changed
+since stays. Windows sets `IDLE_PRIORITY_CLASS` and Efficiency mode (before
+1709, priority alone). Lowering a nice value is allowed to anyone and raising
+it again is not (`renice` as a normal user answers "Permission denied"), so
+Linux and macOS (`unix.rs`: `ps -o ni=`, `renice`) report `slow_down` only as
+root. `Platform::audio_users` is the processes with a running stream:
+Windows enumerates the audio sessions of every active render and capture
+device through the `windows` crate's Core Audio interfaces (already in the
+build through `sysinfo`), on a thread of its own so COM is set up the way it
+needs; Linux asks `pactl --format=json list sink-inputs` and `source-outputs`
+(`linux/audio.rs`) and skips paused streams; macOS cannot tell.
 
 `Platform::list_services` names every service the machine has for the Park
 list's picker (`EnumServicesStatusExW`; `systemctl list-units`, system and
@@ -195,7 +224,9 @@ refusal, a missing-rights error, or a timeout whose effect still lands. The
 e2e build exposes that as the `fake_fail` and `fake_heal` commands, which
 exist only with the `fake-platform` feature, as do `fake_program` (open or
 close a program), `fake_advance` (move uptime on) and `fake_awake`, which the
-timed and auto-quiet specs drive.
+timed and auto-quiet specs drive, and `fake_audio` (which programs have sound
+running) and `fake_slowed` (which are slowed), which the slow-sound spec does.
+`Call::SlowDown`, `SpeedUp` and `AudioUsers` can be made to fail.
 
 ## The window (`ui/`)
 

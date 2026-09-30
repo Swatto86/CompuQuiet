@@ -91,6 +91,20 @@ pub fn fake_awake() -> Result<bool, AppError> {
     Ok(machine()?.awake())
 }
 
+/// Say which programs on the fake machine have a stream of sound running, by
+/// name, so the acceptance suite can drive what Quiet Mode leaves alone.
+#[tauri::command]
+pub fn fake_audio(programs: Vec<String>) -> Result<(), AppError> {
+    machine()?.set_audible(programs);
+    Ok(())
+}
+
+/// The programs now running slowed down on the fake machine, by name.
+#[tauri::command]
+pub fn fake_slowed() -> Result<Vec<String>, AppError> {
+    Ok(machine()?.slowed())
+}
+
 /// Undo every `fake_fail`.
 #[tauri::command]
 pub fn fake_heal() -> Result<(), AppError> {

@@ -118,6 +118,21 @@ fn on_window_event(window: &tauri::Window, event: &tauri::WindowEvent) {
     }
 }
 
+/// Safety net: the page reveals the window once it has painted, but if it
+/// never boots the user must not be left with a process and no window.
+fn reveal_if_the_page_never_loads(app: &tauri::AppHandle) {
+    if start_hidden() {
+        return;
+    }
+    let handle = app.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+        if !FRONTEND_READY.load(Ordering::Relaxed) {
+            tray::reveal(&handle);
+        }
+    });
+}
+
 pub fn run() {
     // Before anything is touched: a launch that is not understood does nothing.
     // Nothing prints on Windows, whose release build has no console, so the
@@ -166,18 +181,7 @@ pub fn run() {
             let handle = app.handle().clone();
             single::serve(data_dir, move |command| cli::handle(&handle, command));
 
-            // Safety net: the page reveals the window once it has painted, but
-            // if it never boots the user must not be left with a process and
-            // no window.
-            if !start_hidden() {
-                let handle = app.handle().clone();
-                tauri::async_runtime::spawn(async move {
-                    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
-                    if !FRONTEND_READY.load(Ordering::Relaxed) {
-                        tray::reveal(&handle);
-                    }
-                });
-            }
+            reveal_if_the_page_never_loads(app.handle());
             Ok(())
         })
         .on_window_event(on_window_event)
@@ -227,6 +231,10 @@ pub fn run() {
             commands::fake::fake_advance,
             #[cfg(feature = "fake-platform")]
             commands::fake::fake_awake,
+            #[cfg(feature = "fake-platform")]
+            commands::fake::fake_audio,
+            #[cfg(feature = "fake-platform")]
+            commands::fake::fake_slowed,
         ])
         .run(tauri::generate_context!())
         .unwrap_or_else(|error| panic!("CompuQuiet could not start its window: {error}"));

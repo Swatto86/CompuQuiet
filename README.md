@@ -17,6 +17,7 @@ reboot cannot lose the list of what to put back.
 | Action | Windows | Linux | macOS |
 | --- | --- | --- | --- |
 | Suspend a program (frozen in place, resumed on restore) | `NtSuspendProcess` | `SIGSTOP` | `SIGSTOP` |
+| Slow a program down (lowest priority, Efficiency mode; put back on restore) | `SetPriorityClass`, `SetProcessInformation` | `renice`, as root only | `renice`, as root only |
 | Close a program and relaunch it on restore | `taskkill`, then relaunch | `SIGTERM`, then relaunch | `SIGTERM`, then relaunch |
 | Stop a service and start it again | Service Control Manager (administrator) | `systemctl` (polkit for system units, `user:` prefix for user units) | `launchctl` user agents |
 | Performance power plan | `powercfg` (Ultimate or High performance) | `powerprofilesctl` | not available |
@@ -27,6 +28,20 @@ reboot cannot lose the list of what to put back.
 The desktop shell, compositor, input, audio, security software, terminals
 and CompuQuiet itself are always protected and cannot be added as targets.
 Your own "never touch" list sits on top of that.
+
+A program with sound running, a call or a song, is left alone and listed as
+such with the reason, in the preview and in the run: a helper that plays the
+sound counts for the program around it. Windows reads the audio sessions of
+every sound device, Linux asks `pactl` (PulseAudio and PipeWire), and macOS
+cannot tell, so nothing is spared there. A run that could not tell says so.
+
+*Slow down* is for a program that misbehaves when frozen (a sync client, a
+job that must keep running): it keeps running at the lowest priority, in
+Efficiency mode where Windows has it, and Restore puts back the priority and
+mode it had. It changes nothing that the program or you set differently in the
+meantime. Lowering a priority cannot be undone without administrator rights
+on Linux and macOS, so a program set to it there is left running as it is
+unless CompuQuiet runs as root.
 
 ## Using it
 
@@ -48,7 +63,7 @@ Your own "never touch" list sits on top of that.
    work).
 3. Review **Park list**: the built-in list of background hogs for your platform,
    with a running/not-running indicator. Add any running program by name,
-   choose Suspend or Close & relaunch, add services (typed, or picked from
+   choose Suspend, Slow down or Close & relaunch, add services (typed, or picked from
    the services the machine has, minus the essential ones), find a row with
    the filter box, and save. Removing a row
    adds it to *Never touch*, so a scan does not bring it back; take it off

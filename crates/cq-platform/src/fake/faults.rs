@@ -12,6 +12,9 @@ pub enum Call {
     StartService,
     Suspend,
     Resume,
+    SlowDown,
+    SpeedUp,
+    AudioUsers,
     Close,
     Launch,
     SetPower,
@@ -21,11 +24,14 @@ pub enum Call {
     UnloadModel,
 }
 
-const CALLS: [(&str, Call); 11] = [
+const CALLS: [(&str, Call); 14] = [
     ("stop_service", Call::StopService),
     ("start_service", Call::StartService),
     ("suspend", Call::Suspend),
     ("resume", Call::Resume),
+    ("slow_down", Call::SlowDown),
+    ("speed_up", Call::SpeedUp),
+    ("audio_users", Call::AudioUsers),
     ("close", Call::Close),
     ("launch", Call::Launch),
     ("set_power", Call::SetPower),

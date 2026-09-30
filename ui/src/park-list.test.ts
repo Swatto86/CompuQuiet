@@ -4,6 +4,7 @@ import { test } from "node:test";
 import type { Capabilities, ServiceRow } from "./bridge.ts";
 import {
   awakeHint,
+  slowHint,
   matchesFilter,
   offered,
   pickerLabel,
@@ -16,6 +17,7 @@ const caps: Capabilities = {
   power: true,
   memory_purge: true,
   keep_awake: true,
+  slow_down: true,
   elevated: true,
   can_elevate: false,
 };
@@ -82,4 +84,9 @@ test("the service hint names the kind of name this system uses", () => {
 test("the awake hint says whether this system can hold off sleep", () => {
   assert.match(awakeHint(caps), /Stops sleep/);
   assert.match(awakeHint({ ...caps, keep_awake: false }), /Not available/);
+  assert.equal(slowHint(caps), "", "nothing to say where it works");
+  assert.match(
+    slowHint({ ...caps, slow_down: false }),
+    /needs administrator rights.*left as it is/,
+  );
 });

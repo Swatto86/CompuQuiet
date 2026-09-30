@@ -90,6 +90,9 @@ pub fn notification(summary: &Summary, report: Option<&RunReport>) -> String {
         summary.services_stopped,
         summary.processes_suspended + summary.processes_closed
     );
+    if summary.processes_slowed > 0 {
+        text.push_str(&format!(" {} slowed down.", summary.processes_slowed));
+    }
     if let Some(report) = report {
         text.push_str(&format!(
             " Memory available: {} before, {} after.",
@@ -202,6 +205,14 @@ mod tests {
         assert_eq!(
             notification(&summary, Some(&report)),
             "Quiet Mode on: 3 services stopped, 5 processes parked. Memory available: 5.1 GB before, 9.4 GB after."
+        );
+        let slowed = Summary {
+            processes_slowed: 2,
+            ..summary.clone()
+        };
+        assert_eq!(
+            notification(&slowed, None),
+            "Quiet Mode on: 3 services stopped, 5 processes parked. 2 slowed down."
         );
         assert_eq!(bytes(512), "512 B");
         assert_eq!(bytes(300 * MIB), "300 MB");

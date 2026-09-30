@@ -77,6 +77,7 @@ impl Engine {
                     && matches!(
                         step,
                         Step::SuspendProcess { .. }
+                            | Step::SlowProcess { .. }
                             | Step::CloseProcess { .. }
                             | Step::UnloadModel { .. }
                     );
@@ -125,6 +126,16 @@ impl Engine {
                     start_time: *start_time,
                 }
             }
+            Step::SlowProcess {
+                pid,
+                name,
+                start_time,
+            } => DoneStep::ProcessSlowed {
+                pid: *pid,
+                name: name.clone(),
+                start_time: *start_time,
+                previous: Some(self.platform.slow_down(*pid, *start_time)?),
+            },
             Step::CloseProcess {
                 pid,
                 name,
@@ -175,6 +186,14 @@ impl Engine {
             RestoreStep::ResumeProcess {
                 pid, start_time, ..
             } => self.platform.resume(*pid, *start_time)?,
+            RestoreStep::SpeedUpProcess {
+                pid,
+                start_time,
+                previous,
+                ..
+            } => self
+                .platform
+                .speed_up(*pid, *start_time, previous.as_ref())?,
             RestoreStep::Relaunch { exe, args, cwd, .. } => {
                 let exe = exe.as_ref().ok_or_else(|| {
                     AppError::new("not_installed", "the program's path was not recorded")

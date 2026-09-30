@@ -30,6 +30,11 @@ export function itemLine(item: PreviewItem): PreviewLine {
       return { text: `Stop service ${item.name}`, command: null };
     case "suspend":
       return { text: `Suspend ${item.name}${size}`, command: null };
+    case "slow_down":
+      return {
+        text: `Slow down ${item.name}${size}. It keeps running at the lowest priority`,
+        command: null,
+      };
     case "close":
       return item.relaunch === null
         ? {

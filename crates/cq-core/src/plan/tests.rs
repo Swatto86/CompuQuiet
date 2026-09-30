@@ -1,5 +1,5 @@
 use super::*;
-use crate::profile::{ProcessTarget, ServiceTarget};
+use crate::profile::{ProcessAction, ProcessTarget, ServiceTarget};
 use crate::snapshot::{ProcessInfo, ServiceInfo};
 
 fn process(pid: u32, name: &str) -> ProcessInfo {
@@ -31,6 +31,7 @@ fn full_caps() -> Capabilities {
         power: true,
         memory_purge: true,
         keep_awake: true,
+        slow_down: true,
         elevated: true,
         can_elevate: true,
     }
@@ -184,6 +185,7 @@ fn unelevated_services_and_purge_are_skipped_with_the_reason_shown() {
         power: true,
         memory_purge: false,
         keep_awake: false,
+        slow_down: true,
         elevated: false,
         can_elevate: true,
     };
@@ -382,4 +384,5 @@ mod awake;
 mod battery;
 mod park;
 mod protect;
+mod slow;
 mod unattended;

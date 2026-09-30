@@ -12,7 +12,8 @@ use std::ffi::c_void;
 use windows_sys::Win32::Foundation::NTSTATUS;
 use windows_sys::Win32::System::ProcessStatus::{K32GetPerformanceInfo, PERFORMANCE_INFORMATION};
 
-use super::{enable_privilege, ntdll_function};
+use super::ntdll_function;
+use super::token::enable_privilege;
 use crate::error::{PlatformError, Result};
 
 const SYSTEM_MEMORY_LIST_INFORMATION: i32 = 80;

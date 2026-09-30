@@ -22,6 +22,7 @@ fn caps() -> Capabilities {
         power: true,
         memory_purge: true,
         keep_awake: true,
+        slow_down: true,
         elevated: true,
         can_elevate: false,
     }

@@ -60,6 +60,7 @@ test("summary lines only mention what happened", () => {
     summaryLines({
       services_stopped: 0,
       processes_suspended: 0,
+      processes_slowed: 0,
       processes_closed: 0,
       power_changed: false,
       memory_purged: false,
@@ -71,6 +72,7 @@ test("summary lines only mention what happened", () => {
     summaryLines({
       services_stopped: 1,
       processes_suspended: 3,
+      processes_slowed: 2,
       processes_closed: 1,
       power_changed: true,
       memory_purged: true,
@@ -79,6 +81,7 @@ test("summary lines only mention what happened", () => {
     [
       "1 service stopped",
       "3 processes suspended",
+      "2 processes slowed down (back to full speed on restore)",
       "1 process closed (relaunched on restore)",
       "Performance power plan active",
       "PC kept awake",

@@ -15,6 +15,7 @@ use crate::procs::Sampler;
 use crate::spawn::{run_tool, run_tool_within, spawn_detached};
 use crate::unix;
 
+mod audio;
 mod battery;
 mod units;
 
@@ -205,6 +206,7 @@ impl Platform for Linux {
             power: self.power_tool,
             memory_purge: self.root || self.pkexec,
             keep_awake: self.inhibit,
+            slow_down: self.root,
             elevated: self.root,
             can_elevate: false,
         }
@@ -250,6 +252,18 @@ impl Platform for Linux {
 
     fn resume(&self, pid: u32, start_time: u64) -> Result<()> {
         unix::resume(&self.sampler, pid, start_time)
+    }
+
+    fn slow_down(&self, pid: u32, start_time: u64) -> Result<cq_core::Pace> {
+        unix::slow_down(&self.sampler, pid, start_time)
+    }
+
+    fn speed_up(&self, pid: u32, start_time: u64, previous: Option<&cq_core::Pace>) -> Result<()> {
+        unix::speed_up(&self.sampler, pid, start_time, previous)
+    }
+
+    fn audio_users(&self) -> Result<Vec<u32>> {
+        audio::users()
     }
 
     fn close(&self, pid: u32, start_time: u64) -> Result<()> {

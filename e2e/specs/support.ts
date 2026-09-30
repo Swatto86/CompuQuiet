@@ -249,6 +249,16 @@ export function fakeAwake(): Promise<boolean> {
   return invokeCommand<boolean>("fake_awake", {});
 }
 
+/** Say which programs on the fake machine have sound running (a call, a song). */
+export function fakeAudio(programs: string[]): Promise<void> {
+  return invokeCommand("fake_audio", { programs });
+}
+
+/** The programs now running slowed down on the fake machine, by name. */
+export function fakeSlowed(): Promise<string[]> {
+  return invokeCommand<string[]>("fake_slowed", {});
+}
+
 /**
  * Move the fake machine's uptime on by `seconds` at a time until `done`
  * holds. The app looks at the machine twice a second and counts a program's

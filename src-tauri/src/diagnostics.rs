@@ -167,10 +167,11 @@ fn machine(facts: &Facts) -> Vec<String> {
             }
         ),
         format!(
-            "Can do here: stop services {}, power plan {}, memory purge {}",
+            "Can do here: stop services {}, power plan {}, memory purge {}, slow a program down {}",
             yes(caps.services),
             yes(caps.power),
-            yes(caps.memory_purge)
+            yes(caps.memory_purge),
+            yes(caps.slow_down)
         ),
         format!("Data folder: {}", state.data_dir),
         match &state.settings_unreadable {

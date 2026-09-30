@@ -20,6 +20,7 @@ fn state() -> EngineState {
             power: true,
             memory_purge: false,
             keep_awake: true,
+            slow_down: true,
             elevated: false,
             can_elevate: true,
         },

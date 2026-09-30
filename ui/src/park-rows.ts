@@ -2,13 +2,9 @@
  * The rows of the Park list's two tables. Each is built from a target and
  * what to do when it is edited; the Targets view keeps the profile.
  */
-import type {
-  ProcessAction,
-  ProcessRow,
-  ProcessTarget,
-  ServiceTarget,
-} from "./bridge.ts";
+import type { ProcessRow, ProcessTarget, ServiceTarget } from "./bridge.ts";
 import { formatBytes } from "./format.ts";
+import { type Handling, handlingOf } from "./profile-edit.ts";
 
 interface Edits {
   toggle(enabled: boolean): void;
@@ -18,7 +14,7 @@ interface Edits {
 export function processRow(
   target: ProcessTarget,
   live: ProcessRow | undefined,
-  edits: Edits & { act(action: ProcessAction): void },
+  edits: Edits & { act(handling: Handling): void },
 ): HTMLTableRowElement {
   const name = document.createElement("td");
   name.className = "name";
@@ -28,17 +24,16 @@ export function processRow(
   select.setAttribute("aria-label", `Action for ${target.name}`);
   for (const [value, label] of [
     ["suspend", "Suspend"],
+    ["slow_down", "Slow down"],
     ["close", "Close & relaunch"],
   ] as const) {
     const option = document.createElement("option");
     option.value = value;
     option.textContent = label;
-    option.selected = target.action === value;
+    option.selected = handlingOf(target) === value;
     select.appendChild(option);
   }
-  select.addEventListener("change", () =>
-    edits.act(select.value as ProcessAction),
-  );
+  select.addEventListener("change", () => edits.act(select.value as Handling));
   action.appendChild(select);
   const now = document.createElement("td");
   const state = document.createElement("span");

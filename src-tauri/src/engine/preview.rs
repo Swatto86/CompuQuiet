@@ -8,7 +8,7 @@ use std::path::Path;
 use std::sync::atomic::Ordering;
 
 use cq_core::{
-    Plan, ProcessInfo, Recommendation, Settings, Skipped, Snapshot, Step, build_plan,
+    Plan, ProcessInfo, Recommendation, Settings, Skipped, Snapshot, Step, audio, build_plan,
     guard_battery, plan_unloads,
 };
 use serde::Serialize;
@@ -32,6 +32,7 @@ pub enum PreviewAction {
     KeepAwake,
     StopService,
     Suspend,
+    SlowDown,
     Close,
     Purge,
     UnloadModel,
@@ -131,6 +132,7 @@ impl Engine {
             self.platform.on_battery(),
             settings.allow_on_battery,
         );
+        self.spare_sound(&mut plan, &snapshot.processes);
         // Asked of the servers only when the option is on, so a machine that
         // does not use it is never spoken to.
         if profile.unload_ai_models {
@@ -141,6 +143,29 @@ impl Engine {
             plan,
             added,
         })
+    }
+
+    /// Leave alone the programs that have sound running, a call or a song.
+    /// Asked only when the plan parks something. A platform that cannot tell
+    /// is passed over quietly; one that could not this time says so, since
+    /// then a call is not spared.
+    fn spare_sound(&self, plan: &mut Plan, processes: &[ProcessInfo]) {
+        if !audio::parks_a_program(plan) {
+            return;
+        }
+        match self.platform.audio_users() {
+            Ok(audible) => audio::guard_audio(plan, processes, &audible),
+            Err(cq_platform::PlatformError::Unsupported(_)) => {}
+            Err(error) => {
+                log::warn!("reading which programs use sound: {error}");
+                plan.skipped.push(Skipped {
+                    name: "Sound".to_string(),
+                    reason: format!(
+                        "who is using it could not be read, so a call is not spared ({error})"
+                    ),
+                });
+            }
+        }
     }
 
     /// What one press would do at this moment. Read-only: it touches no
@@ -194,6 +219,13 @@ pub(super) fn fold(steps: &[Step], processes: &[ProcessInfo]) -> Vec<PreviewItem
             },
             Step::SuspendProcess { pid, name, .. } => PreviewItem {
                 action: PreviewAction::Suspend,
+                name: name.clone(),
+                processes: 1,
+                memory_bytes: held(*pid),
+                relaunch: None,
+            },
+            Step::SlowProcess { pid, name, .. } => PreviewItem {
+                action: PreviewAction::SlowDown,
                 name: name.clone(),
                 processes: 1,
                 memory_bytes: held(*pid),

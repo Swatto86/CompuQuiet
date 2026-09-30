@@ -15,6 +15,11 @@ export interface ProcessTarget {
   name: string;
   action: ProcessAction;
   enabled: boolean;
+  /**
+   * Keep it running at the lowest priority instead of freezing it. Saved on a
+   * suspend, so a release that does not know it reads the file as a suspend.
+   */
+  slow_down?: boolean;
 }
 
 export interface ServiceTarget {
@@ -89,6 +94,8 @@ export interface Capabilities {
   power: boolean;
   memory_purge: boolean;
   keep_awake: boolean;
+  /** A program can be slowed down and put back. */
+  slow_down: boolean;
   elevated: boolean;
   can_elevate: boolean;
 }
@@ -96,6 +103,7 @@ export interface Capabilities {
 export interface Summary {
   services_stopped: number;
   processes_suspended: number;
+  processes_slowed: number;
   processes_closed: number;
   power_changed: boolean;
   memory_purged: boolean;
@@ -130,6 +138,7 @@ export type PreviewAction =
   | "keep_awake"
   | "stop_service"
   | "suspend"
+  | "slow_down"
   | "close"
   | "purge"
   | "unload_model";

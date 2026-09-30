@@ -6,15 +6,16 @@
 //! then services, then processes, then the memory purge last so it reclaims
 //! what the earlier steps released.
 
-use std::collections::HashSet;
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
 use crate::models::ModelServer;
-use crate::policy::{is_critical, is_critical_service, is_helper_of, matches, normalize};
-use crate::profile::{Os, PowerPolicy, ProcessAction, Profile};
-use crate::snapshot::{ProcessInfo, ServiceState, Snapshot};
+use crate::policy::{is_critical_service, normalize};
+use crate::profile::{Os, PowerPolicy, Profile};
+use crate::snapshot::{ServiceState, Snapshot};
+
+mod processes;
 
 /// What this platform, at this privilege level, can actually do.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -24,6 +25,10 @@ pub struct Capabilities {
     pub memory_purge: bool,
     /// Whether the system can be told not to sleep while Quiet Mode is on.
     pub keep_awake: bool,
+    /// Whether a program can be slowed down and put back at its pace. Where
+    /// lowering a priority cannot be undone without administrator rights
+    /// (Linux, macOS), only with them.
+    pub slow_down: bool,
     pub elevated: bool,
     /// Whether elevation is a thing on this platform that the app can request.
     pub can_elevate: bool,
@@ -40,6 +45,13 @@ pub enum Step {
         name: String,
     },
     SuspendProcess {
+        pid: u32,
+        name: String,
+        start_time: u64,
+    },
+    /// Lower its priority, and turn on Efficiency mode where there is one.
+    /// It keeps running, so nothing is lost and nothing can be left frozen.
+    SlowProcess {
         pid: u32,
         name: String,
         start_time: u64,
@@ -71,6 +83,7 @@ impl Step {
             Step::KeepAwake => "Keep the PC awake".to_string(),
             Step::StopService { name } => format!("Stop service {name}"),
             Step::SuspendProcess { name, pid, .. } => format!("Suspend {name} (PID {pid})"),
+            Step::SlowProcess { name, pid, .. } => format!("Slow down {name} (PID {pid})"),
             Step::CloseProcess { name, pid, .. } => format!("Close {name} (PID {pid})"),
             Step::PurgeMemory => "Purge cached memory".to_string(),
             Step::UnloadModel { server, name, .. } => {
@@ -118,7 +131,7 @@ pub fn build_plan(
     }
 
     plan_services(profile, snapshot, os, caps, &mut plan);
-    plan_processes(profile, snapshot, self_pid, os, &mut plan);
+    processes::plan_processes(profile, snapshot, self_pid, os, caps, &mut plan);
 
     if profile.purge_memory {
         if caps.memory_purge {
@@ -205,131 +218,6 @@ fn plan_services(
             ServiceState::Running => plan.steps.push(Step::StopService {
                 name: target.name.clone(),
             }),
-        }
-    }
-}
-
-fn plan_processes(profile: &Profile, snapshot: &Snapshot, self_pid: u32, os: Os, plan: &mut Plan) {
-    let mut claimed: HashSet<u32> = HashSet::new();
-    for target in profile.processes.iter().filter(|target| target.enabled) {
-        if is_critical(&target.name, os) {
-            plan.skip(&target.name, "protected: essential to the desktop");
-            continue;
-        }
-        if profile.keeps_alive(&target.name) {
-            plan.skip(&target.name, "on your keep-alive list");
-            continue;
-        }
-        // A macOS app's renderers and GPU process are executables of their
-        // own, named after it: parking the app parks those too. Closing it
-        // ends them with it.
-        let with_helpers = os == Os::MacOs && target.action == ProcessAction::Suspend;
-        let mut matched: Vec<&ProcessInfo> = Vec::new();
-        let mut spared = false;
-        for process in &snapshot.processes {
-            if process.pid == self_pid || claimed.contains(&process.pid) {
-                continue;
-            }
-            let stem = process.exe_stem();
-            if !matches(&target.name, &process.name, stem.as_deref())
-                && !(with_helpers && is_helper_of(&target.name, &process.name))
-            {
-                continue;
-            }
-            if is_critical(&process.name, os) {
-                continue;
-            }
-            // The kept name may be how this one process shows (a Linux name
-            // cut to 15 bytes) rather than the target's whole name.
-            if profile
-                .keep_alive
-                .iter()
-                .any(|kept| matches(kept, &process.name, stem.as_deref()))
-            {
-                spared = true;
-                continue;
-            }
-            claimed.insert(process.pid);
-            matched.push(process);
-        }
-        // A program's own process first: its helpers end with it, and a
-        // helper met before it has no window to close politely, so it would
-        // be forced to end while its program still runs.
-        matched.sort_by_key(|process| process.program_root(&snapshot.processes).pid != process.pid);
-        let steps: Vec<Step> = matched
-            .iter()
-            .map(|process| park_step(process, target.action, &snapshot.processes, os))
-            .collect();
-        if target.action == ProcessAction::Close
-            && steps
-                .iter()
-                .any(|step| matches!(step, Step::SuspendProcess { .. }))
-        {
-            plan.skip(&target.name, unrelaunchable_reason(os));
-        }
-        plan.steps.extend(steps);
-        if matched.is_empty() {
-            let reason = if spared {
-                "on your keep-alive list"
-            } else {
-                "not running"
-            };
-            plan.skip(&target.name, reason);
-        }
-    }
-}
-
-/// The step that parks `process` as `action` asks. Closing is undone by
-/// relaunching the program, which brings its helpers back with it; a program
-/// that could not be relaunched is suspended instead, so nothing is closed
-/// that Restore could not bring back.
-fn park_step(process: &ProcessInfo, action: ProcessAction, all: &[ProcessInfo], os: Os) -> Step {
-    let origin = process.program_root(all);
-    if action == ProcessAction::Close && !sandboxed(origin, os) {
-        return Step::CloseProcess {
-            pid: process.pid,
-            name: process.name.clone(),
-            exe: origin.exe.clone(),
-            args: origin.args.clone(),
-            cwd: origin.cwd.clone(),
-            start_time: process.start_time,
-        };
-    }
-    Step::SuspendProcess {
-        pid: process.pid,
-        name: process.name.clone(),
-        start_time: process.start_time,
-    }
-}
-
-/// A Flatpak app's path is inside its sandbox and does not exist outside it;
-/// a Snap's runs without its confinement unless started through `snap run`;
-/// a Store (packaged) app on Windows is refused, or runs without its package,
-/// when its executable is started directly. Either way the recorded command
-/// line cannot bring the program back.
-fn sandboxed(origin: &ProcessInfo, os: Os) -> bool {
-    let Some(exe) = origin.exe.as_deref() else {
-        return false;
-    };
-    match os {
-        Os::Linux => exe.starts_with("/app") || exe.starts_with("/snap"),
-        Os::Windows => {
-            let path = exe.to_string_lossy().to_ascii_lowercase();
-            path.contains(r"\windowsapps\") || path.contains(r"\systemapps\")
-        }
-        Os::MacOs => false,
-    }
-}
-
-/// Why a program that cannot be started again is suspended when closing was
-/// asked for.
-fn unrelaunchable_reason(os: Os) -> &'static str {
-    match os {
-        Os::Windows => {
-            "a Store app cannot be started again from its recorded path, so it is suspended instead of closed"
-        }
-        _ => {
-            "a Flatpak or Snap app cannot be started again from outside its sandbox, so it is suspended instead of closed"
         }
     }
 }

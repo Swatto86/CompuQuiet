@@ -30,8 +30,8 @@ pub use error::{PlatformError, Result};
 pub use spawn::run_tool;
 
 use cq_core::{
-    Activity, Capabilities, GpuInfo, LoadedModel, Marker, ModelServers, Os, PowerPlan, ProcessInfo,
-    ServiceInfo, Snapshot, SystemStats,
+    Activity, Capabilities, GpuInfo, LoadedModel, Marker, ModelServers, Os, Pace, PowerPlan,
+    ProcessInfo, ServiceInfo, Snapshot, SystemStats,
 };
 
 pub trait Platform: Send + Sync {
@@ -93,6 +93,15 @@ pub trait Platform: Send + Sync {
         }
     }
 
+    /// The processes that hold a stream of sound that is running, playing or
+    /// recording: a call, a song. An error says why the platform cannot tell,
+    /// and nothing is then spared for sound.
+    fn audio_users(&self) -> Result<Vec<u32>> {
+        Err(PlatformError::Unsupported(
+            "which programs use sound cannot be read on this system".to_string(),
+        ))
+    }
+
     /// Which processes own a visible window and which is in front. Platforms
     /// that cannot tell return the default, and the scanner then only reports
     /// software it recognises.
@@ -104,6 +113,25 @@ pub trait Platform: Send + Sync {
     /// different process is reported as not running rather than acted on.
     fn suspend(&self, pid: u32, start_time: u64) -> Result<()>;
     fn resume(&self, pid: u32, start_time: u64) -> Result<()>;
+
+    /// Lower the process's priority and, where the system has one, turn on its
+    /// efficiency mode, so it runs on what the machine has to spare. Returns
+    /// how it ran before, for [`Self::speed_up`]. Only where
+    /// [`Capabilities::slow_down`] says it can be put back.
+    fn slow_down(&self, _pid: u32, _start_time: u64) -> Result<Pace> {
+        Err(PlatformError::Unsupported(
+            "slowing a program down is not available on this system".to_string(),
+        ))
+    }
+
+    /// Put a slowed process back as it was (`None`: as programs usually run),
+    /// unless it has been changed since: then it is someone's choice, and
+    /// stays. Nothing to do for a process that was never slowed.
+    fn speed_up(&self, _pid: u32, _start_time: u64, _previous: Option<&Pace>) -> Result<()> {
+        Err(PlatformError::Unsupported(
+            "slowing a program down is not available on this system".to_string(),
+        ))
+    }
 
     /// Ask the process to exit; force it after a grace period.
     fn close(&self, pid: u32, start_time: u64) -> Result<()>;

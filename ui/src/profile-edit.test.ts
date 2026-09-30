@@ -8,6 +8,7 @@ import {
   addProgram,
   addProcess,
   addService,
+  handlingOf,
   normalizeName,
   rebase,
   removeKeepAlive,
@@ -79,7 +80,7 @@ test("services are case-insensitive duplicates and keep-alive removes a parked p
 });
 
 test("rows can be toggled, retargeted and removed by index", () => {
-  let edited = setProcess(profile(), 0, { enabled: false, action: "close" });
+  let edited = setProcess(profile(), 0, { enabled: false, handling: "close" });
   assert.deepEqual(edited.processes[0], {
     name: "OneDrive",
     action: "close",
@@ -94,6 +95,34 @@ test("rows can be toggled, retargeted and removed by index", () => {
     0,
     "an out-of-range index is a no-op",
   );
+});
+
+test("a slowed program is a suspend with a flag, which an older release reads as a suspend", () => {
+  const slowed = setProcess(profile(), 0, { handling: "slow_down" });
+  assert.deepEqual(slowed.processes[0], {
+    name: "OneDrive",
+    action: "suspend",
+    enabled: true,
+    slow_down: true,
+  });
+  assert.equal(handlingOf(slowed.processes[0]!), "slow_down");
+  // Back to a plain suspend, or on to a close, leaves no flag behind.
+  const suspended = setProcess(slowed, 0, { handling: "suspend" });
+  assert.equal("slow_down" in suspended.processes[0]!, false);
+  const closed = setProcess(slowed, 0, { handling: "close" });
+  assert.deepEqual(closed.processes[0], {
+    name: "OneDrive",
+    action: "close",
+    enabled: true,
+  });
+  assert.equal(handlingOf(closed.processes[0]!), "close");
+  // Toggling it keeps how it is handled.
+  const off = setProcess(slowed, 0, { enabled: false });
+  assert.equal(handlingOf(off.processes[0]!), "slow_down");
+  // A new row can be added slowed.
+  const added = addProcess(profile(), "Dropbox", "slow_down");
+  assert.ok(added.ok);
+  assert.equal(handlingOf(added.profile.processes.at(-1)!), "slow_down");
 });
 
 test("removing a row records it under Never touch, so a scan does not bring it back", () => {

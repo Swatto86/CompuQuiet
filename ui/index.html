@@ -176,7 +176,7 @@
             <div class="card card-wide">
               <div class="card-head">
                 <h3>Programs to park</h3>
-                <span class="muted">Suspend freezes a program and keeps its state. Close quits it and opens it again when you restore. Changes stay unsaved until you press Save changes.</span>
+                <span class="muted">Suspend freezes a program and keeps its state. Slow down keeps it running at the lowest priority, for a program that misbehaves when frozen. Close quits it and opens it again when you restore. A program with a call or sound running is left alone. Changes stay unsaved until you press Save changes.</span>
               </div>
               <form id="process-add" class="row">
                 <label class="grow">
@@ -186,10 +186,12 @@
                 </label>
                 <select id="process-action" aria-label="Action for the new program">
                   <option value="suspend">Suspend</option>
+                  <option value="slow_down">Slow down</option>
                   <option value="close">Close &amp; relaunch</option>
                 </select>
                 <button type="submit" class="small">Add</button>
               </form>
+              <p id="slow-hint" class="muted" hidden></p>
               <table class="targets">
                 <caption class="sr-only">Programs to park</caption>
                 <thead><tr><th scope="col">Enabled</th><th scope="col">Program</th><th scope="col">Action</th><th scope="col">Now</th><th scope="col"><span class="sr-only">Remove</span></th></tr></thead>

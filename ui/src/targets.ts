@@ -3,11 +3,15 @@ import {
   errorMessage,
   type Capabilities,
   type Os,
-  type ProcessAction,
   type Profile,
 } from "./bridge.ts";
 import { showDialog, toast } from "./dialog.ts";
-import { awakeHint, matchesFilter, serviceHint } from "./park-list.ts";
+import {
+  awakeHint,
+  matchesFilter,
+  serviceHint,
+  slowHint,
+} from "./park-list.ts";
 import { orNote, processRow, serviceRow } from "./park-rows.ts";
 import { Pickers } from "./pickers.ts";
 import {
@@ -23,6 +27,7 @@ import {
   setProcess,
   setService,
   type EditResult,
+  type Handling,
 } from "./profile-edit.ts";
 
 function byId<T extends HTMLElement>(id: string): T {
@@ -66,10 +71,10 @@ export class Targets {
     byId<HTMLFormElement>("process-add").addEventListener("submit", (event) => {
       event.preventDefault();
       const name = byId<HTMLInputElement>("process-name");
-      const action = byId<HTMLSelectElement>("process-action")
-        .value as ProcessAction;
+      const handling = byId<HTMLSelectElement>("process-action")
+        .value as Handling;
       this.apply(
-        addProcess(this.working, name.value, action),
+        addProcess(this.working, name.value, handling),
         "process-targets",
         () => (name.value = ""),
       );
@@ -137,6 +142,9 @@ export class Targets {
     const awake = byId<HTMLInputElement>("opt-awake");
     awake.disabled = !caps.keep_awake && !awake.checked;
     byId("awake-hint").textContent = awakeHint(caps);
+    const slow = byId("slow-hint");
+    slow.textContent = slowHint(caps);
+    slow.hidden = slow.textContent === "";
   }
 
   setProfile(profile: Profile): void {
@@ -253,8 +261,8 @@ export class Targets {
                 this.working = setProcess(this.working, index, { enabled });
                 this.updateStatus();
               },
-              act: (action) => {
-                this.working = setProcess(this.working, index, { action });
+              act: (handling) => {
+                this.working = setProcess(this.working, index, { handling });
                 this.updateStatus();
               },
               remove: () => {

@@ -134,6 +134,7 @@ impl Platform for MacOs {
             power: false,
             memory_purge: unix::is_root(),
             keep_awake: Path::new(CAFFEINATE).is_file(),
+            slow_down: unix::is_root(),
             elevated: unix::is_root(),
             can_elevate: false,
         }
@@ -190,6 +191,14 @@ impl Platform for MacOs {
 
     fn resume(&self, pid: u32, start_time: u64) -> Result<()> {
         unix::resume(&self.sampler, pid, start_time)
+    }
+
+    fn slow_down(&self, pid: u32, start_time: u64) -> Result<cq_core::Pace> {
+        unix::slow_down(&self.sampler, pid, start_time)
+    }
+
+    fn speed_up(&self, pid: u32, start_time: u64, previous: Option<&cq_core::Pace>) -> Result<()> {
+        unix::speed_up(&self.sampler, pid, start_time, previous)
     }
 
     fn close(&self, pid: u32, start_time: u64) -> Result<()> {

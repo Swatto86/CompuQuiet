@@ -107,10 +107,13 @@ describe("the window, by keyboard", () => {
     it("keeps focus on an Action select that the arrow keys change", async () => {
       const select = 'select[aria-label="Action for Slack"]';
       await focus(select);
+      // The menu runs Suspend, Slow down, Close & relaunch.
+      await browser.keys("ArrowDown");
+      assert.equal(await $(select).getValue(), "slow_down");
       await browser.keys("ArrowDown");
       assert.equal(await $(select).getValue(), "close");
       assert.equal(await focused(), "Action for Slack");
-      await browser.keys("ArrowUp");
+      await browser.keys(["ArrowUp", "ArrowUp"]);
       assert.equal(await $(select).getValue(), "suspend");
       assert.equal(await focused(), "Action for Slack");
     });

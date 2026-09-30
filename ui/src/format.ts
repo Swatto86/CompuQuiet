@@ -79,6 +79,10 @@ export function summaryLines(summary: Summary): string[] {
     lines.push(
       `${plural(summary.processes_suspended, "process", "processes")} suspended`,
     );
+  if (summary.processes_slowed > 0)
+    lines.push(
+      `${plural(summary.processes_slowed, "process", "processes")} slowed down (back to full speed on restore)`,
+    );
   if (summary.processes_closed > 0)
     lines.push(
       `${plural(summary.processes_closed, "process", "processes")} closed (relaunched on restore)`,

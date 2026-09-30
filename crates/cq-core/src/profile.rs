@@ -36,19 +36,76 @@ impl Os {
 ///
 /// `Suspend` freezes it in place: no CPU, state kept, resumed exactly where it
 /// was. `Close` asks it to exit and relaunches it on restore, which also frees
-/// its memory at the cost of whatever it had open.
+/// its memory at the cost of whatever it had open. `SlowDown` leaves it
+/// running at the lowest priority (and in Efficiency mode where Windows has
+/// it), for a program that misbehaves when frozen: it keeps its memory and
+/// only uses what the machine has to spare.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ProcessAction {
     Suspend,
     Close,
+    SlowDown,
 }
 
+/// A program to park, and how.
+///
+/// Saved so that a 1.1.7 build still loads the file: it knows two actions
+/// only, so a slowed program is a suspend with `slow_down` set, which that
+/// build reads as the plain suspend it does.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(from = "TargetFile", into = "TargetFile")]
 pub struct ProcessTarget {
     pub name: String,
     pub action: ProcessAction,
     pub enabled: bool,
+}
+
+#[derive(Serialize, Deserialize)]
+struct TargetFile {
+    name: String,
+    action: KnownAction,
+    enabled: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    slow_down: bool,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum KnownAction {
+    Suspend,
+    Close,
+}
+
+impl From<ProcessTarget> for TargetFile {
+    fn from(target: ProcessTarget) -> TargetFile {
+        let (action, slow_down) = match target.action {
+            ProcessAction::Suspend => (KnownAction::Suspend, false),
+            ProcessAction::Close => (KnownAction::Close, false),
+            ProcessAction::SlowDown => (KnownAction::Suspend, true),
+        };
+        TargetFile {
+            name: target.name,
+            action,
+            enabled: target.enabled,
+            slow_down,
+        }
+    }
+}
+
+impl From<TargetFile> for ProcessTarget {
+    fn from(file: TargetFile) -> ProcessTarget {
+        let action = match (file.action, file.slow_down) {
+            (KnownAction::Suspend, true) => ProcessAction::SlowDown,
+            (KnownAction::Suspend, false) => ProcessAction::Suspend,
+            (KnownAction::Close, _) => ProcessAction::Close,
+        };
+        ProcessTarget {
+            name: file.name,
+            action,
+            enabled: file.enabled,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -273,6 +330,54 @@ mod tests {
         );
         let old: Profile = serde_json::from_value(value).unwrap();
         assert!(!old.unload_ai_models);
+    }
+
+    #[test]
+    fn a_slowed_program_is_saved_as_a_suspend_that_an_older_build_can_read() {
+        let target = |action| ProcessTarget {
+            name: "Dropbox".into(),
+            action,
+            enabled: true,
+        };
+        let slowed = serde_json::to_value(target(ProcessAction::SlowDown)).unwrap();
+        assert_eq!(slowed["action"], "suspend");
+        assert_eq!(slowed["slow_down"], true);
+        let back: ProcessTarget = serde_json::from_value(slowed.clone()).unwrap();
+        assert_eq!(back.action, ProcessAction::SlowDown);
+
+        // What 1.1.7 declares: two actions and no `slow_down`; unknown
+        // fields are ignored, so it reads the slowed one as a suspend.
+        #[derive(Deserialize)]
+        #[serde(rename_all = "snake_case")]
+        enum Old {
+            Suspend,
+            Close,
+        }
+        #[derive(Deserialize)]
+        struct OldTarget {
+            action: Old,
+        }
+        let old: OldTarget = serde_json::from_value(slowed).unwrap();
+        assert!(matches!(old.action, Old::Suspend));
+        let closed = serde_json::to_value(target(ProcessAction::Close)).unwrap();
+        assert!(matches!(
+            serde_json::from_value::<OldTarget>(closed.clone())
+                .unwrap()
+                .action,
+            Old::Close
+        ));
+        assert!(closed.get("slow_down").is_none(), "{closed}");
+
+        // A file from before it existed, and one that sets it on a close.
+        let plain: ProcessTarget =
+            serde_json::from_str(r#"{"name":"Slack","action":"suspend","enabled":false}"#).unwrap();
+        assert_eq!(plain.action, ProcessAction::Suspend);
+        assert!(!plain.enabled);
+        let odd: ProcessTarget = serde_json::from_str(
+            r#"{"name":"Slack","action":"close","enabled":true,"slow_down":true}"#,
+        )
+        .unwrap();
+        assert_eq!(odd.action, ProcessAction::Close);
     }
 
     #[test]

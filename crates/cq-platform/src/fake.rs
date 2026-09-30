@@ -12,8 +12,8 @@ use std::sync::Mutex;
 use std::time::Duration;
 
 use cq_core::{
-    Activity, Capabilities, GpuInfo, LoadedModel, Marker, ModelServers, PowerPlan, ProcessInfo,
-    ServiceInfo, ServiceState, Snapshot, SystemStats,
+    Activity, Capabilities, GpuInfo, LoadedModel, Marker, ModelServers, Pace, PowerPlan,
+    ProcessInfo, ServiceInfo, ServiceState, Snapshot, SystemStats,
 };
 
 use crate::Platform;
@@ -21,6 +21,8 @@ use crate::error::{PlatformError, Result};
 
 mod controls;
 mod faults;
+mod paces;
+use controls::{SERVICES, process};
 pub use faults::{Call, Failure};
 
 const GIB: u64 = 1024 * 1024 * 1024;
@@ -30,25 +32,14 @@ const MIB: u64 = 1024 * 1024;
 /// deleted, and restoring it falls back to Balanced, as on Windows.
 const PLANS: [&str; 2] = ["balanced", "performance"];
 
-/// The services this machine has: name, what the Services list calls it, and
-/// the state it starts in. `AudioSrv` is one that Quiet Mode must never stop.
-const SERVICES: [(&str, &str, ServiceState); 6] = [
-    ("SysMain", "Superfetch", ServiceState::Running),
-    ("WSearch", "Windows Search", ServiceState::Running),
-    (
-        "DiagTrack",
-        "Connected User Experiences",
-        ServiceState::Stopped,
-    ),
-    ("Spooler", "Print Spooler", ServiceState::Running),
-    ("Fax", "Fax", ServiceState::Stopped),
-    ("AudioSrv", "Windows Audio", ServiceState::Running),
-];
-
 #[derive(Default)]
 struct State {
     processes: Vec<ProcessInfo>,
     suspended: HashSet<u32>,
+    /// Running at the lowest priority, in Efficiency mode.
+    slowed: HashSet<u32>,
+    /// The programs, by name, that have a stream of sound running.
+    audible: Vec<String>,
     services: HashMap<String, ServiceState>,
     power: Option<PowerPlan>,
     purges: u32,
@@ -74,20 +65,6 @@ struct State {
 
 pub struct Fake {
     state: Mutex<State>,
-}
-
-fn process(pid: u32, name: &str, memory_mib: u64) -> ProcessInfo {
-    ProcessInfo {
-        pid,
-        name: name.to_string(),
-        exe: Some(PathBuf::from(format!("C:/fake/{name}"))),
-        args: vec![name.to_string(), "--background".to_string()],
-        cwd: Some(PathBuf::from("C:/fake")),
-        memory_bytes: memory_mib * MIB,
-        cpu_percent: 1.5,
-        start_time: 1_700_000_000 + u64::from(pid),
-        parent: None,
-    }
 }
 
 impl Default for Fake {
@@ -167,6 +144,7 @@ impl Platform for Fake {
             power: true,
             memory_purge: true,
             keep_awake: true,
+            slow_down: true,
             elevated: true,
             can_elevate: false,
         }
@@ -274,12 +252,25 @@ impl Platform for Fake {
         })
     }
 
+    fn slow_down(&self, pid: u32, start_time: u64) -> Result<Pace> {
+        self.lower(pid, start_time)
+    }
+
+    fn speed_up(&self, pid: u32, start_time: u64, previous: Option<&Pace>) -> Result<()> {
+        self.raise(pid, start_time, previous)
+    }
+
+    fn audio_users(&self) -> Result<Vec<u32>> {
+        self.audible_pids()
+    }
+
     fn close(&self, pid: u32, start_time: u64) -> Result<()> {
         let mut state = self.lock();
         let (index, name) = Self::find(&state, pid, start_time)?;
         state.guarded(Call::Close, &name, |state| {
             state.processes.remove(index);
             state.suspended.remove(&pid);
+            state.slowed.remove(&pid);
             Ok(())
         })
     }

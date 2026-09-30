@@ -4,10 +4,33 @@
  * side validates again on save; this layer exists so the page can explain a
  * refusal before the round trip.
  */
-import type { ProcessAction, Profile } from "./bridge.ts";
+import type { ProcessAction, ProcessTarget, Profile } from "./bridge.ts";
 
 export type EditResult =
   { ok: true; profile: Profile } | { ok: false; reason: string };
+
+/**
+ * What the action menu offers for a program. A slowed one is saved as a
+ * suspend with `slow_down` set (see `ProcessTarget`), so the menu and the
+ * file differ by one flag, and only this file knows it.
+ */
+export type Handling = ProcessAction | "slow_down";
+
+export function handlingOf(target: ProcessTarget): Handling {
+  return target.action === "suspend" && target.slow_down === true
+    ? "slow_down"
+    : target.action;
+}
+
+function handled(target: ProcessTarget, handling: Handling): ProcessTarget {
+  const next: ProcessTarget = {
+    ...target,
+    action: handling === "close" ? "close" : "suspend",
+  };
+  if (handling === "slow_down") next.slow_down = true;
+  else delete next.slow_down;
+  return next;
+}
 
 export function normalizeName(name: string): string {
   const trimmed = name.trim();
@@ -43,7 +66,7 @@ function withName(list: string[], name: string): string[] {
 export function addProcess(
   profile: Profile,
   name: string,
-  action: ProcessAction,
+  handling: Handling,
 ): EditResult {
   const problem = checkName(name, "program");
   if (problem) return { ok: false, reason: problem };
@@ -63,7 +86,10 @@ export function addProcess(
       ...profile,
       processes: [
         ...profile.processes,
-        { name: name.trim(), action, enabled: true },
+        handled(
+          { name: name.trim(), action: "suspend", enabled: true },
+          handling,
+        ),
       ],
     },
   };
@@ -174,13 +200,15 @@ export function removeKeepAlive(profile: Profile, index: number): Profile {
 export function setProcess(
   profile: Profile,
   index: number,
-  change: { enabled?: boolean; action?: ProcessAction },
+  change: { enabled?: boolean; handling?: Handling },
 ): Profile {
   return {
     ...profile,
-    processes: profile.processes.map((target, i) =>
-      i === index ? { ...target, ...change } : target,
-    ),
+    processes: profile.processes.map((target, i) => {
+      if (i !== index) return target;
+      const next = { ...target, enabled: change.enabled ?? target.enabled };
+      return change.handling ? handled(next, change.handling) : next;
+    }),
   };
 }
 

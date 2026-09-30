@@ -1,4 +1,6 @@
 use super::*;
+use crate::plan::Step;
+use crate::snapshot::{Pace, PowerPlan};
 
 fn sample() -> Journal {
     let mut journal = Journal::new(1_700_000_000);
@@ -145,6 +147,51 @@ fn every_undoable_step_is_journaled_before_it_runs() {
     // Unknown until it has happened, or nothing to undo: written afterwards.
     assert_eq!(DoneStep::intended(&Step::SetPerformancePower, None), None);
     assert_eq!(DoneStep::intended(&Step::PurgeMemory, None), None);
+}
+
+#[test]
+fn a_slowed_program_is_journaled_unknown_then_known_and_put_back_as_it_was() {
+    let slow = Step::SlowProcess {
+        pid: 9,
+        name: "Dropbox.exe".into(),
+        start_time: 5,
+    };
+    let written_first = DoneStep::intended(&slow, None).unwrap();
+    // Before the step the pace is not known yet; a restore of that entry
+    // puts back the usual one.
+    assert_eq!(
+        written_first.restore(),
+        Some(RestoreStep::SpeedUpProcess {
+            pid: 9,
+            name: "Dropbox.exe".into(),
+            start_time: 5,
+            previous: None,
+        })
+    );
+    let pace = Pace {
+        priority: 0x80,
+        efficiency: Some(false),
+    };
+    let done = DoneStep::ProcessSlowed {
+        pid: 9,
+        name: "Dropbox.exe".into(),
+        start_time: 5,
+        previous: Some(pace),
+    };
+    let Some(RestoreStep::SpeedUpProcess { previous, .. }) = done.restore() else {
+        panic!("a slowed program has an undo");
+    };
+    assert_eq!(previous, Some(pace));
+    assert_eq!(done.describe(), "slowed Dropbox.exe (PID 9)");
+
+    let mut journal = Journal::new(1);
+    journal.record(written_first);
+    journal.record(done);
+    assert_eq!(journal.summary().processes_slowed, 2);
+    assert_eq!(journal.summary().processes_suspended, 0);
+    let dir = tempfile::tempdir().unwrap();
+    journal.save(dir.path()).unwrap();
+    assert_eq!(Journal::load(dir.path()).unwrap(), Some(journal));
 }
 
 #[test]

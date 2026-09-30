@@ -2,9 +2,40 @@
 //! engine: time passing, the user opening and closing programs, and a look at
 //! whether something holds it awake, and how it looks to the dashboard.
 
-use cq_core::{GpuInfo, LoadedModel, Marker, ModelServer, ModelServers};
+use std::path::PathBuf;
 
-use super::{Call, Fake, GIB, PlatformError, Result, process};
+use cq_core::{GpuInfo, LoadedModel, Marker, ModelServer, ModelServers, ProcessInfo, ServiceState};
+
+use super::{Call, Fake, GIB, MIB, PlatformError, Result};
+
+/// The services this machine has: name, what the Services list calls it, and
+/// the state it starts in. `AudioSrv` is one that Quiet Mode must never stop.
+pub(super) const SERVICES: [(&str, &str, ServiceState); 6] = [
+    ("SysMain", "Superfetch", ServiceState::Running),
+    ("WSearch", "Windows Search", ServiceState::Running),
+    (
+        "DiagTrack",
+        "Connected User Experiences",
+        ServiceState::Stopped,
+    ),
+    ("Spooler", "Print Spooler", ServiceState::Running),
+    ("Fax", "Fax", ServiceState::Stopped),
+    ("AudioSrv", "Windows Audio", ServiceState::Running),
+];
+
+pub(super) fn process(pid: u32, name: &str, memory_mib: u64) -> ProcessInfo {
+    ProcessInfo {
+        pid,
+        name: name.to_string(),
+        exe: Some(PathBuf::from(format!("C:/fake/{name}"))),
+        args: vec![name.to_string(), "--background".to_string()],
+        cwd: Some(PathBuf::from("C:/fake")),
+        memory_bytes: memory_mib * MIB,
+        cpu_percent: 1.5,
+        start_time: 1_700_000_000 + u64::from(pid),
+        parent: None,
+    }
+}
 
 /// The graphics card the fake machine starts with.
 pub(super) fn seeded_gpu() -> Vec<GpuInfo> {

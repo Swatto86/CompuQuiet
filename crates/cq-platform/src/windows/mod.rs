@@ -7,36 +7,34 @@
 //! standby-list purge (`NtSetSystemInformation`, what RAMMap uses), the
 //! file-cache figure (`GetPerformanceInfo`), the list of services and the
 //! dependents of one (`EnumServicesStatusExW`, `EnumDependentServicesW`),
-//! window enumeration, starting a program with
+//! window enumeration, a program's priority class and Efficiency mode
+//! (`SetPriorityClass`, `SetProcessInformation`), starting a program with
 //! the desktop shell's token (`CreateProcessWithTokenW`), holding off sleep
-//! (`SetThreadExecutionState`), and the UAC relaunch through `ShellExecuteW`
-//! with the `runas` verb.
+//! (`SetThreadExecutionState`), which programs have sound running (the audio
+//! session interfaces of Core Audio, through the `windows` crate) and the UAC
+//! relaunch through `ShellExecuteW` with the `runas` verb.
 #![allow(unsafe_code)]
 
 mod activity;
+mod audio;
 mod awake;
 mod launch;
 mod memory;
+mod pace;
 mod power;
 mod process;
 mod service_list;
 mod services;
 mod session;
+mod token;
 
-use std::ffi::{CStr, c_void};
+use std::ffi::CStr;
 use std::path::Path;
 use std::ptr::{null, null_mut};
 use std::time::Duration;
 
 use cq_core::{Activity, Capabilities, PowerPlan, ServiceInfo, Snapshot, SystemStats};
-use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, HANDLE, LUID};
-use windows_sys::Win32::Security::{
-    AdjustTokenPrivileges, GetTokenInformation, LUID_AND_ATTRIBUTES, LookupPrivilegeValueW,
-    SE_PRIVILEGE_ENABLED, TOKEN_ADJUST_PRIVILEGES, TOKEN_ELEVATION, TOKEN_PRIVILEGES, TOKEN_QUERY,
-    TokenElevation,
-};
 use windows_sys::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress};
-use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
 use windows_sys::Win32::UI::Shell::ShellExecuteW;
 use windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
 
@@ -46,7 +44,6 @@ use crate::procs::Sampler;
 use crate::spawn::{launchable, run_tool, spawn_detached};
 
 const GRACE: Duration = Duration::from_secs(5);
-const ERROR_NOT_ALL_ASSIGNED: u32 = 1300;
 
 pub struct Windows {
     sampler: Sampler,
@@ -58,7 +55,7 @@ impl Windows {
     pub fn new() -> Windows {
         Windows {
             sampler: Sampler::new(),
-            elevated: is_elevated(),
+            elevated: token::is_elevated(),
             awake: awake::Hold::default(),
         }
     }
@@ -81,6 +78,7 @@ impl Platform for Windows {
             power: true,
             memory_purge: self.elevated,
             keep_awake: true,
+            slow_down: true,
             elevated: self.elevated,
             can_elevate: !self.elevated,
         }
@@ -132,6 +130,18 @@ impl Platform for Windows {
 
     fn resume(&self, pid: u32, start_time: u64) -> Result<()> {
         self.signal_process(pid, start_time, c"NtResumeProcess")
+    }
+
+    fn slow_down(&self, pid: u32, start_time: u64) -> Result<cq_core::Pace> {
+        self.lower(pid, start_time)
+    }
+
+    fn speed_up(&self, pid: u32, start_time: u64, previous: Option<&cq_core::Pace>) -> Result<()> {
+        self.raise(pid, start_time, previous)
+    }
+
+    fn audio_users(&self) -> Result<Vec<u32>> {
+        audio::users()
     }
 
     fn close(&self, pid: u32, start_time: u64) -> Result<()> {
@@ -279,74 +289,6 @@ fn ntdll_function<T: Copy>(symbol: &CStr) -> Result<T> {
         })?;
         Ok(std::mem::transmute_copy(&address))
     }
-}
-
-fn is_elevated() -> bool {
-    let mut token: HANDLE = null_mut();
-    let mut elevation = TOKEN_ELEVATION { TokenIsElevated: 0 };
-    let mut returned = 0u32;
-    // SAFETY: querying our own token into a correctly sized local; the token
-    // handle is closed on every path after a successful open.
-    unsafe {
-        if OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &raw mut token) == 0 {
-            return false;
-        }
-        let ok = GetTokenInformation(
-            token,
-            TokenElevation,
-            (&raw mut elevation).cast::<c_void>(),
-            std::mem::size_of::<TOKEN_ELEVATION>() as u32,
-            &raw mut returned,
-        );
-        CloseHandle(token);
-        ok != 0 && elevation.TokenIsElevated != 0
-    }
-}
-
-fn enable_privilege(name: &str) -> Result<()> {
-    let wide_name = wide(name);
-    let mut token: HANDLE = null_mut();
-    let mut luid = LUID {
-        LowPart: 0,
-        HighPart: 0,
-    };
-    // SAFETY: standard token privilege adjustment on our own process token
-    // with fully initialised structures; the handle is closed on every path.
-    unsafe {
-        if OpenProcessToken(
-            GetCurrentProcess(),
-            TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY,
-            &raw mut token,
-        ) == 0
-        {
-            return Err(PlatformError::from_os(
-                "opening the process token",
-                std::io::Error::last_os_error(),
-            ));
-        }
-        if LookupPrivilegeValueW(null(), wide_name.as_ptr(), &raw mut luid) == 0 {
-            CloseHandle(token);
-            return Err(PlatformError::from_os(
-                format!("looking up {name}"),
-                std::io::Error::last_os_error(),
-            ));
-        }
-        let privileges = TOKEN_PRIVILEGES {
-            PrivilegeCount: 1,
-            Privileges: [LUID_AND_ATTRIBUTES {
-                Luid: luid,
-                Attributes: SE_PRIVILEGE_ENABLED,
-            }],
-        };
-        let adjusted =
-            AdjustTokenPrivileges(token, 0, &raw const privileges, 0, null_mut(), null_mut());
-        let last = GetLastError();
-        CloseHandle(token);
-        if adjusted == 0 || last == ERROR_NOT_ALL_ASSIGNED {
-            return Err(PlatformError::NeedsElevation);
-        }
-    }
-    Ok(())
 }
 
 #[cfg(test)]

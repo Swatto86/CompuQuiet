@@ -5,6 +5,7 @@
 //! the machine turns into a plan, how executed steps are journaled so they can
 //! be undone in reverse, and how settings persist.
 
+pub mod audio;
 pub mod catalogue;
 pub mod error;
 pub mod instance;
@@ -19,6 +20,7 @@ pub mod snapshot;
 pub mod store;
 pub mod watch;
 
+pub use audio::guard_audio;
 pub use error::CoreError;
 pub use journal::{DoneStep, Journal, Marker, RestoreStep};
 pub use models::{LoadedModel, ModelServer, ModelServers, plan_unloads};
@@ -27,5 +29,6 @@ pub use profile::{Os, PowerPolicy, ProcessAction, ProcessTarget, Profile, Servic
 pub use recommend::{Recommendation, RecommendationKind, Risk, recommend};
 pub use settings::{Settings, Theme};
 pub use snapshot::{
-    Activity, GpuInfo, PowerPlan, ProcessInfo, ServiceInfo, ServiceState, Snapshot, SystemStats,
+    Activity, GpuInfo, Pace, PowerPlan, ProcessInfo, ServiceInfo, ServiceState, Snapshot,
+    SystemStats,
 };

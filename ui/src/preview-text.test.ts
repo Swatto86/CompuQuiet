@@ -27,6 +27,10 @@ test("a step reads as what it does, with how many processes and how much they ho
     "Suspend Slack.exe (3 processes, 1.5 GB)",
   );
   assert.equal(
+    itemLine(item({ action: "slow_down" })).text,
+    "Slow down Slack.exe (1 process, 640 MB). It keeps running at the lowest priority",
+  );
+  assert.equal(
     itemLine(item({ action: "stop_service", name: "SysMain", processes: 0 }))
       .text,
     "Stop service SysMain",

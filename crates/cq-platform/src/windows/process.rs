@@ -79,7 +79,7 @@ impl Windows {
     }
 
     /// Why a process could not be opened or acted on.
-    fn open_error(&self, pid: u32, error: std::io::Error) -> PlatformError {
+    pub(super) fn open_error(&self, pid: u32, error: std::io::Error) -> PlatformError {
         classify_process_error(pid, error, self.elevated)
     }
 }

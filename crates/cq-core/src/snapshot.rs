@@ -78,6 +78,19 @@ pub struct ServiceInfo {
     pub needed_by: Vec<String>,
 }
 
+/// How a process ran before it was slowed down, so it can be put back. The
+/// platform's own terms, handed back to it as they were: a Windows priority
+/// class or a Unix nice value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Pace {
+    pub priority: i32,
+    /// Windows' Efficiency mode, when the program had chosen: `Some(true)` it
+    /// had asked for it, `Some(false)` it had opted out, `None` the system
+    /// decided.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub efficiency: Option<bool>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PowerPlan {
     pub id: String,

@@ -57,6 +57,17 @@ export function serviceHint(caps: Capabilities, os: Os): string {
   return "Windows service names, as shown in services.msc." + essential;
 }
 
+/**
+ * Why "Slow down" will not do anything here, or nothing when it will: a
+ * lowered priority can only be put back with administrator rights on Linux
+ * and macOS, so without them such a program is left running as it is.
+ */
+export function slowHint(caps: Capabilities): string {
+  return caps.slow_down
+    ? ""
+    : "Slow down needs administrator rights on this system, so a program set to it is left as it is. Suspend or Close still work.";
+}
+
 /** What the "keep the PC awake" option says about whether this system can. */
 export function awakeHint(caps: Capabilities): string {
   return caps.keep_awake

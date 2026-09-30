@@ -330,3 +330,7 @@ mod journal_tests;
 mod models_tests;
 #[cfg(all(test, feature = "fake-platform"))]
 mod settings_tests;
+#[cfg(all(test, feature = "fake-platform"))]
+mod slow_tests;
+#[cfg(all(test, feature = "fake-platform"))]
+mod sound_tests;
