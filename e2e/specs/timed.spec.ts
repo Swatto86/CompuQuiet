@@ -6,6 +6,7 @@
  */
 import { strict as assert } from "node:assert";
 
+import { choose } from "./choose.ts";
 import {
   advanceUntil,
   clickTab,
@@ -34,7 +35,7 @@ const ready = async (): Promise<boolean> =>
 
 async function chooseAndStart(choice: string): Promise<void> {
   await clickTab("dashboard");
-  await $("#until-choice").selectByAttribute("value", choice);
+  await choose("#until-choice", choice);
   await $("#toggle").click();
   await waitForPill("Quiet");
 }
@@ -92,7 +93,7 @@ describe("a run that ends by itself", () => {
   it("waits for a program to close, and for it to stay closed", async () => {
     await fakeProgram("launcher.exe", true);
     await clickTab("dashboard");
-    await $("#until-choice").selectByAttribute("value", "program");
+    await choose("#until-choice", "program");
     await $("#until-program").setValue("launcher.exe");
     await $("#toggle").click();
     await waitForPill("Quiet");
@@ -118,13 +119,13 @@ describe("a run that ends by itself", () => {
 
   it("refuses to wait for a program that is not running, and starts nothing", async () => {
     await clickTab("dashboard");
-    await $("#until-choice").selectByAttribute("value", "program");
+    await choose("#until-choice", "program");
     await $("#until-program").setValue("no-such-program.exe");
     await $("#toggle").click();
     await waitForToast(/no-such-program\.exe is not running/);
     assert.equal(await text("#status-pill"), "Ready");
     assert.equal(journal(), undefined);
-    await $("#until-choice").selectByAttribute("value", "none");
+    await choose("#until-choice", "none");
   });
 
   it("keeps the PC awake while Quiet Mode is on and lets it sleep after", async () => {
@@ -161,7 +162,7 @@ describe("a run that ends by itself", () => {
 
   it("says so when Quiet Mode has been on a long time with nothing to end it", async () => {
     await clickTab("settings");
-    await $("#set-still-on").selectByAttribute("value", "2");
+    await choose("#set-still-on", "2");
     await browser.waitUntil(async () => (await saved()).still_on_hours === 2, {
       timeout: 5_000,
       timeoutMsg: "the reminder time was not saved",
@@ -184,7 +185,7 @@ describe("a run that ends by itself", () => {
     await $("#toggle").click();
     await waitForPill("Ready");
     await clickTab("settings");
-    await $("#set-still-on").selectByAttribute("value", "4");
+    await choose("#set-still-on", "4");
     await browser.waitUntil(async () => (await saved()).still_on_hours === 4, {
       timeout: 5_000,
       timeoutMsg: "the reminder time was not put back",

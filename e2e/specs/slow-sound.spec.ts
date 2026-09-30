@@ -10,6 +10,7 @@
  */
 import { strict as assert } from "node:assert";
 
+import { choose } from "./choose.ts";
 import {
   clickTab,
   fakeAudio,
@@ -48,7 +49,7 @@ function savedDropbox() {
 
 async function setDropbox(handling: string): Promise<void> {
   await clickTab("targets");
-  await $(DROPBOX_ACTION).selectByAttribute("value", handling);
+  await choose(DROPBOX_ACTION, handling);
   await $("#targets-save").click();
   await browser.waitUntil(
     async () => {

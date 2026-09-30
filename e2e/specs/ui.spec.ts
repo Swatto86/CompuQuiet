@@ -8,6 +8,7 @@
  */
 import { strict as assert } from "node:assert";
 
+import { choose } from "./choose.ts";
 import {
   attribute,
   clickTab,
@@ -44,6 +45,12 @@ describe("the window", () => {
   before(async () => {
     await $("#toggle").waitForExist({ timeout: 30_000 });
     await watchInvokes();
+  });
+
+  afterEach(async () => {
+    // A spec that fails must not leave a command refused for the ones after it.
+    await failInvokes("apply_recommendations", null);
+    await failInvokes("save_settings", null);
   });
 
   describe("Scan", () => {
@@ -247,7 +254,7 @@ describe("the window", () => {
 
     it("draws the window frame in the chosen theme, and puts it back when the save is refused", async () => {
       await clickTab("settings");
-      await $("#set-theme").selectByAttribute("value", "light");
+      await choose("#set-theme", "light");
       await browser.waitUntil(async () => (await windowTheme()) === "light", {
         timeout: 5_000,
         timeoutMsg: "the title bar kept the old theme",
@@ -255,7 +262,7 @@ describe("the window", () => {
       assert.equal(await attribute("html", "data-theme"), "light");
 
       await failInvokes("save_settings", "the file is locked");
-      await $("#set-theme").selectByAttribute("value", "dark");
+      await choose("#set-theme", "dark");
       await $("#toast").waitForDisplayed({ timeout: 5_000 });
       assert.match(await text("#toast"), /the file is locked/);
       await failInvokes("save_settings", null);
@@ -270,7 +277,7 @@ describe("the window", () => {
       assert.equal(await windowTheme(), "light");
 
       // As seeded, for what follows.
-      await $("#set-theme").selectByAttribute("value", "dark");
+      await choose("#set-theme", "dark");
       await browser.waitUntil(async () => (await windowTheme()) === "dark", {
         timeout: 5_000,
         timeoutMsg: "the title bar did not go back",

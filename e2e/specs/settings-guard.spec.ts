@@ -8,6 +8,7 @@ import { strict as assert } from "node:assert";
 import fs from "node:fs";
 import path from "node:path";
 
+import { choose } from "./choose.ts";
 import { clickTab, dataDir, text } from "./support.ts";
 
 /** Cut off mid-value, as an interrupted hand edit would leave it. */
@@ -41,7 +42,7 @@ describe("an unreadable settings file", () => {
 
   it("refuses a change and Quiet Mode, and leaves the file as it was", async () => {
     await clickTab("settings");
-    await $("#set-theme").selectByAttribute("value", "dark");
+    await choose("#set-theme", "dark");
     await $("#toast").waitForDisplayed({ timeout: 5_000 });
     assert.match(await text("#toast"), /nothing is saved/);
     assert.equal(fs.readFileSync(settingsFile(), "utf8"), BROKEN);
@@ -67,7 +68,7 @@ describe("an unreadable settings file", () => {
     assert.equal(fs.existsSync(settingsFile()), false, "absent means defaults");
 
     await clickTab("settings");
-    await $("#set-theme").selectByAttribute("value", "light");
+    await choose("#set-theme", "light");
     await browser.waitUntil(async () => fs.existsSync(settingsFile()), {
       timeout: 5_000,
       timeoutMsg: "the change was not saved once the file was set aside",

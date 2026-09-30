@@ -14,6 +14,7 @@ describe("the window, by keyboard", () => {
     await watchInvokes();
     // Keys go to the window that has the operating system's focus; a click
     // gives it that, and the first spec of a session has clicked nothing yet.
+    await clickTab("dashboard");
     await $("#hero-title").click();
   });
 

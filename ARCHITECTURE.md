@@ -574,9 +574,15 @@ banner's action moves the file to `settings.json.bad`.
   may ask of the shell), and the launches (`cli`, `second-launch`, `exit`: a
   clean quit that restores first). Runs on Windows and Linux in
   `scripts/verify.sh`. A spec that leaves unsaved page state must reload the
-  session. WebView2 posts IPC as host messages and
-  `__TAURI_INTERNALS__.invoke` is locked, so `watchInvokes` (in `support.ts`)
-  stands in front of the transport to count calls or make one fail.
+  session. WebView2 and WebKitGTK (where the `fetch` of the `ipc` scheme
+  fails) post IPC as host messages and `__TAURI_INTERNALS__.invoke` is locked,
+  so `watchInvokes` (in `ipc-watch.ts`) stands in front of the transport to
+  count calls or make one fail. WebKitWebDriver leaves a partly visible element
+  where it is and refuses it, so every click scrolls its element to the middle
+  first (`wdio.conf.ts`); and WebKit raises `change` only for a pick that
+  differs from the choice it saw when the list took the focus, which
+  WebDriver's option click does not give, so specs pick with `choose`
+  (`choose.ts`).
 - The suite refuses a binary that lacks the fake platform (it looks for the
   fake machine's `C:/fake/` paths in the executable), so a real-platform build
   at `target/debug` is never driven; `tsc -p e2e` type-checks the specs in the

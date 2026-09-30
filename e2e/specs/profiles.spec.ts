@@ -10,6 +10,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 import { launchAgain } from "./launch.ts";
+import { choose } from "./choose.ts";
 import {
   advanceUntil,
   clickDialogButton,
@@ -170,7 +171,7 @@ describe("named profiles", () => {
   });
 
   it("switches from Home, and the next press runs that profile", async () => {
-    await $("#profile-choice").selectByAttribute("value", "Default");
+    await choose("#profile-choice", "Default");
     await waitForToast(/Using Default/);
     await untilSaved(
       "made Default the profile in use",
@@ -209,13 +210,13 @@ describe("named profiles", () => {
     await $('input[aria-label="Enable OneDrive"]').click();
     assert.equal(await text("#targets-status"), "Unsaved changes");
 
-    await $("#profile-edit-choice").selectByAttribute("value", "Default");
+    await choose("#profile-edit-choice", "Default");
     await clickDialogButton("Cancel");
     assert.equal(await shown(), "Gaming", "the choice was put back");
     assert.equal(await text("#targets-status"), "Unsaved changes");
     assert.equal(saved().profile_name, "Gaming");
 
-    await $("#profile-edit-choice").selectByAttribute("value", "Default");
+    await choose("#profile-edit-choice", "Default");
     await clickDialogButton("Discard changes");
     await waitForToast(/Using Default/);
     await untilSaved(
@@ -223,7 +224,7 @@ describe("named profiles", () => {
       (s) => s.profile_name === "Default",
     );
     assert.equal(await text("#targets-status"), "");
-    await $("#profile-edit-choice").selectByAttribute("value", "Gaming");
+    await choose("#profile-edit-choice", "Gaming");
     await waitForToast(/Using Gaming/);
   });
 
@@ -272,7 +273,7 @@ describe("named profiles", () => {
       "Default",
       "Gaming",
     ]);
-    await $(choice).selectByAttribute("value", "Gaming");
+    await choose(choice, "Gaming");
     await untilSaved(
       "kept the choice",
       (s) => s.auto_quiet.profiles?.["steam.exe"] === "Gaming",

@@ -13,8 +13,11 @@
  * sends. Depending on the webview a command goes out as a `fetch` to the
  * `ipc` protocol (an answer marked `Tauri-Response: error` rejects the
  * page's promise) or as a message posted to the host (the error callback it
- * names is run to reject it). WebView2 posts; the other two are written from
- * Tauri's own script and not exercised on this machine.
+ * names is run to reject it). WebView2 posts. On WebKitGTK no call was ever
+ * seen through `fetch` (Tauri falls back to posting when the fetch fails), so
+ * it posts too, through `window.webkit.messageHandlers.ipc`: an object the
+ * engine may hand out afresh and drop again, so the patch goes on the
+ * prototype that holds `postMessage`, not on the instance seen here.
  */
 export async function watchInvokes(): Promise<void> {
   await browser.execute(() => {
@@ -65,20 +68,28 @@ export async function watchInvokes(): Promise<void> {
       );
     };
 
+    /** The object in `host`'s chain that owns `postMessage`: the one to patch. */
+    const owner = (host: Host): Host => {
+      let at: object | null = host;
+      while (at && !Object.prototype.hasOwnProperty.call(at, "postMessage"))
+        at = Object.getPrototypeOf(at) as object | null;
+      return (at ?? host) as Host;
+    };
     for (const host of [
       page.chrome?.webview,
       page.webkit?.messageHandlers?.ipc,
     ]) {
       if (!host) continue;
-      const post = host.postMessage.bind(host);
-      host.postMessage = (message) => {
+      const target = owner(host);
+      const post = target.postMessage;
+      target.postMessage = function (this: Host, message) {
         const sent: { cmd?: string; error?: number } | null =
           typeof message === "string" && message.startsWith("{")
             ? JSON.parse(message)
             : null;
         const reason = sent?.cmd === undefined ? undefined : note(sent.cmd);
         if (reason === undefined || sent?.error === undefined)
-          return post(message);
+          return post.call(this, message);
         page.__TAURI_INTERNALS__.runCallback(sent.error, {
           code: "refused",
           message: reason,

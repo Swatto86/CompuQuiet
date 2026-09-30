@@ -6,6 +6,7 @@ import { strict as assert } from "node:assert";
 import fs from "node:fs";
 import path from "node:path";
 
+import { choose } from "./choose.ts";
 import {
   clickTab,
   dataDir,
@@ -27,7 +28,7 @@ describe("persistence", () => {
   it("saves an added target and a changed theme to settings.json", async () => {
     await clickTab("targets");
     await $("#process-name").setValue("Spotify");
-    await $("#process-action").selectByAttribute("value", "close");
+    await choose("#process-action", "close");
     await $("#process-add button[type=submit]").click();
     assert.equal(await $("#targets-status").getText(), "Unsaved changes");
     await $("#targets-save").click();
@@ -40,7 +41,7 @@ describe("persistence", () => {
     );
 
     await clickTab("settings");
-    await $("#set-theme").selectByAttribute("value", "light");
+    await choose("#set-theme", "light");
     await browser.waitUntil(
       async () => readJson<SavedSettings>("settings.json")?.theme === "light",
       {

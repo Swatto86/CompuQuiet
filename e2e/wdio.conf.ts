@@ -211,6 +211,22 @@ export const config: WebdriverIO.Config = {
     }
   },
 
+  before: async () => {
+    // msedgedriver scrolls an element fully into view before it clicks it.
+    // WebKitWebDriver leaves one that is partly in view where it is, then
+    // refuses it because the edge of the scrolling list, or the action bar
+    // below it, holds the centre. A person scrolls to a control before
+    // pressing it, so every click here does.
+    await browser.overwriteCommand(
+      "click",
+      async function (this: WebdriverIO.Element, click, options) {
+        await this.scrollIntoView({ block: "center", inline: "nearest" });
+        return click(options);
+      },
+      true,
+    );
+  },
+
   afterTest: async (test, _context, { passed }) => {
     if (passed) return;
     const dataDir = process.env[DATA_DIR_ENV]!;
