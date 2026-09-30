@@ -56,6 +56,37 @@ fn restore_runs_in_reverse_and_relaunches_a_program_once() {
 }
 
 #[test]
+fn servers_that_differ_only_in_their_variables_are_each_relaunched() {
+    let closed = |port: &str| DoneStep::ProcessClosed {
+        name: "llama-server".into(),
+        exe: Some(PathBuf::from("C:/llama/llama-server.exe")),
+        args: vec!["llama-server".into(), "-m".into(), "x.gguf".into()],
+        cwd: None,
+        env: Env::from([("LLAMA_ARG_PORT".to_string(), port.to_string())]),
+    };
+    let mut journal = Journal::new(1_700_000_000);
+    journal.record(closed("8081"));
+    journal.record(closed("8082"));
+    journal.record(closed("8082"));
+    let steps = journal.restore_steps();
+    let ports: Vec<_> = steps
+        .iter()
+        .map(|(indices, step)| match step {
+            RestoreStep::Relaunch { env, .. } => (indices.clone(), env["LLAMA_ARG_PORT"].clone()),
+            other => panic!("{other:?}"),
+        })
+        .collect();
+    assert_eq!(
+        ports,
+        vec![
+            (vec![2, 1], "8082".to_string()),
+            (vec![0], "8081".to_string())
+        ],
+        "the same variables are one relaunch, different ones are not"
+    );
+}
+
+#[test]
 fn a_restart_or_new_sign_in_skips_what_it_already_undid() {
     let mut journal = sample();
     journal.began = Some(Marker {

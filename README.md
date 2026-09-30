@@ -115,7 +115,9 @@ unless CompuQuiet runs as root.
    started again with the same settings when Quiet Mode ends: the same command
    line and folder, and the few variables that decide its graphics card and
    settings (`CUDA_VISIBLE_DEVICES`, `HIP_VISIBLE_DEVICES`,
-   `ROCR_VISIBLE_DEVICES`, `GGML_*` and `LLAMA_ARG_*`). It is left running, with
+   `ROCR_VISIBLE_DEVICES`, `CUDA_DEVICE_ORDER`, `GPU_DEVICE_ORDINAL`,
+   `HSA_OVERRIDE_GFX_VERSION`, `ONEAPI_DEVICE_SELECTOR`, `LLAMA_CACHE`, `GGML_*`
+   and `LLAMA_ARG_*`). It is left running, with
    the reason in the preview, when it is answering a request or asleep already,
    asks for an API key, holds a secret on its command line or among those
    variables, is run by a service manager or in a sandbox, is on *Never

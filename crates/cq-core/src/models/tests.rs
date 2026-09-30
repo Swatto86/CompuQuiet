@@ -158,18 +158,29 @@ fn only_the_variables_that_decide_how_llama_cpp_runs_are_carried() {
         ("ROCR_VISIBLE_DEVICES", "1"),
         ("GGML_CUDA_ENABLE_UNIFIED_MEMORY", "1"),
         ("LLAMA_ARG_N_GPU_LAYERS", "99"),
+        // What makes a card index mean the same card, and where -hf finds
+        // its model.
+        ("CUDA_DEVICE_ORDER", "PCI_BUS_ID"),
+        ("GPU_DEVICE_ORDINAL", "1"),
+        ("HSA_OVERRIDE_GFX_VERSION", "10.3.0"),
+        ("ONEAPI_DEVICE_SELECTOR", "level_zero:1"),
+        ("LLAMA_CACHE", "/cache"),
         // Not carried, so neither kept nor a reason to refuse.
         ("HF_TOKEN", "hf_secret"),
         ("OPENAI_API_KEY", "sk-x"),
-        ("LLAMA_CACHE", "/cache"),
     ]))
     .unwrap();
     assert_eq!(
         kept.keys().map(String::as_str).collect::<Vec<_>>(),
         [
+            "CUDA_DEVICE_ORDER",
             "CUDA_VISIBLE_DEVICES",
             "GGML_CUDA_ENABLE_UNIFIED_MEMORY",
+            "GPU_DEVICE_ORDINAL",
+            "HSA_OVERRIDE_GFX_VERSION",
             "LLAMA_ARG_N_GPU_LAYERS",
+            "LLAMA_CACHE",
+            "ONEAPI_DEVICE_SELECTOR",
             "ROCR_VISIBLE_DEVICES",
             "hip_visible_devices",
         ]

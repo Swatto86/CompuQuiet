@@ -106,14 +106,23 @@ pub struct ModelServers {
 }
 
 /// The environment variables that decide how a llama.cpp program runs: which
-/// graphics card it uses, and its own `GGML_*` and `LLAMA_ARG_*` settings.
-/// Only these are handed on when it is started again; nothing else of
-/// another program's environment is kept or passed.
+/// graphics card it uses (the choice, the order the cards are numbered in and
+/// the driver override), where `-hf` keeps its model (`LLAMA_CACHE`), and its
+/// own `GGML_*` and `LLAMA_ARG_*` settings. Only these are handed on when it
+/// is started again; nothing else of another program's environment is kept or
+/// passed.
 pub fn is_carried(name: &str) -> bool {
     let name = name.to_ascii_uppercase();
     matches!(
         name.as_str(),
-        "CUDA_VISIBLE_DEVICES" | "HIP_VISIBLE_DEVICES" | "ROCR_VISIBLE_DEVICES"
+        "CUDA_VISIBLE_DEVICES"
+            | "HIP_VISIBLE_DEVICES"
+            | "ROCR_VISIBLE_DEVICES"
+            | "CUDA_DEVICE_ORDER"
+            | "GPU_DEVICE_ORDINAL"
+            | "HSA_OVERRIDE_GFX_VERSION"
+            | "ONEAPI_DEVICE_SELECTOR"
+            | "LLAMA_CACHE"
     ) || name.starts_with("GGML_")
         || name.starts_with("LLAMA_ARG_")
 }

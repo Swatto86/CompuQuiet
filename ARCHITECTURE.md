@@ -295,8 +295,11 @@ secret or password, has an environment that cannot be read
 run by a service manager (a parent of PID 1, `systemd`, `launchd` or `init`,
 or `services.exe` anywhere above it), is in a sandbox or an AppImage mount (`cq_core::sandboxed`),
 or has no program file, folder or full command line to start it from. What is
-carried is `cq_core::carried`: `CUDA_`, `HIP_` and `ROCR_VISIBLE_DEVICES`, and
-`GGML_*` and `LLAMA_ARG_*`, nothing else. A restore passes them through
+carried is `cq_core::carried`: `CUDA_`, `HIP_` and `ROCR_VISIBLE_DEVICES`,
+`CUDA_DEVICE_ORDER`, `GPU_DEVICE_ORDINAL`, `HSA_OVERRIDE_GFX_VERSION`,
+`ONEAPI_DEVICE_SELECTOR`, `LLAMA_CACHE`, and `GGML_*` and `LLAMA_ARG_*`,
+nothing else. Two closed servers that differ only in these are two relaunches
+(`Journal::restore_steps` keys on the variables too). A restore passes them through
 `Platform::launch`'s `env` over CompuQuiet's own environment (the Unix spawn,
 and on Windows a merged environment block for the shell user's token), and
 only the names `is_carried` allows, whatever a journal says.

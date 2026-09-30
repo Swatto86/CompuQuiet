@@ -17,6 +17,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::CoreError;
+use crate::models::Env;
 use crate::store::{read_json, write_json};
 use crate::watch::Ending;
 
@@ -160,16 +161,17 @@ impl Journal {
 
     /// Undo steps, newest first, each with the entries it settles. Several
     /// closed instances of one program are relaunched once; the program
-    /// decides how many copies it wants.
+    /// decides how many copies it wants. A model server's variables tell two
+    /// of them apart that share a command line, so those are not merged.
     pub fn restore_steps(&self) -> Vec<(Vec<usize>, RestoreStep)> {
-        let mut relaunches: HashMap<(Option<PathBuf>, Vec<String>), usize> = HashMap::new();
+        let mut relaunches: HashMap<(Option<PathBuf>, Vec<String>, Env), usize> = HashMap::new();
         let mut steps: Vec<(Vec<usize>, RestoreStep)> = Vec::new();
         for (index, done) in self.done.iter().enumerate().rev() {
             let Some(step) = done.restore() else {
                 continue;
             };
-            if let RestoreStep::Relaunch { exe, args, .. } = &step {
-                let key = (exe.clone(), args.clone());
+            if let RestoreStep::Relaunch { exe, args, env, .. } = &step {
+                let key = (exe.clone(), args.clone(), env.clone());
                 if let Some(&position) = relaunches.get(&key) {
                     steps[position].0.push(index);
                     continue;
