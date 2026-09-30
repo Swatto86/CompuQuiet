@@ -106,6 +106,8 @@ export interface EngineState {
   os: Os;
   recovered: boolean;
   startup_error: string | null;
+  /** Why settings.json cannot be read, until it is fixed or set aside. */
+  settings_unreadable: string | null;
 }
 
 export interface SystemStats {
@@ -171,6 +173,7 @@ export const api = {
     invoke<Settings>("apply_recommendations", { accepted }),
   saveSettings: (settings: Settings) =>
     invoke<void>("save_settings", { settings }),
+  setAsideSettings: () => invoke<string | null>("set_aside_settings"),
   goQuiet: () => invoke<EngineState>("go_quiet"),
   restore: () => invoke<EngineState>("restore"),
   frontendReady: () => invoke<void>("frontend_ready"),

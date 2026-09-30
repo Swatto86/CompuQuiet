@@ -38,7 +38,12 @@ pub struct EngineState {
     pub os: Os,
     /// A journal from an earlier run was found at start-up.
     pub recovered: bool,
+    /// The journal could not be read at start-up.
     pub startup_error: Option<String>,
+    /// Why settings.json could not be read, while it is still unresolved.
+    /// The engine runs on the built-in settings and refuses to save or go
+    /// quiet until the file is fixed or set aside.
+    pub settings_unreadable: Option<String>,
 }
 
 struct Inner {
@@ -51,6 +56,10 @@ struct Inner {
     /// A journal file is on disk but could not be read. Starting Quiet Mode
     /// would overwrite the only record of what it parked.
     unreadable_journal: Option<String>,
+    /// settings.json is on disk but could not be read (damaged, or written by
+    /// a newer CompuQuiet). Saving would replace the user's target lists with
+    /// the defaults, and Quiet Mode would run on them.
+    unreadable_settings: Option<String>,
 }
 
 pub struct Engine {
@@ -71,8 +80,10 @@ impl Engine {
     pub fn new(platform: Arc<dyn Platform>, data_dir: PathBuf) -> Engine {
         let mut startup_error = None;
         let os = platform.os();
+        let mut unreadable_settings = None;
         let settings = Settings::load(&data_dir, os).unwrap_or_else(|error| {
-            startup_error = Some(error.to_string());
+            log::error!("settings.json is unreadable: {error}");
+            unreadable_settings = Some(error.to_string());
             Settings::default_for(os)
         });
         let mut unreadable_journal = None;
@@ -103,6 +114,7 @@ impl Engine {
                 skipped: Vec::new(),
                 startup_error,
                 unreadable_journal,
+                unreadable_settings,
             }),
             busy: AtomicBool::new(false),
         }
@@ -132,6 +144,7 @@ impl Engine {
             os: self.platform.os(),
             recovered: inner.recovered,
             startup_error: inner.startup_error.clone(),
+            settings_unreadable: inner.unreadable_settings.clone(),
         }
     }
 
@@ -144,9 +157,37 @@ impl Engine {
     }
 
     pub fn save_settings(&self, settings: Settings) -> Result<(), AppError> {
+        if let Some(error) = &self.lock().unreadable_settings {
+            return Err(Self::settings_unreadable(error));
+        }
         settings.save(&self.data_dir)?;
         self.lock().settings = settings;
         Ok(())
+    }
+
+    fn settings_unreadable(error: &str) -> AppError {
+        AppError::new(
+            "settings_unreadable",
+            format!(
+                "The settings file could not be read ({error}), so nothing is saved and Quiet Mode stays off. Fix the file, or set it aside from the banner."
+            ),
+        )
+    }
+
+    /// Keep an unreadable settings.json under another name and go on with the
+    /// built-in settings, which the engine is already using. Returns where the
+    /// file went; `None` means it was already gone.
+    pub fn set_aside_settings(&self) -> Result<Option<PathBuf>, AppError> {
+        let mut inner = self.lock();
+        if inner.unreadable_settings.is_none() {
+            return Err(AppError::new(
+                "settings_readable",
+                "The settings file is not damaged",
+            ));
+        }
+        let kept = cq_core::store::move_aside(&Settings::path(&self.data_dir))?;
+        inner.unreadable_settings = None;
+        Ok(kept)
     }
 
     pub fn stats(&self) -> Result<SystemStats, AppError> {
@@ -213,10 +254,13 @@ impl Engine {
                 return Err(AppError::new(
                     "journal_unreadable",
                     format!(
-                        "The record of an earlier Quiet Mode could not be read ({error}).                          Update CompuQuiet, or move {} aside if it is damaged.",
+                        "The record of an earlier Quiet Mode could not be read ({error}). Update CompuQuiet, or move {} aside if it is damaged.",
                         Journal::path(&self.data_dir).display()
                     ),
                 ));
+            }
+            if let Some(error) = &inner.unreadable_settings {
+                return Err(Self::settings_unreadable(error));
             }
             inner.settings.clone()
         };
@@ -310,3 +354,6 @@ mod steps;
 
 #[cfg(all(test, feature = "fake-platform"))]
 mod tests;
+
+#[cfg(all(test, feature = "fake-platform"))]
+mod settings_tests;

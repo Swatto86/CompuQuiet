@@ -5,6 +5,17 @@ the decisions and constraints that are not visible in the code.
 
 ## Decisions
 
+- **2026-09-30: the memory purge is opt-in.** A new profile defaults to no
+  purge on every platform; a saved setting is kept as it is. The Scan tab may
+  still suggest it, but auto-scan never switches it on
+  (`low_risk_additions` skips it).
+- **2026-09-30: an unreadable `settings.json` is never overwritten.** A
+  damaged or newer file leaves the engine on the built-in settings, refusing
+  every save and Go Quiet, behind a banner that cannot be dismissed. Its
+  action moves the file to `settings.json.bad` (then `.bad-2`, never
+  replacing a copy); a file that no longer exists is simply resolved.
+  Restore is unaffected. `store.rs` retries the rename and the read for the
+  Windows access-denied and sharing errors an antivirus scan causes.
 - **2026-09-29: a restart or new sign-in ends Quiet Mode.** The journal
   records where Quiet Mode began (optional `began`: uptime and, on Windows,
   the WTS sign-in's logon stamp), never compared with the wall clock, which

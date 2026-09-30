@@ -102,7 +102,7 @@ export const config: WebdriverIO.Config = {
   runner: "local",
   framework: "mocha",
   specs: [
-    ["boot", "quiet", "scan", "persist", "exit"].map((name) =>
+    ["boot", "quiet", "scan", "persist", "settings-guard", "exit"].map((name) =>
       path.resolve(here, `specs/${name}.spec.ts`),
     ),
   ],

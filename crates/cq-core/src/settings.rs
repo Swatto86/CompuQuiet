@@ -65,16 +65,21 @@ impl Settings {
     }
 
     pub fn load(dir: &Path, os: Os) -> Result<Settings, CoreError> {
-        let Some(settings) = read_json::<Settings>(&Self::path(dir))? else {
+        let path = Self::path(dir);
+        let Some(value) = read_json::<serde_json::Value>(&path)? else {
             return Ok(Settings::default_for(os));
         };
-        if settings.version > CURRENT_VERSION {
+        // The version first: a newer file may not fit this build's fields,
+        // and "written by a newer CompuQuiet" is the reason worth showing.
+        let version = value.get("version").and_then(serde_json::Value::as_u64);
+        if let Some(version) = version.filter(|version| *version > u64::from(CURRENT_VERSION)) {
             return Err(CoreError::Invalid(format!(
-                "{} was written by a newer CompuQuiet (version {})",
-                Self::path(dir).display(),
-                settings.version
+                "{} was written by a newer CompuQuiet (version {version})",
+                path.display(),
             )));
         }
+        let settings: Settings = serde_json::from_value(value)
+            .map_err(|e| CoreError::json(format!("parsing {}", path.display()), e))?;
         settings.validate()?;
         Ok(settings)
     }
@@ -166,6 +171,50 @@ mod tests {
         std::fs::write(Settings::path(dir.path()), b"{").unwrap();
         assert!(Settings::load(dir.path(), Os::Windows).is_err());
         assert_eq!(std::fs::read(Settings::path(dir.path())).unwrap(), b"{");
+    }
+
+    #[test]
+    fn new_installs_do_not_purge_memory_but_a_saved_choice_is_kept() {
+        for os in [Os::Windows, Os::Linux, Os::MacOs] {
+            assert!(!Settings::default_for(os).profile.purge_memory, "{os:?}");
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let mut settings = Settings::default_for(Os::Windows);
+        settings.profile.purge_memory = true;
+        settings.save(dir.path()).unwrap();
+        assert!(
+            Settings::load(dir.path(), Os::Windows)
+                .unwrap()
+                .profile
+                .purge_memory
+        );
+    }
+
+    #[test]
+    fn a_newer_file_is_reported_as_newer_even_when_its_fields_do_not_fit() {
+        let dir = tempfile::tempdir().unwrap();
+        let text = r#"{"version": 9, "profile": "a shape this build has never seen"}"#;
+        std::fs::write(Settings::path(dir.path()), text).unwrap();
+        let error = Settings::load(dir.path(), Os::Windows).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("written by a newer CompuQuiet (version 9)"),
+            "{error}"
+        );
+        assert_eq!(
+            std::fs::read_to_string(Settings::path(dir.path())).unwrap(),
+            text
+        );
+    }
+
+    #[test]
+    fn a_file_from_before_auto_scan_existed_loads_with_it_on() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut value = serde_json::to_value(Settings::default_for(Os::Linux)).unwrap();
+        assert!(value.as_object_mut().unwrap().remove("auto_scan").is_some());
+        std::fs::write(Settings::path(dir.path()), value.to_string()).unwrap();
+        assert!(Settings::load(dir.path(), Os::Linux).unwrap().auto_scan);
     }
 
     #[test]

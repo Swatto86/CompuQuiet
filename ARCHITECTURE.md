@@ -121,8 +121,12 @@ suite. It is never a default feature; `scripts/verify.sh` asserts that.
 ## State
 
 `COMPUQUIET_DATA_DIR` overrides the platform config directory. Files are
-`settings.json` (versioned; a newer version or corrupt file is an error, not
-a reset) and `journal.json` (versioned). Writes are temp-file + rename.
+`settings.json` (versioned) and `journal.json` (versioned). Writes are
+temp-file + rename, and the rename and reads are retried briefly on the
+Windows errors a scanner holding the file causes. A newer or corrupt
+`settings.json` is an error, not a reset: the engine runs on the defaults but
+refuses saves and Go Quiet (`EngineState::settings_unreadable`) until the
+banner's action moves the file to `settings.json.bad`.
 
 ## Verification
 

@@ -148,6 +148,7 @@ pub fn run() {
             commands::get_settings,
             commands::default_settings,
             commands::save_settings,
+            commands::set_aside_settings,
             commands::scan,
             commands::apply_recommendations,
             commands::go_quiet,

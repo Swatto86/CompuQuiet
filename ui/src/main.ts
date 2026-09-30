@@ -140,6 +140,16 @@ function renderBanner(): void {
   const banner = byId("banner");
   const text = byId("banner-text");
   const action = byId<HTMLButtonElement>("banner-action");
+  const dismiss = byId<HTMLButtonElement>("banner-dismiss");
+  // Not dismissible: nothing is saved and Quiet Mode is off until it is dealt with.
+  dismiss.hidden = engine.settings_unreadable !== null;
+  if (engine.settings_unreadable !== null) {
+    text.textContent = `CompuQuiet could not read its settings file (${engine.settings_unreadable}), so it saves nothing and will not go quiet. Set the file aside to keep a copy as settings.json.bad and start fresh, or fix it and restart.`;
+    action.textContent = "Set the file aside";
+    action.hidden = false;
+    banner.hidden = false;
+    return;
+  }
   if (banner.dataset["dismissed"] === "1") return;
   if (needsElevation()) {
     text.textContent = engine.quiet
@@ -154,10 +164,10 @@ function renderBanner(): void {
 }
 
 function wireBanner(): void {
-  byId("banner-action").addEventListener(
-    "click",
-    () => void relaunchElevated(),
-  );
+  byId("banner-action").addEventListener("click", () => {
+    if (engine.settings_unreadable !== null) void setAsideSettings();
+    else void relaunchElevated();
+  });
   byId("banner-dismiss").addEventListener("click", () => {
     const banner = byId("banner");
     banner.dataset["dismissed"] = "1";
@@ -176,6 +186,21 @@ function wireE2eHooks(): void {
       },
     );
   });
+}
+
+async function setAsideSettings(): Promise<void> {
+  try {
+    const kept = await api.setAsideSettings();
+    engine = await api.getState();
+    renderAll();
+    toast(
+      kept === null
+        ? "The settings file was already gone. CompuQuiet is on its built-in settings."
+        : `Kept the unreadable settings file as ${kept}. CompuQuiet is on its built-in settings.`,
+    );
+  } catch (error) {
+    toast(errorMessage(error), true);
+  }
 }
 
 async function relaunchElevated(): Promise<void> {

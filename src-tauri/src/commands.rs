@@ -67,6 +67,17 @@ pub fn save_settings(engine: State<'_, Arc<Engine>>, settings: Settings) -> Resu
     engine.save_settings(settings)
 }
 
+/// Keep an unreadable settings.json as settings.json.bad and go on with the
+/// built-in settings. Returns the path it was kept at; `None` means it was
+/// already gone. Takes no argument from the page, and only acts while the
+/// engine holds an unreadable file.
+#[tauri::command]
+pub fn set_aside_settings(engine: State<'_, Arc<Engine>>) -> Result<Option<String>, AppError> {
+    Ok(engine
+        .set_aside_settings()?
+        .map(|kept| kept.display().to_string()))
+}
+
 /// Look at the machine and list what Quiet Mode could park.
 #[tauri::command]
 pub async fn scan(engine: State<'_, Arc<Engine>>) -> Result<crate::scan::ScanReport, AppError> {
