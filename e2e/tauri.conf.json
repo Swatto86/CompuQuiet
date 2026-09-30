@@ -1,3 +1,21 @@
 {
-  "identifier": "co.swatto.compuquiet.e2e"
+  "identifier": "co.swatto.compuquiet.e2e",
+  "app": {
+    "security": {
+      "capabilities": [
+        "main",
+        {
+          "identifier": "e2e",
+          "description": "What the suite's own calls through the page need beyond `main`: hiding and showing the window, reading its theme and sending an event. Only this build has it.",
+          "windows": ["main"],
+          "permissions": [
+            "core:window:allow-show",
+            "core:window:allow-hide",
+            "core:window:allow-theme",
+            "core:event:allow-emit"
+          ]
+        }
+      ]
+    }
+  }
 }

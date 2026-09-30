@@ -148,6 +148,11 @@ the code:
   passes. The window frame follows the Theme setting through `setTheme`.
 - The big button carries its state in `data-quiet`, not `aria-pressed`: its
   label already says what a press does.
+- The page's permissions are the three calls it makes itself (`listen`,
+  `isVisible`, `setTheme`), listed in `src-tauri/capabilities/main.json`; add
+  one only with the `ui/src` call that needs it. The e2e build adds four for
+  the suite's own calls (`e2e/tauri.conf.json`), and `permissions.spec.ts`
+  checks that the tray, app and other window controls stay refused.
 
 ## Shell behaviour
 

@@ -517,7 +517,6 @@ dependencies = [
 name = "compuquiet"
 version = "1.1.7"
 dependencies = [
- "anyhow",
  "cq-core",
  "cq-platform",
  "dirs 6.0.0",

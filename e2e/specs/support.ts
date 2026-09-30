@@ -106,6 +106,22 @@ async function invokeCommand<T = void>(
   return outcome?.value as T;
 }
 
+/**
+ * What the webview says when a command is refused for want of a permission.
+ * Fails if the command ran, so a grant that should not exist shows up here.
+ */
+export async function refusedCommand(
+  command: string,
+  args: Record<string, unknown>,
+): Promise<string> {
+  try {
+    await invokeCommand(command, args);
+  } catch (error) {
+    return String(error);
+  }
+  throw new Error(`${command} ran: the page has a permission it should not`);
+}
+
 /** Hide or show the main window, and read whether it is showing. */
 export async function setWindowVisible(visible: boolean): Promise<void> {
   await invokeCommand(`plugin:window|${visible ? "show" : "hide"}`, {

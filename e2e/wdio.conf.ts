@@ -105,6 +105,7 @@ export const config: WebdriverIO.Config = {
     [
       "boot",
       "update",
+      "permissions",
       "quiet",
       "scan",
       "ui",

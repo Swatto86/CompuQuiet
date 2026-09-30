@@ -1,14 +1,11 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "main",
-  "description": "Least privilege for the main window. Every process, service, power and filesystem effect happens in Rust behind an explicit command, so the page needs no fs, shell or autostart permission: only the window controls it calls and event listening.",
+  "description": "Least privilege for the main window. Every process, service, power and filesystem effect happens in Rust behind an explicit command, so the page needs no fs, shell, tray or autostart permission: only the three calls it makes itself, listening for the engine's events, asking whether the window is showing, and telling the frame its theme. Add a permission here only with the ui/src call that needs it.",
   "windows": ["main"],
   "permissions": [
-    "core:default",
-    "core:window:allow-show",
-    "core:window:allow-hide",
-    "core:window:allow-set-theme",
-    "core:window:allow-theme",
-    "core:event:allow-listen"
+    "core:event:allow-listen",
+    "core:window:allow-is-visible",
+    "core:window:allow-set-theme"
   ]
 }

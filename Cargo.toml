@@ -11,7 +11,6 @@ repository = "https://github.com/Swatto86/CompuQuiet"
 [workspace.dependencies]
 cq-core = { path = "crates/cq-core" }
 cq-platform = { path = "crates/cq-platform" }
-anyhow = "1"
 dirs = "6"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
