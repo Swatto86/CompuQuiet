@@ -61,14 +61,18 @@ export class SettingsView {
     try {
       const status = await api.getAutostart();
       input.checked = status.enabled;
-      input.disabled = !status.allowed && !status.enabled;
-      note.textContent = status.reason
-        ? `(unavailable: ${status.reason})`
-        : status.enabled && status.elevated
-          ? "(starts with administrator rights)"
-          : status.enabled
-            ? "(starts without administrator rights)"
-            : "";
+      // Refused for this copy: it may still be switched off. Locked: not at all.
+      input.disabled =
+        status.locked !== null || (!status.allowed && !status.enabled);
+      note.textContent = status.locked
+        ? `(${status.locked})`
+        : status.reason
+          ? `(unavailable: ${status.reason})`
+          : status.enabled && status.elevated
+            ? "(starts with administrator rights)"
+            : status.enabled
+              ? "(starts without administrator rights)"
+              : "";
     } catch (error) {
       note.textContent = `(${errorMessage(error)})`;
     }

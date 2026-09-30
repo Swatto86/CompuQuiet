@@ -144,6 +144,8 @@ export interface AutostartStatus {
   elevated: boolean;
   allowed: boolean;
   reason: string | null;
+  /** Why this copy cannot change the entry at all, when it cannot. */
+  locked: string | null;
 }
 
 /** Where self-updating stands; mirrors `update::Status` in src-tauri. */

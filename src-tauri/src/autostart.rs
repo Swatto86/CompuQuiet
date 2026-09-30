@@ -22,9 +22,12 @@ pub struct AutostartStatus {
     pub enabled: bool,
     /// The registered entry will start the app with administrator rights.
     pub elevated: bool,
-    /// Whether this process may change the entry at all.
+    /// Whether this process may register itself: `reason` says why not.
     pub allowed: bool,
     pub reason: Option<String>,
+    /// Why this process cannot change the entry that is there, on or off:
+    /// the entry needs administrator rights and this process has none.
+    pub locked: Option<String>,
 }
 
 /// Why this executable must not be registered, if it must not.
@@ -43,10 +46,47 @@ pub(crate) fn refusal(exe: &Path) -> Option<String> {
         return Some("move the app out of Downloads first".into());
     }
     #[cfg(target_os = "linux")]
-    if std::env::var_os("APPIMAGE").is_none() {
-        return Some("only the AppImage can register itself to start at login".into());
+    match std::env::var_os("APPIMAGE") {
+        None => return Some("only the AppImage can register itself to start at login".into()),
+        Some(image) if breaks_login_entry(&image.to_string_lossy()) => {
+            return Some(
+                "move the AppImage to a folder whose path has no spaces or special characters"
+                    .into(),
+            );
+        }
+        Some(_) => {}
     }
     None
+}
+
+/// The login entry's command line is not quoted when it is written, so a
+/// space or any character a desktop entry treats specially in the AppImage's
+/// path would start the wrong program, or none, at every login.
+#[cfg(any(target_os = "linux", test))]
+fn breaks_login_entry(path: &str) -> bool {
+    path.chars()
+        .any(|c| c.is_whitespace() || "\"'\\<>~|&;$*?#()`%".contains(c))
+}
+
+/// A login task made with administrator rights can only be changed with
+/// them: the Task Scheduler gives an ordinary user read access and no more,
+/// so a switch flipped from an unelevated window would fail with a bare
+/// "Access is denied". `process_elevated` is asked only when it matters.
+fn locked(
+    registered: bool,
+    entry_elevated: bool,
+    process_elevated: impl FnOnce() -> bool,
+) -> Option<String> {
+    (registered && entry_elevated && !process_elevated()).then(|| {
+        "the sign-in entry was made with administrator rights, so only a copy running as administrator can change it (relaunch as administrator first)"
+            .to_string()
+    })
+}
+
+fn locked_now(registered: bool, entry_elevated: bool) -> Option<String> {
+    locked(registered, entry_elevated, || {
+        cq_platform::native().capabilities().elevated
+    })
 }
 
 /// Whether `path` lies within `dir`, by whole components and after resolving
@@ -83,6 +123,7 @@ pub fn status(app: &AppHandle) -> Result<AutostartStatus, AppError> {
         elevated,
         allowed: reason.is_none(),
         reason,
+        locked: locked_now(enabled, elevated),
     })
 }
 
@@ -90,6 +131,10 @@ pub fn set(app: &AppHandle, enabled: bool) -> Result<AutostartStatus, AppError> 
     let exe = current_exe()?;
     if enabled && let Some(reason) = refusal(&exe) {
         return Err(AppError::new("autostart_refused", reason));
+    }
+    let (registered, elevated) = platform::query(app)?;
+    if let Some(reason) = locked_now(registered, elevated) {
+        return Err(AppError::new("autostart_locked", reason));
     }
     if enabled {
         platform::enable(app, &exe)?;
@@ -199,6 +244,39 @@ mod tests {
         if let Some(downloads) = dirs::download_dir() {
             assert!(refusal(&downloads.join("CompuQuiet.exe")).is_some());
         }
+    }
+
+    #[test]
+    fn an_appimage_path_that_would_break_the_login_entry_is_refused() {
+        for bad in [
+            "/home/me/My Apps/CompuQuiet.AppImage",
+            "/home/me/apps/100%/CompuQuiet.AppImage",
+            "/home/me/it's/CompuQuiet.AppImage",
+            "/home/me/a\"b/CompuQuiet.AppImage",
+            "/home/me/$HOME/CompuQuiet.AppImage",
+            "/home/me/back\\slash/CompuQuiet.AppImage",
+        ] {
+            assert!(breaks_login_entry(bad), "{bad}");
+        }
+        for fine in [
+            "/home/me/Applications/CompuQuiet.AppImage",
+            "/opt/compuquiet/CompuQuiet-1.2.0_x86_64.AppImage",
+        ] {
+            assert!(!breaks_login_entry(fine), "{fine}");
+        }
+    }
+
+    #[test]
+    fn an_elevated_entry_is_locked_to_an_unelevated_window() {
+        // Only an entry that exists, made with administrator rights, seen
+        // from a process without them.
+        assert!(locked(true, true, || false).is_some());
+        assert!(locked(true, true, || true).is_none());
+        assert!(locked(true, false, || false).is_none());
+        assert!(locked(false, true, || false).is_none());
+        // The process is not even asked when the entry cannot be locked.
+        assert!(locked(true, false, || unreachable!()).is_none());
+        assert!(locked(false, false, || unreachable!()).is_none());
     }
 
     #[test]
