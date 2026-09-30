@@ -254,10 +254,15 @@ mod tests {
         let marker = std::env::temp_dir().join("compuquiet-launch-test.txt");
         let _ = std::fs::remove_file(&marker);
         let cmd = Path::new(r"C:\Windows\System32\cmd.exe");
+        // Separate arguments, not one string with quotes inside it: cmd does
+        // not read the backslash-escaped quotes an argument is quoted with, so
+        // that form never wrote the file when the program did start.
         let args = [
             "cmd.exe".to_string(),
             "/C".to_string(),
-            format!("echo x> \"{}\"", marker.display()),
+            "echo".to_string(),
+            "x>".to_string(),
+            marker.display().to_string(),
         ];
         match as_shell_user(cmd, &args, None).unwrap() {
             Outcome::Started => {
