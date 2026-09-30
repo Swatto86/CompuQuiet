@@ -7,12 +7,14 @@ import {
   type Settings,
 } from "./bridge.ts";
 import { toast } from "./dialog.ts";
-import { formatBytes, formatPercent } from "./format.ts";
+import { formatBytes, formatCoreShare } from "./format.ts";
 import {
-  defaultSelection,
+  carrySelection,
   kindLabel,
+  rowKey,
   selectedItems,
   summarize,
+  tickLabel,
 } from "./scan-select.ts";
 
 function byId<T extends HTMLElement>(id: string): T {
@@ -22,7 +24,7 @@ function byId<T extends HTMLElement>(id: string): T {
 }
 
 export interface ScanHost {
-  /** The new settings after finds were added to the targets. */
+  /** The new settings after finds were added to the park list. */
   onSettings(settings: Settings): void;
   /** Switch Quiet Mode on now (the dashboard's toggle). */
   goQuiet(): Promise<void>;
@@ -30,8 +32,9 @@ export interface ScanHost {
 
 export class Scan {
   private report: ScanReport | null = null;
-  private selected = new Set<number>();
+  private selected = new Set<string>();
   private busy = false;
+  private quiet = false;
 
   constructor(private readonly host: ScanHost) {
     byId("scan-run").addEventListener("click", () => void this.refresh());
@@ -43,12 +46,20 @@ export class Scan {
     this.render();
   }
 
+  /**
+   * While Quiet Mode is on a find added now is only parked from the next run,
+   * so the button that also goes quiet has nothing left to do.
+   */
+  setQuiet(quiet: boolean): void {
+    this.quiet = quiet;
+    this.updateActions();
+  }
+
   async refresh(): Promise<void> {
     if (this.busy) return;
     this.setBusy(true, "Scanning…");
     try {
-      this.report = await api.scan();
-      this.selected = defaultSelection(this.report.recommendations);
+      await this.rescan();
     } catch (error) {
       toast(`Scan failed: ${errorMessage(error)}`, true);
     } finally {
@@ -57,40 +68,67 @@ export class Scan {
     }
   }
 
+  /** A fresh report; the user's ticks stay with the finds they were made on. */
+  private async rescan(): Promise<void> {
+    const report = await api.scan();
+    this.selected = carrySelection(
+      this.report?.recommendations ?? [],
+      this.selected,
+      report.recommendations,
+    );
+    this.report = report;
+  }
+
   private async apply(thenQuiet: boolean): Promise<void> {
     if (!this.report || this.busy) return;
     const accepted = selectedItems(this.report.recommendations, this.selected);
     if (accepted.length === 0) return;
     this.setBusy(true, "Adding…");
+    let added = false;
     try {
       const settings = await api.applyRecommendations(accepted);
+      added = true;
       this.host.onSettings(settings);
-      toast(`${accepted.length} added to targets`);
-      this.report = await api.scan();
-      this.selected = defaultSelection(this.report.recommendations);
+      toast(
+        this.quiet
+          ? `${accepted.length} added to the park list. Quiet Mode is on, so they are parked from the next run.`
+          : `${accepted.length} added to the park list`,
+      );
+      await this.rescan();
     } catch (error) {
       toast(errorMessage(error), true);
     } finally {
       this.setBusy(false, "");
       this.render();
     }
-    if (thenQuiet) await this.host.goQuiet();
+    // Only once the finds are saved: after a refusal the button has not done
+    // what it promised, and going quiet on the old list would park programs
+    // the user did not choose. A failed re-scan does not undo the add.
+    if (thenQuiet && added) await this.host.goQuiet();
   }
 
   private setBusy(busy: boolean, status: string): void {
     this.busy = busy;
     byId<HTMLButtonElement>("scan-run").disabled = busy;
     byId("scan-status").textContent = status;
+    this.updateActions();
+  }
+
+  /** The two Add buttons follow the ticks; a tick does not rebuild the rows. */
+  private updateActions(): void {
+    const items = this.report?.recommendations ?? [];
+    const none = selectedItems(items, this.selected).length === 0 || this.busy;
+    byId<HTMLButtonElement>("scan-apply").disabled = none;
+    const andQuiet = byId<HTMLButtonElement>("scan-apply-quiet");
+    andQuiet.disabled = none;
+    andQuiet.hidden = this.quiet;
   }
 
   private render(): void {
     const rows = byId<HTMLTableSectionElement>("scan-rows");
     const summary = byId("scan-summary");
     const items = this.report?.recommendations ?? [];
-    const picked = selectedItems(items, this.selected).length;
-    byId<HTMLButtonElement>("scan-apply").disabled = picked === 0 || this.busy;
-    byId<HTMLButtonElement>("scan-apply-quiet").disabled =
-      picked === 0 || this.busy;
+    this.updateActions();
 
     if (!this.report) {
       summary.textContent = "Press Scan to see what could be parked right now.";
@@ -102,7 +140,7 @@ export class Scan {
       `${counts.selectable} new find${counts.selectable === 1 ? "" : "s"}`,
       `${counts.low} low risk`,
       `${counts.medium} medium risk`,
-      `${counts.targeted} already targeted`,
+      `${counts.targeted} already on the park list`,
       `${formatBytes(counts.memoryBytes)} in programs not yet parked`,
     ];
     if (this.report.cached_bytes > 0)
@@ -114,27 +152,28 @@ export class Scan {
     if (items.length === 0) {
       rows.replaceChildren(
         this.emptyRow(
-          "Nothing to add: your targets already cover what is running.",
+          "Nothing to add: your park list already covers what is running.",
         ),
       );
       return;
     }
-    rows.replaceChildren(...items.map((item, index) => this.row(item, index)));
+    rows.replaceChildren(...items.map((item) => this.row(item)));
   }
 
-  private row(item: Recommendation, index: number): HTMLTableRowElement {
+  private row(item: Recommendation): HTMLTableRowElement {
+    const key = rowKey(item);
     const row = document.createElement("tr");
     if (item.already_targeted) row.className = "targeted";
     const tick = document.createElement("td");
     const input = document.createElement("input");
     input.type = "checkbox";
-    input.checked = this.selected.has(index) && !item.already_targeted;
+    input.checked = this.selected.has(key) && !item.already_targeted;
     input.disabled = item.already_targeted;
-    input.setAttribute("aria-label", `Park ${item.name}`);
+    input.setAttribute("aria-label", tickLabel(item));
     input.addEventListener("change", () => {
-      if (input.checked) this.selected.add(index);
-      else this.selected.delete(index);
-      this.render();
+      if (input.checked) this.selected.add(key);
+      else this.selected.delete(key);
+      this.updateActions();
     });
     tick.appendChild(input);
 
@@ -144,7 +183,7 @@ export class Scan {
       item.instances > 1 ? `${item.name} ×${item.instances}` : item.name;
     const action = document.createElement("td");
     action.textContent = item.already_targeted
-      ? "already a target"
+      ? "already on the list"
       : kindLabel(item.kind);
     const why = document.createElement("td");
     why.className = "why";
@@ -161,7 +200,7 @@ export class Scan {
     const cpu = document.createElement("td");
     cpu.className = "num";
     cpu.textContent =
-      item.kind.kind === "process" ? formatPercent(item.cpu_percent) : "—";
+      item.kind.kind === "process" ? formatCoreShare(item.cpu_percent) : "—";
     row.append(tick, name, action, why, risk, memory, cpu);
     return row;
   }

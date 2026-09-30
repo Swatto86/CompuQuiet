@@ -17,6 +17,17 @@ body {
   user-select: none;
 }
 
+/* What someone reporting a problem needs to copy. */
+.log,
+#skipped,
+#summary,
+#banner-text,
+.recovery,
+.toast,
+.dialog p {
+  user-select: text;
+}
+
 #app {
   display: flex;
   flex-direction: column;
@@ -109,12 +120,12 @@ button.primary:hover {
 
 button.danger {
   border-color: var(--danger);
-  color: var(--danger);
+  color: var(--danger-text);
 }
 
 button.danger:hover {
   background: var(--danger);
-  color: #fff;
+  color: var(--on-danger);
 }
 
 button.small {
@@ -188,6 +199,18 @@ input::placeholder {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
 }
 
+/* Unsaved edits on the Park list, where the eye is when they were made. */
+.tab.unsaved::after {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-left: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  vertical-align: middle;
+}
+
 .pill {
   padding: 4px 12px;
   border-radius: 999px;
@@ -209,7 +232,7 @@ input::placeholder {
 }
 
 .pill-busy {
-  color: var(--warn);
+  color: var(--warn-text);
   border-color: var(--warn);
 }
 
@@ -225,14 +248,14 @@ button.linkish {
   border: 0;
   border-radius: 0;
   background: transparent;
-  color: var(--accent);
+  color: var(--accent-text);
   text-decoration: underline;
   cursor: pointer;
   font: inherit;
 }
 
 button.linkish:hover {
-  color: var(--accent-2);
+  color: var(--accent-2-text);
 }
 
 /* Banner */
@@ -363,11 +386,11 @@ main {
   border-color: var(--fg-muted);
 }
 
-.power[aria-pressed="true"] {
-  color: var(--accent);
+.power[data-quiet="true"] {
+  color: var(--accent-text);
 }
 
-.power[aria-pressed="true"] .power-ring {
+.power[data-quiet="true"] .power-ring {
   border-color: var(--accent);
   box-shadow:
     0 0 0 6px var(--accent-soft),
@@ -423,7 +446,7 @@ main {
 }
 
 .stat-big.accent {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .gauge {
@@ -575,7 +598,7 @@ table.targets select {
 }
 
 .state.running {
-  color: var(--ok);
+  color: var(--ok-text);
 }
 
 .check {
@@ -784,6 +807,13 @@ code.path {
   border-color: var(--danger);
 }
 
+/* A mark as well as a colour, so an error is not told by red alone. */
+.toast.error::before {
+  content: "✕ ";
+  color: var(--danger-text);
+  font-weight: 700;
+}
+
 .toast[hidden] {
   display: none;
 }
@@ -815,7 +845,16 @@ table.scan th.num,
 table.scan td.num {
   text-align: right;
   font-variant-numeric: tabular-nums;
+}
+
+table.scan td.num {
   white-space: nowrap;
+}
+
+/* A row or chip that was just added, until the highlight is taken off. */
+table.targets tr.fresh td,
+.chips li.fresh {
+  background: var(--accent-soft);
 }
 
 table.scan tr.targeted td {
@@ -834,12 +873,12 @@ table.scan tr.targeted td {
 }
 
 .risk-low {
-  color: var(--ok);
+  color: var(--ok-text);
   border-color: var(--ok);
 }
 
 .risk-medium {
-  color: var(--warn);
+  color: var(--warn-text);
   border-color: var(--warn);
 }
 
@@ -859,5 +898,40 @@ table.scan tr.targeted td {
   .hero {
     flex-direction: column;
     text-align: center;
+  }
+}
+
+/* Motion: nothing moves or fades. The busy ring stays as a static broken ring,
+   and the button's label ("Working…") says what is happening. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* Windows High Contrast and other forced colours drop backgrounds and shadows,
+   which is all that marks the selected tab and fills the gauges. */
+@media (forced-colors: active) {
+  .tab[aria-selected="true"] {
+    text-decoration: underline;
+    text-decoration-thickness: 2px;
+    text-underline-offset: 5px;
+  }
+
+  .gauge {
+    border: 1px solid CanvasText;
+  }
+
+  .gauge-fill {
+    background: Highlight;
+    forced-color-adjust: none;
+  }
+
+  .tab.unsaved::after {
+    background: Highlight;
+    forced-color-adjust: none;
   }
 }

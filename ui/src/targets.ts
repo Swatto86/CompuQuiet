@@ -22,6 +22,7 @@ import {
   sameProfile,
   setProcess,
   setService,
+  type EditResult,
 } from "./profile-edit.ts";
 
 function byId<T extends HTMLElement>(id: string): T {
@@ -33,6 +34,16 @@ function byId<T extends HTMLElement>(id: string): T {
 export interface TargetsHost {
   save(profile: Profile): Promise<void>;
   defaults(): Promise<Profile>;
+  /** Whether the list holds edits that are not saved. */
+  unsaved(unsaved: boolean): void;
+}
+
+/** How long a row that was just added stays highlighted. */
+const FRESH_MS = 2500;
+
+/** Programs and services on the list, which protection takes off it. */
+function listed(profile: Profile): number {
+  return profile.processes.length + profile.services.length;
 }
 
 export class Targets {
@@ -53,21 +64,31 @@ export class Targets {
         .value as ProcessAction;
       this.apply(
         addProcess(this.working, name.value, action),
+        "process-targets",
         () => (name.value = ""),
       );
     });
     byId<HTMLFormElement>("service-add").addEventListener("submit", (event) => {
       event.preventDefault();
       const name = byId<HTMLInputElement>("service-name");
-      this.apply(addService(this.working, name.value), () => (name.value = ""));
+      this.apply(
+        addService(this.working, name.value),
+        "service-targets",
+        () => (name.value = ""),
+      );
     });
     byId<HTMLFormElement>("keep-add").addEventListener("submit", (event) => {
       event.preventDefault();
       const name = byId<HTMLInputElement>("keep-name");
-      this.apply(
-        addKeepAlive(this.working, name.value),
-        () => (name.value = ""),
-      );
+      const shown = name.value.trim();
+      const before = this.working;
+      const result = addKeepAlive(before, name.value);
+      this.apply(result, "keep-alive", () => {
+        name.value = "";
+        // Protection wins over parking, so the row is gone: say so.
+        if (result.ok && listed(result.profile) < listed(before))
+          toast(`${shown} is protected now, so it was taken off the park list`);
+      });
     });
     byId<HTMLInputElement>("opt-power").addEventListener("change", (event) => {
       this.working = {
@@ -76,14 +97,14 @@ export class Targets {
           ? "performance"
           : "leave",
       };
-      this.render();
+      this.updateStatus();
     });
     byId<HTMLInputElement>("opt-purge").addEventListener("change", (event) => {
       this.working = {
         ...this.working,
         purge_memory: (event.target as HTMLInputElement).checked,
       };
-      this.render();
+      this.updateStatus();
     });
     byId("targets-save").addEventListener("click", () => void this.save());
     byId("targets-reset").addEventListener("click", () => void this.reset());
@@ -136,7 +157,7 @@ export class Targets {
     }
   }
 
-  private apply(result: ReturnType<typeof addProcess>, onOk: () => void): void {
+  private apply(result: EditResult, list: string, onOk: () => void): void {
     if (!result.ok) {
       toast(result.reason, true);
       return;
@@ -144,6 +165,25 @@ export class Targets {
     this.working = result.profile;
     onOk();
     this.render();
+    this.reveal(list);
+  }
+
+  /** The row just added goes at the bottom of a long list: bring it into view. */
+  private reveal(list: string): void {
+    const row = byId(list).lastElementChild;
+    if (!row) return;
+    row.classList.add("fresh");
+    row.scrollIntoView({ block: "nearest" });
+    window.setTimeout(() => row.classList.remove("fresh"), FRESH_MS);
+  }
+
+  /** After a row goes, focus moves to the one that took its place. */
+  private removed(list: string, index: number, fallback: string): void {
+    this.render();
+    const rows = byId(list).children;
+    const next = rows[Math.min(index, rows.length - 1)];
+    const control = next?.querySelector<HTMLElement>("button");
+    (control ?? byId(fallback)).focus();
   }
 
   private async save(): Promise<void> {
@@ -154,7 +194,7 @@ export class Targets {
     try {
       await this.host.save(sent);
       this.saved = sent;
-      toast("Targets saved");
+      toast("Park list saved");
     } catch (error) {
       toast(errorMessage(error), true);
     } finally {
@@ -164,7 +204,7 @@ export class Targets {
 
   private async reset(): Promise<void> {
     const choice = await showDialog({
-      title: "Restore the default targets?",
+      title: "Restore the default park list?",
       body: "Your own additions will be removed. Nothing is saved until you press Save changes.",
       buttons: [
         { label: "Restore defaults", value: "yes", primary: true },
@@ -180,22 +220,38 @@ export class Targets {
     }
   }
 
-  private render(): void {
+  /**
+   * The save button, the unsaved note and the two options. A tick or a choice
+   * in a row changes only these: rebuilding the row would throw away the
+   * keyboard focus that was just used to make it.
+   */
+  private updateStatus(): void {
     const dirty = !sameProfile(this.saved, this.working);
     byId<HTMLButtonElement>("targets-save").disabled = !dirty;
     byId("targets-status").textContent = dirty ? "Unsaved changes" : "";
     byId<HTMLInputElement>("opt-power").checked =
       this.working.power === "performance";
     byId<HTMLInputElement>("opt-purge").checked = this.working.purge_memory;
+    this.host.unsaved(dirty);
+  }
+
+  private render(): void {
+    this.updateStatus();
 
     const processes = byId<HTMLTableSectionElement>("process-targets");
     processes.replaceChildren(
       ...this.working.processes.map((target, index) => {
         const row = document.createElement("tr");
-        const enabled = this.checkbox(target.enabled, (checked) => {
-          this.working = setProcess(this.working, index, { enabled: checked });
-          this.render();
-        });
+        const enabled = this.checkbox(
+          target.name,
+          target.enabled,
+          (checked) => {
+            this.working = setProcess(this.working, index, {
+              enabled: checked,
+            });
+            this.updateStatus();
+          },
+        );
         const name = document.createElement("td");
         name.className = "name";
         name.textContent = target.name;
@@ -216,7 +272,7 @@ export class Targets {
           this.working = setProcess(this.working, index, {
             action: select.value as ProcessAction,
           });
-          this.render();
+          this.updateStatus();
         });
         action.appendChild(select);
         const now = document.createElement("td");
@@ -234,7 +290,7 @@ export class Targets {
           now,
           this.remove(`Remove ${target.name}`, () => {
             this.working = removeProcess(this.working, index);
-            this.render();
+            this.removed("process-targets", index, "process-name");
           }),
         );
         return row;
@@ -245,10 +301,14 @@ export class Targets {
     services.replaceChildren(
       ...this.working.services.map((target, index) => {
         const row = document.createElement("tr");
-        const enabled = this.checkbox(target.enabled, (checked) => {
-          this.working = setService(this.working, index, checked);
-          this.render();
-        });
+        const enabled = this.checkbox(
+          target.name,
+          target.enabled,
+          (checked) => {
+            this.working = setService(this.working, index, checked);
+            this.updateStatus();
+          },
+        );
         const name = document.createElement("td");
         name.className = "name";
         name.textContent = target.name;
@@ -257,7 +317,7 @@ export class Targets {
           name,
           this.remove(`Remove ${target.name}`, () => {
             this.working = removeService(this.working, index);
-            this.render();
+            this.removed("service-targets", index, "service-name");
           }),
         );
         return row;
@@ -275,7 +335,7 @@ export class Targets {
         button.setAttribute("aria-label", `Stop protecting ${name}`);
         button.addEventListener("click", () => {
           this.working = removeKeepAlive(this.working, index);
-          this.render();
+          this.removed("keep-alive", index, "keep-name");
         });
         item.appendChild(button);
         return item;
@@ -284,6 +344,7 @@ export class Targets {
   }
 
   private checkbox(
+    name: string,
     checked: boolean,
     onChange: (checked: boolean) => void,
   ): HTMLTableCellElement {
@@ -291,7 +352,7 @@ export class Targets {
     const input = document.createElement("input");
     input.type = "checkbox";
     input.checked = checked;
-    input.setAttribute("aria-label", "Enabled");
+    input.setAttribute("aria-label", `Enable ${name}`);
     input.addEventListener("change", () => onChange(input.checked));
     cell.appendChild(input);
     return cell;

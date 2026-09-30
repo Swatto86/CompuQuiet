@@ -31,7 +31,9 @@ export class Dashboard {
 
   render(state: EngineState): void {
     this.startedAt = state.started_at;
-    this.toggle.setAttribute("aria-pressed", String(state.quiet));
+    // Not aria-pressed: the label already says what a press does ("Put
+    // everything back"), and a screen reader would add "pressed" to it.
+    this.toggle.dataset["quiet"] = String(state.quiet);
     this.toggle.classList.toggle("busy", state.busy);
     this.label.textContent = state.busy
       ? "Working…"

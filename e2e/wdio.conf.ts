@@ -107,6 +107,8 @@ export const config: WebdriverIO.Config = {
       "update",
       "quiet",
       "scan",
+      "ui",
+      "keyboard",
       "persist",
       "settings-guard",
       "stuck-restore",

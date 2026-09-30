@@ -5,7 +5,7 @@ page has no filesystem, shell or process permission; everything with an
 effect happens in Rust behind a validated command.
 
 ```
-ui/            vanilla TS + Vite: dashboard, targets editor, settings, about
+ui/            vanilla TS + Vite: dashboard, scan, park list editor, settings, about
 src-tauri/     the shell: commands, engine, tray, autostart, window lifecycle
 crates/
   cq-core/     domain, no OS calls: profile, policy, planner, journal, settings
@@ -122,6 +122,33 @@ refusal, a missing-rights error, or a timeout whose effect still lands. The
 e2e build exposes that as the `fake_fail` and `fake_heal` commands, which
 exist only with the `fake-platform` feature.
 
+## The window (`ui/`)
+
+No framework: one module per view (`dashboard`, `scan`, `targets`,
+`settings-view`, `updates`), `main.ts` for boot and the flows that span views,
+`tabs.ts` for the tab bar, and pure helpers with `node --test` tests
+(`format`, `scan-select`, `profile-edit`). Conventions that are not visible in
+the code:
+
+- A control inside a row (a tick, an Action select) updates the state and the
+  save button only; it never rebuilds the rows, which would drop the keyboard
+  focus it was just used from. Rows are rebuilt on add, remove and reset, and
+  a remove moves focus to the row that took its place.
+- Scan ticks are keyed by kind and name, so they survive a rescan (a visit to
+  another tab starts one) and rows moving.
+- One dialog at a time: a new request replaces the one showing, which ends as
+  cancelled. While it shows, the header, banner and main view are `inert` and
+  the Ctrl+1..4 shortcuts stand aside.
+- A toast is painted for the eyes and spoken through the always-present
+  `#announce` live region; error toasts are assertive.
+- `document.hidden` stays false when the window is hidden to the tray in
+  WebView2, so the stats poll asks the window itself (`isVisible`).
+- Text colours come from the `--*-text` tokens, which the light theme darkens
+  to 4.5:1; `theme.test.ts` checks both light blocks agree and every token
+  passes. The window frame follows the Theme setting through `setTheme`.
+- The big button carries its state in `data-quiet`, not `aria-pressed`: its
+  label already says what a press does.
+
 ## Shell behaviour
 
 - Window starts hidden with a matching background; the page reveals it after
@@ -220,8 +247,13 @@ banner's action moves the file to `settings.json.bad`.
 - Rust unit tests: policy, planner, journal, settings, store, fake adapter,
   engine round trip and failure paths (`engine/failure_tests.rs`); real suspend/resume/close on a child process and real
   service/power queries on the host OS.
-- Frontend tests (`node --test`): formatting and profile editing.
+- Frontend tests (`node --test`): formatting, scan selection, profile editing
+  and the theme's contrast.
 - WebDriver suite (`e2e/`): boot, the full quiet-then-restore workflow
   asserting the journal on disk, persistence across a restart, and a clean
   quit that restores first, and giving up on a restore step that cannot
-  succeed. Runs on Windows and Linux in `scripts/verify.sh`.
+  succeed; `ui` and `keyboard` cover focus, dialogs, theme, polling while
+  hidden and screen-reader names. Runs on Windows and Linux in
+  `scripts/verify.sh`. WebView2 posts IPC as host messages and
+  `__TAURI_INTERNALS__.invoke` is locked, so `watchInvokes` (in `support.ts`)
+  stands in front of the transport to count calls or make one fail.

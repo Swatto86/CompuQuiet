@@ -19,7 +19,7 @@ describe("CompuQuiet boots", () => {
       "Ready for a game or local AI",
     );
     assert.equal(await text("#status-pill"), "Ready");
-    assert.equal(await $("#toggle").getAttribute("aria-pressed"), "false");
+    assert.equal(await $("#toggle").getAttribute("data-quiet"), "false");
     assert.equal(
       await browser.execute(() =>
         document.documentElement.getAttribute("data-theme"),

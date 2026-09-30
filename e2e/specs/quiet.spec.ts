@@ -23,7 +23,7 @@ describe("Quiet Mode", () => {
     await $("#toggle").click();
     await waitForPill("Quiet");
 
-    assert.equal(await $("#toggle").getAttribute("aria-pressed"), "true");
+    assert.equal(await $("#toggle").getAttribute("data-quiet"), "true");
     assert.equal(await $("#hero-title").getText(), "Quiet Mode is on");
 
     const journal = readJson<Journal>("journal.json");

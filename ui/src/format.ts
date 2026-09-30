@@ -1,5 +1,5 @@
 /** Pure presentation helpers, tested without a DOM. */
-import type { Profile, Summary } from "./bridge.ts";
+import type { Profile, Summary, UpdateStatus } from "./bridge.ts";
 
 const UNITS = ["B", "KB", "MB", "GB", "TB"];
 
@@ -18,6 +18,15 @@ export function formatBytes(bytes: number): string {
 export function formatPercent(value: number): string {
   if (!Number.isFinite(value)) return "—";
   return `${Math.max(0, Math.min(100, Math.round(value)))}%`;
+}
+
+/**
+ * A program's CPU as a share of one core, summed over its processes, so it
+ * can pass 100: eight helpers at a third of a core each read "267%".
+ */
+export function formatCoreShare(value: number): string {
+  if (!Number.isFinite(value)) return "—";
+  return `${Math.max(0, Math.round(value))}%`;
 }
 
 /** "3 s", "12 min", "1 h 5 min", "2 d 3 h". */
@@ -66,13 +75,28 @@ function joinAnd(parts: string[]): string {
   return `${parts.slice(0, -1).join(", ")}, and ${parts[parts.length - 1]}`;
 }
 
+export interface PlanContext {
+  /** Quiet Mode also parks the low-risk finds of a quick scan. */
+  autoScan: boolean;
+  /** The Park list has edits that are not saved, so the button ignores them. */
+  unsaved: boolean;
+}
+
 /**
  * One sentence for the home screen: what the big button will do, counted
- * from the saved list so the user does not have to open another tab to find out.
+ * from the saved list and the scan setting so the user does not have to open
+ * another tab to find out.
  */
-export function homePlan(quiet: boolean, profile: Profile): string {
+export function homePlan(
+  quiet: boolean,
+  profile: Profile,
+  context: PlanContext = { autoScan: false, unsaved: false },
+): string {
+  const unsaved = context.unsaved
+    ? " Unsaved Park list changes are not used yet."
+    : "";
   if (quiet) {
-    return "Those changes are still in place. Press the button again, or choose Put everything back in the tray menu, to undo them.";
+    return `Those changes are still in place. Press the button again, or choose Put everything back in the tray menu, to undo them.${unsaved}`;
   }
   const programs = profile.processes.filter((item) => item.enabled).length;
   const services = profile.services.filter((item) => item.enabled).length;
@@ -84,8 +108,52 @@ export function homePlan(quiet: boolean, profile: Profile): string {
   if (profile.power === "performance")
     actions.push("switch to the performance power plan");
   if (profile.purge_memory) actions.push("purge cached memory");
+  const found = "low-risk programs and services a quick scan finds";
   if (actions.length === 0) {
-    return "Nothing is selected yet. Open Park list and tick what this button should touch.";
+    return context.autoScan
+      ? `Your park list is empty, so one press will park only the ${found}. Open Park list to choose your own.${unsaved}`
+      : `Nothing is selected yet. Open Park list and tick what this button should touch.${unsaved}`;
   }
-  return `One press will ${joinAnd(actions)}. Press again to undo it.`;
+  const extra = context.autoScan ? `, plus any ${found}` : "";
+  return `One press will ${joinAnd(actions)}${extra}. Press again to undo it.${unsaved}`;
+}
+
+/** What closing the window does, which follows the tray setting. */
+export function closeHint(closeToTray: boolean): string {
+  return closeToTray
+    ? "Closing this window leaves CompuQuiet in the tray. Right-click that icon for the same button, to open this window, or to quit."
+    : "Closing this window quits CompuQuiet. Turn on Keep running in the tray in Settings to leave it running instead.";
+}
+
+/** Where self-updating stands, in a sentence for the About card. */
+export function updateLine(status: UpdateStatus): string {
+  switch (status.kind) {
+    case "unavailable":
+      return status.reason;
+    case "idle":
+      return "Looks for a newer release now and then while CompuQuiet runs.";
+    case "checking":
+      return "Looking for a newer release…";
+    case "up_to_date":
+      return "This is the latest release.";
+    case "downloading":
+      return `Downloading ${status.version}…`;
+    case "ready":
+      return `${status.version} is downloaded. It installs when Quiet Mode is off and you close the window to the tray.${
+        status.asks_permission
+          ? " Windows will ask for permission when it installs."
+          : ""
+      }`;
+    case "failed":
+      return `The last check failed (${status.error}). It tries again later.`;
+  }
+}
+
+/** Whether a manual check would do anything now. */
+export function canCheckForUpdates(status: UpdateStatus): boolean {
+  return (
+    status.kind === "idle" ||
+    status.kind === "up_to_date" ||
+    status.kind === "failed"
+  );
 }

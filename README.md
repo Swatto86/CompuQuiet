@@ -97,7 +97,8 @@ restart once nothing is running and the window is closed to the tray. On
 Windows an unelevated copy in Program Files shows the permission prompt for
 that install (a notification says so first); a copy running as administrator
 installs without one. The `.deb` and the portable copies do not update
-themselves. A copy built before
+themselves. Settings > About shows where that stands, and *Check now* asks
+again. A copy built before
 this check existed has to be replaced by hand once; after that, later
 releases install on their own.
 

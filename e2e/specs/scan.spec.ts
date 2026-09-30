@@ -117,7 +117,7 @@ describe("Scan", () => {
       true,
       "already a target",
     );
-    assert.equal(byName.get("OneDrive.exe")?.action, "already a target");
+    assert.equal(byName.get("OneDrive.exe")?.action, "already on the list");
     assert.equal(
       byName.get("Spooler")?.disabled,
       true,

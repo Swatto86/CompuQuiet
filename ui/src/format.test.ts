@@ -2,13 +2,17 @@ import { strict as assert } from "node:assert";
 import { test } from "node:test";
 
 import {
+  canCheckForUpdates,
+  closeHint,
   formatBytes,
+  formatCoreShare,
   formatPercent,
   formatSince,
   homePlan,
   summaryLines,
+  updateLine,
 } from "./format.ts";
-import type { Profile } from "./bridge.ts";
+import type { Profile, UpdateStatus } from "./bridge.ts";
 
 test("bytes scale with one decimal below 100 and none above", () => {
   assert.equal(formatBytes(0), "0 B");
@@ -79,6 +83,18 @@ function profile(partial: Partial<Profile> = {}): Profile {
   };
 }
 
+test("a program's CPU is a share of one core and may pass 100", () => {
+  assert.equal(formatCoreShare(0), "0%");
+  assert.equal(formatCoreShare(46.6), "47%");
+  assert.equal(
+    formatCoreShare(263.4),
+    "263%",
+    "eight helpers on a third of a core each are not one full core",
+  );
+  assert.equal(formatCoreShare(-3), "0%");
+  assert.equal(formatCoreShare(Number.NaN), "—");
+});
+
 test("the home plan counts only what the button will actually touch", () => {
   assert.equal(
     homePlan(false, profile()),
@@ -100,4 +116,63 @@ test("the home plan counts only what the button will actually touch", () => {
     "One press will park 1 program, stop 1 service, switch to the performance power plan, and purge cached memory. Press again to undo it.",
   );
   assert.match(homePlan(true, profile()), /undo them/);
+});
+
+test("the home plan says what a quick scan adds and what is unsaved", () => {
+  const scanning = { autoScan: true, unsaved: false };
+  assert.equal(
+    homePlan(
+      false,
+      profile({
+        processes: [{ name: "OneDrive.exe", action: "suspend", enabled: true }],
+      }),
+      scanning,
+    ),
+    "One press will park 1 program, plus any low-risk programs and services a quick scan finds. Press again to undo it.",
+  );
+  assert.match(
+    homePlan(false, profile(), scanning),
+    /^Your park list is empty, so one press will park only the low-risk/,
+    "an empty list is not 'nothing' while the scan is on",
+  );
+  const unsaved = { autoScan: false, unsaved: true };
+  assert.match(
+    homePlan(false, profile(), unsaved),
+    /Unsaved Park list changes are not used yet\.$/,
+  );
+  assert.match(
+    homePlan(true, profile(), unsaved),
+    /Unsaved Park list changes are not used yet\.$/,
+  );
+  assert.doesNotMatch(homePlan(false, profile()), /Unsaved/);
+});
+
+test("the close hint follows the tray setting", () => {
+  assert.match(closeHint(true), /leaves CompuQuiet in the tray/);
+  assert.match(closeHint(false), /quits CompuQuiet/);
+  assert.doesNotMatch(closeHint(false), /in the tray\. Right-click/);
+});
+
+test("every update state has a sentence, and only some allow a check", () => {
+  const states: [UpdateStatus, RegExp, boolean][] = [
+    [{ kind: "unavailable", reason: "A development build." }, /^A dev/, false],
+    [{ kind: "idle" }, /now and then/, true],
+    [{ kind: "checking" }, /Looking/, false],
+    [{ kind: "up_to_date" }, /latest release/, true],
+    [{ kind: "downloading", version: "1.2.0" }, /Downloading 1\.2\.0/, false],
+    [
+      { kind: "ready", version: "1.2.0", asks_permission: false },
+      /1\.2\.0 is downloaded.*close the window to the tray\.$/,
+      false,
+    ],
+    [{ kind: "failed", error: "offline" }, /failed \(offline\)/, true],
+  ];
+  for (const [status, expected, canCheck] of states) {
+    assert.match(updateLine(status), expected, status.kind);
+    assert.equal(canCheckForUpdates(status), canCheck, status.kind);
+  }
+  assert.match(
+    updateLine({ kind: "ready", version: "1.2.0", asks_permission: true }),
+    /Windows will ask for permission when it installs\.$/,
+  );
 });

@@ -7,13 +7,8 @@ import {
   type Theme,
 } from "./bridge.ts";
 import { toast } from "./dialog.ts";
+import { byId } from "./dom.ts";
 import { applyTheme } from "./theme.ts";
-
-function byId<T extends HTMLElement>(id: string): T {
-  const element = document.getElementById(id);
-  if (!element) throw new Error(`missing #${id}`);
-  return element as T;
-}
 
 export interface SettingsHost {
   current(): Settings;
@@ -52,9 +47,12 @@ export class SettingsView {
     byId<HTMLInputElement>("set-auto-scan").checked = settings.auto_scan;
     byId<HTMLSelectElement>("set-theme").value = settings.theme;
     byId("data-dir").textContent = info.data_dir;
-    void this.refreshAutostart();
   }
 
+  /**
+   * Asks the operating system, which can take a second, so it runs when the
+   * Settings tab opens and after a change, not on every state event.
+   */
   async refreshAutostart(): Promise<void> {
     const input = byId<HTMLInputElement>("set-autostart");
     const note = byId("autostart-note");
@@ -80,10 +78,13 @@ export class SettingsView {
                 : "";
     } catch (error) {
       note.textContent = `(${errorMessage(error)})`;
+      input.disabled = false;
     }
   }
 
   private async setAutostart(enabled: boolean): Promise<void> {
+    // Until the answer is back, a second click would race the first.
+    byId<HTMLInputElement>("set-autostart").disabled = true;
     try {
       await api.setAutostart(enabled);
       toast(

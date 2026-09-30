@@ -6,7 +6,7 @@
  */
 import { strict as assert } from "node:assert";
 
-import { checkForUpdates, updateStatus } from "./support.ts";
+import { checkForUpdates, clickTab, text, updateStatus } from "./support.ts";
 
 describe("self-updating in a development build", () => {
   it("reports that this copy cannot update itself, and why", async () => {
@@ -20,5 +20,15 @@ describe("self-updating in a development build", () => {
     const status = await checkForUpdates();
     assert.equal(status.kind, "unavailable");
     assert.deepEqual(await updateStatus(), status);
+  });
+
+  it("says so under About, and offers no check that could not run", async () => {
+    await clickTab("settings");
+    await browser.waitUntil(
+      async () => /development build/.test(await text("#about-update")),
+      { timeout: 5_000, timeoutMsg: "About never showed the update status" },
+    );
+    assert.equal(await $("#update-check").isEnabled(), false);
+    await clickTab("dashboard");
   });
 });

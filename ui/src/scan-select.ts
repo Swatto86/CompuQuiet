@@ -1,21 +1,49 @@
 /** Pure helpers for the Scan view: what is ticked by default and what a row says. */
 import type { Recommendation, RecommendationKind } from "./bridge.ts";
 
+/** The same find on the next scan has the same key, whatever row it lands on. */
+export function rowKey(item: Recommendation): string {
+  return `${item.kind.kind}:${item.name}`;
+}
+
 /** Low-risk finds that are not already targets start ticked; the rest do not. */
-export function defaultSelection(items: Recommendation[]): Set<number> {
-  const selected = new Set<number>();
-  items.forEach((item, index) => {
-    if (item.risk === "low" && !item.already_targeted) selected.add(index);
-  });
+export function defaultSelection(items: Recommendation[]): Set<string> {
+  const selected = new Set<string>();
+  for (const item of items) {
+    if (item.risk === "low" && !item.already_targeted)
+      selected.add(rowKey(item));
+  }
   return selected;
+}
+
+/**
+ * The ticks for a fresh scan: what the user chose for a find that was already
+ * on offer stays as chosen, and anything new starts as it would by default.
+ */
+export function carrySelection(
+  before: Recommendation[],
+  chosen: Set<string>,
+  after: Recommendation[],
+): Set<string> {
+  const offered = new Set(
+    before.filter((item) => !item.already_targeted).map(rowKey),
+  );
+  const next = defaultSelection(after);
+  for (const item of after) {
+    const key = rowKey(item);
+    if (item.already_targeted || !offered.has(key)) continue;
+    if (chosen.has(key)) next.add(key);
+    else next.delete(key);
+  }
+  return next;
 }
 
 export function selectedItems(
   items: Recommendation[],
-  selected: Set<number>,
+  selected: Set<string>,
 ): Recommendation[] {
   return items.filter(
-    (item, index) => selected.has(index) && !item.already_targeted,
+    (item) => selected.has(rowKey(item)) && !item.already_targeted,
   );
 }
 
@@ -29,6 +57,18 @@ export function kindLabel(kind: RecommendationKind): string {
       return "Power plan";
     case "memory_purge":
       return "Purge cache";
+  }
+}
+
+/** What a screen reader says for a row's tick box: the action and its object. */
+export function tickLabel(item: Recommendation): string {
+  switch (item.kind.kind) {
+    case "process":
+      return `${kindLabel(item.kind)} ${item.name}`;
+    case "service":
+      return `Stop service ${item.name}`;
+    default:
+      return `Add ${item.name}`;
   }
 }
 

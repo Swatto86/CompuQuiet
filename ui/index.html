@@ -17,10 +17,10 @@
         </svg>
         <h1>CompuQuiet</h1>
         <nav class="tabs" role="tablist" aria-label="Sections">
-          <button class="tab" role="tab" data-view="dashboard" aria-selected="true" id="tab-dashboard">Home</button>
-          <button class="tab" role="tab" data-view="scan" aria-selected="false" id="tab-scan">Scan</button>
-          <button class="tab" role="tab" data-view="targets" aria-selected="false" id="tab-targets">Park list</button>
-          <button class="tab" role="tab" data-view="settings" aria-selected="false" id="tab-settings">Settings</button>
+          <button class="tab" role="tab" data-view="dashboard" aria-selected="true" aria-controls="view-dashboard" aria-keyshortcuts="Control+1" id="tab-dashboard">Home</button>
+          <button class="tab" role="tab" data-view="scan" aria-selected="false" aria-controls="view-scan" aria-keyshortcuts="Control+2" tabindex="-1" id="tab-scan">Scan</button>
+          <button class="tab" role="tab" data-view="targets" aria-selected="false" aria-controls="view-targets" aria-keyshortcuts="Control+3" tabindex="-1" id="tab-targets">Park list</button>
+          <button class="tab" role="tab" data-view="settings" aria-selected="false" aria-controls="view-settings" aria-keyshortcuts="Control+4" tabindex="-1" id="tab-settings">Settings</button>
         </nav>
         <span class="spacer"></span>
         <span id="status-pill" class="pill pill-idle" aria-live="polite">Ready</span>
@@ -35,7 +35,7 @@
       <main>
         <section id="view-dashboard" class="view" role="tabpanel" aria-labelledby="tab-dashboard">
           <div class="hero">
-            <button id="toggle" type="button" class="power" aria-pressed="false" aria-describedby="hero-sub">
+            <button id="toggle" type="button" class="power" data-quiet="false" aria-describedby="hero-sub">
               <span class="power-ring" aria-hidden="true"></span>
               <svg class="power-glyph" viewBox="0 0 1024 1024" aria-hidden="true">
                 <path d="M 372 268 A 300 300 0 1 0 652 268" fill="none" stroke="currentColor" stroke-width="72" stroke-linecap="round" />
@@ -60,8 +60,8 @@
           </section>
           <p id="hero-plan" class="plan"></p>
           <p class="tray-hint muted">
-            Closing this window leaves CompuQuiet in the tray. Right-click that icon for the same
-            button, to open this window, or to quit.
+            <span id="close-hint">Closing this window leaves CompuQuiet in the tray. Right-click that icon for the same
+            button, to open this window, or to quit.</span>
             <button type="button" class="linkish" data-jump="scan">Scan this PC</button>
             first if you want to see what else can be parked.
           </p>
@@ -116,7 +116,8 @@
             </div>
             <div class="card">
               <table class="targets scan">
-                <thead><tr><th>Park</th><th>What</th><th>Action</th><th>Why</th><th>Risk</th><th class="num">Memory</th><th class="num">CPU</th></tr></thead>
+                <caption class="sr-only">Programs and services that could be parked</caption>
+                <thead><tr><th scope="col">Park</th><th scope="col">What</th><th scope="col">Action</th><th scope="col">Why</th><th scope="col">Risk</th><th scope="col" class="num">Memory</th><th scope="col" class="num">CPU (100% = one core)</th></tr></thead>
                 <tbody id="scan-rows"></tbody>
               </table>
             </div>
@@ -150,7 +151,8 @@
                 <button type="submit" class="small">Add</button>
               </form>
               <table class="targets">
-                <thead><tr><th>On</th><th>Program</th><th>Action</th><th>Now</th><th></th></tr></thead>
+                <caption class="sr-only">Programs to park</caption>
+                <thead><tr><th scope="col">Enabled</th><th scope="col">Program</th><th scope="col">Action</th><th scope="col">Now</th><th scope="col"><span class="sr-only">Remove</span></th></tr></thead>
                 <tbody id="process-targets"></tbody>
               </table>
             </div>
@@ -161,7 +163,8 @@
                 <button type="submit" class="small">Add</button>
               </form>
               <table class="targets">
-                <thead><tr><th>On</th><th>Service</th><th></th></tr></thead>
+                <caption class="sr-only">Services to stop</caption>
+                <thead><tr><th scope="col">Enabled</th><th scope="col">Service</th><th scope="col"><span class="sr-only">Remove</span></th></tr></thead>
                 <tbody id="service-targets"></tbody>
               </table>
             </div>
@@ -214,7 +217,7 @@
               <h3 class="group">When you free up this PC</h3>
               <label class="choice"><input type="checkbox" id="set-auto-scan" />
                 <span>Also park low-risk finds from a quick scan</span>
-                <span class="choice-help">For that run only. Medium-risk programs are never parked unless you tick them on Scan, and the saved park list is not edited. The power plan and memory purge follow your Targets settings, never the scan.</span>
+                <span class="choice-help">For that run only. Medium-risk programs are never parked unless you tick them on Scan, and the saved park list is not edited. The power plan and memory purge follow your Park list settings, never the scan.</span>
               </label>
               <label class="row-label"><span>Theme</span>
                 <select id="set-theme"><option value="system">Match system</option><option value="dark">Dark</option><option value="light">Light</option></select>
@@ -239,6 +242,7 @@
                 <dt>Platform</dt><dd id="about-os"></dd>
                 <dt>Build</dt><dd id="about-build"></dd>
                 <dt>Administrator</dt><dd id="about-admin"></dd>
+                <dt>Updates</dt><dd><span id="about-update" aria-live="polite"></span> <button id="update-check" type="button" class="small" disabled>Check now</button></dd>
                 <dt>Source</dt><dd>github.com/Swatto86/CompuQuiet</dd>
                 <dt>Licence</dt><dd>MIT</dd>
               </dl>
@@ -248,7 +252,9 @@
       </main>
 
       <div id="dialog-root"></div>
-      <div id="toast" class="toast" role="status" hidden></div>
+      <!-- The toast is seen; the live region beside it is what a screen reader hears. -->
+      <div id="toast" class="toast" aria-hidden="true" hidden></div>
+      <div id="announce" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
       <!-- Fake-platform / WebDriver only: drives the same Rust tray dispatch. -->
       <button id="e2e-tray-quit" type="button" hidden>e2e tray quit</button>
     </div>

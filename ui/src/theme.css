@@ -15,6 +15,13 @@
   --ok: #34d399;
   --warn: #fbbf24;
   --danger: #f43f5e;
+  /* The same colours as text; the light theme needs darker ones. */
+  --accent-text: #f59e0b;
+  --accent-2-text: #f97316;
+  --ok-text: #34d399;
+  --warn-text: #fbbf24;
+  --danger-text: #fb7185;
+  --on-danger: #111111;
   --idle: #64748b;
   --ring-idle: #3b4658;
   --shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
@@ -40,6 +47,12 @@
   --ok: #059669;
   --warn: #d97706;
   --danger: #e11d48;
+  --accent-text: #af4f08;
+  --accent-2-text: #9a3412;
+  --ok-text: #047857;
+  --warn-text: #af4f08;
+  --danger-text: #be123c;
+  --on-danger: #ffffff;
   --idle: #94a3b8;
   --ring-idle: #cbd5e1;
   --shadow: 0 10px 30px rgba(16, 21, 33, 0.1);
@@ -61,6 +74,12 @@
     --ok: #059669;
     --warn: #d97706;
     --danger: #e11d48;
+    --accent-text: #af4f08;
+    --accent-2-text: #9a3412;
+    --ok-text: #047857;
+    --warn-text: #af4f08;
+    --danger-text: #be123c;
+    --on-danger: #ffffff;
     --idle: #94a3b8;
     --ring-idle: #cbd5e1;
     --shadow: 0 10px 30px rgba(16, 21, 33, 0.1);

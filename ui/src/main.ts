@@ -13,25 +13,25 @@ import {
 } from "./bridge.ts";
 import { Dashboard } from "./dashboard.ts";
 import { showDialog, toast } from "./dialog.ts";
-import { homePlan } from "./format.ts";
+import { byId } from "./dom.ts";
+import { closeHint, homePlan } from "./format.ts";
 import { Recovery } from "./recovery.ts";
 import { Scan } from "./scan.ts";
 import { SettingsView } from "./settings-view.ts";
+import { wireTabs, type Tabs } from "./tabs.ts";
 import { Targets } from "./targets.ts";
 import { applyTheme } from "./theme.ts";
+import { Updates } from "./updates.ts";
 import { invoke } from "@tauri-apps/api/core";
-
-function byId<T extends HTMLElement>(id: string): T {
-  const element = document.getElementById(id);
-  if (!element) throw new Error(`missing #${id}`);
-  return element as T;
-}
+import { getCurrentWindow } from "@tauri-apps/api/window";
 
 let engine: EngineState;
 let settings: Settings;
 let info: AppInfo;
 let memoryBaseline: number | null = null;
 let busy = false;
+/** The Park list holds edits that are not saved, so Home does not count them. */
+let unsaved = false;
 /** A run started outside this window (the tray, or at startup) is going. */
 let runElsewhere = false;
 
@@ -43,6 +43,7 @@ const recovery = new Recovery((next) => {
 let targets: Targets;
 let settingsView: SettingsView;
 let scanView: Scan;
+let tabs: Tabs;
 
 async function boot(): Promise<void> {
   [settings, engine, info] = await Promise.all([
@@ -52,9 +53,20 @@ async function boot(): Promise<void> {
   ]);
   applyTheme(settings.theme);
 
+  tabs = wireTabs((view) => {
+    if (view === "targets") void targets.refreshRunning();
+    if (view === "settings") void settingsView.refreshAutostart();
+    if (view === "scan") void scanView.refresh();
+  });
   targets = new Targets(settings.profile, {
     save: async (profile) => saveSettings({ ...settings, profile }),
     defaults: async () => (await api.defaultSettings()).profile,
+    unsaved: (now) => {
+      if (now === unsaved) return;
+      unsaved = now;
+      tabs.setUnsaved("targets", now);
+      renderPlan();
+    },
   });
   settingsView = new SettingsView({
     current: () => settings,
@@ -73,7 +85,6 @@ async function boot(): Promise<void> {
   });
 
   renderAll();
-  wireTabs();
   wireBanner();
   wireE2eHooks();
 
@@ -94,6 +105,9 @@ async function boot(): Promise<void> {
   });
   await onRunError((error) => toast(error.message, true));
   await onConfirmQuit(() => void quitFlow());
+  new Updates().start().catch((error: unknown) => {
+    toast(`Could not read the update status: ${errorMessage(error)}`, true);
+  });
   // A run that ended between the first fetch and the listeners above would
   // otherwise leave the page on "Working…" until the next click.
   engine = await api.getState();
@@ -110,6 +124,9 @@ async function boot(): Promise<void> {
 }
 
 function renderAll(): void {
+  // Also puts the look back when a save that changed it was refused.
+  applyTheme(settings.theme);
+  scanView.setQuiet(engine.quiet);
   dashboard.render(engine);
   recovery.render(engine);
   targets.describe(engine.capabilities, engine.os);
@@ -120,7 +137,11 @@ function renderAll(): void {
 }
 
 function renderPlan(): void {
-  byId("hero-plan").textContent = homePlan(engine.quiet, settings.profile);
+  byId("hero-plan").textContent = homePlan(engine.quiet, settings.profile, {
+    autoScan: settings.auto_scan,
+    unsaved,
+  });
+  byId("close-hint").textContent = closeHint(settings.close_to_tray);
 }
 
 function renderAbout(): void {
@@ -223,41 +244,6 @@ async function relaunchElevated(): Promise<void> {
   }
 }
 
-function wireTabs(): void {
-  const tabs = [...document.querySelectorAll<HTMLButtonElement>(".tab")];
-  const show = (view: string) => {
-    for (const tab of tabs)
-      tab.setAttribute("aria-selected", String(tab.dataset["view"] === view));
-    for (const section of document.querySelectorAll<HTMLElement>(".view")) {
-      section.hidden = section.id !== `view-${view}`;
-    }
-    if (view === "targets") void targets.refreshRunning();
-    if (view === "settings") void settingsView.refreshAutostart();
-    if (view === "scan") void scanView.refresh();
-  };
-  for (const tab of tabs) {
-    tab.addEventListener("click", () =>
-      show(tab.dataset["view"] ?? "dashboard"),
-    );
-  }
-  for (const jump of document.querySelectorAll<HTMLButtonElement>(
-    "[data-jump]",
-  )) {
-    jump.addEventListener("click", () =>
-      show(jump.dataset["jump"] ?? "dashboard"),
-    );
-  }
-  document.addEventListener("keydown", (event) => {
-    if (!event.ctrlKey || event.key < "1" || event.key > "4") return;
-    const tab = tabs[Number(event.key) - 1];
-    if (tab) {
-      event.preventDefault();
-      show(tab.dataset["view"] ?? "dashboard");
-      tab.focus();
-    }
-  });
-}
-
 async function saveSettings(next: Settings): Promise<void> {
   // Applied before the round trip, so a second quick change builds on this
   // one rather than on the settings before it; put back if the save fails.
@@ -274,8 +260,23 @@ async function saveSettings(next: Settings): Promise<void> {
   renderPlan();
 }
 
+/**
+ * Whether anyone can see the window. Hiding it to the tray does not make
+ * `document.hidden` true in WebView2, so the window is asked as well;
+ * without this the app samples the machine every two seconds all day.
+ */
+async function windowShowing(): Promise<boolean> {
+  if (document.hidden) return false;
+  try {
+    return await getCurrentWindow().isVisible();
+  } catch {
+    // Cannot ask: carry on sampling, as before.
+    return true;
+  }
+}
+
 async function pollStats(): Promise<void> {
-  if (document.hidden) return;
+  if (!(await windowShowing())) return;
   try {
     const stats = await api.getStats();
     const freed =
