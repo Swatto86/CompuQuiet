@@ -25,6 +25,12 @@ fn field(dir: &Path, name: &str) -> String {
         .unwrap_or_default()
 }
 
+/// `online` is 0 offline, 1 online, and 2 for a USB-C charger on a
+/// programmable (PPS) contract, which is as much mains as the first.
+fn online(value: &str) -> bool {
+    value.parse::<u8>().is_ok_and(|value| value > 0)
+}
+
 fn read(root: &Path) -> Vec<Supply> {
     let Ok(entries) = fs::read_dir(root) else {
         return Vec::new();
@@ -34,7 +40,7 @@ fn read(root: &Path) -> Vec<Supply> {
         .map(|entry| entry.path())
         .map(|dir| Supply {
             kind: field(&dir, "type"),
-            online: field(&dir, "online") == "1",
+            online: online(&field(&dir, "online")),
             status: field(&dir, "status"),
             scope: field(&dir, "scope"),
         })
@@ -114,10 +120,23 @@ mod tests {
         assert_eq!(decide(&mouse), None, "a peripheral's battery is not either");
     }
 
+    /// Lay out `/sys/class/power_supply` as the kernel would: one directory per
+    /// supply, one file per field.
+    fn sysfs(supplies: &[(&str, Vec<(&str, &str)>)]) -> tempfile::TempDir {
+        let root = tempfile::tempdir().unwrap();
+        for (name, files) in supplies {
+            let dir = root.path().join(name);
+            fs::create_dir(&dir).unwrap();
+            for (file, content) in files {
+                fs::write(dir.join(file), content).unwrap();
+            }
+        }
+        root
+    }
+
     #[test]
     fn the_kernel_files_are_read_as_written() {
-        let root = tempfile::tempdir().unwrap();
-        for (name, files) in [
+        let root = sysfs(&[
             ("AC", vec![("type", "Mains\n"), ("online", "0\n")]),
             (
                 "BAT0",
@@ -127,14 +146,27 @@ mod tests {
                     ("scope", "System\n"),
                 ],
             ),
-        ] {
-            let dir = root.path().join(name);
-            fs::create_dir(&dir).unwrap();
-            for (file, content) in files {
-                fs::write(dir.join(file), content).unwrap();
-            }
-        }
+        ]);
         assert_eq!(decide(&read(root.path())), Some(true));
         assert!(read(&root.path().join("missing")).is_empty());
+    }
+
+    #[test]
+    fn a_programmable_usb_charger_is_mains_even_when_it_cannot_keep_up() {
+        // online is 2 for a PPS contract; the battery still drains under load.
+        let root = sysfs(&[
+            (
+                "ucsi-source-psy-USBC000:001",
+                vec![("type", "USB\n"), ("online", "2\n")],
+            ),
+            (
+                "BAT0",
+                vec![("type", "Battery\n"), ("status", "Discharging\n")],
+            ),
+        ]);
+        assert_eq!(decide(&read(root.path())), Some(false));
+        for (value, expected) in [("0", false), ("1", true), ("2", true), ("", false)] {
+            assert_eq!(online(value), expected, "{value:?}");
+        }
     }
 }

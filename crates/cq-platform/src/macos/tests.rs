@@ -54,6 +54,19 @@ fn launchctl_list_gives_each_agent_and_whether_it_is_running() {
 }
 
 #[test]
+fn root_lists_the_agents_of_the_user_it_acts_for_not_the_system_daemons() {
+    assert_eq!(list_args(false, 501).unwrap(), ["list"]);
+    assert_eq!(
+        list_args(true, 501).unwrap(),
+        ["asuser", "501", "/bin/launchctl", "list"]
+    );
+    assert!(matches!(
+        list_args(true, 0),
+        Err(PlatformError::Unsupported(_))
+    ));
+}
+
+#[test]
 fn labels_are_validated_and_launchctl_print_is_parsed() {
     assert!(valid_label("com.google.keystone.agent"));
     assert!(!valid_label("-bootout"));

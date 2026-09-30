@@ -97,15 +97,20 @@ fn look(reach: &Reach, processes: &[ProcessInfo], elevated: bool) -> ModelServer
             skip(ModelServer::Ollama, format!("could not be asked: {error}"));
         }
     }
+    let mut left_alone = Vec::new();
     if lm_studio_running(processes) {
         match lms_listing(reach, elevated) {
-            Ok(listed) => models.extend(listed),
+            Ok((listed, left)) => {
+                models.extend(listed);
+                left_alone = left;
+            }
             Err(error) => {
                 skip(ModelServer::LmStudio, error.to_string());
             }
         }
     }
     found.loaded = models;
+    found.skipped.extend(left_alone);
     found
 }
 
@@ -128,7 +133,10 @@ fn lms_tool(reach: &Reach, elevated: bool) -> Result<&str> {
     })
 }
 
-fn lms_listing(reach: &Reach, elevated: bool) -> Result<Vec<LoadedModel>> {
+/// The models to free, and the ones in the list that are left running.
+type Listing = (Vec<LoadedModel>, Vec<Skipped>);
+
+fn lms_listing(reach: &Reach, elevated: bool) -> Result<Listing> {
     let tool = lms_tool(reach, elevated)?;
     parse_lms(&run_tool_within(tool, &["ps", "--json"], LMS_WITHIN)?)
 }
@@ -162,7 +170,13 @@ fn valid_name(name: &str) -> bool {
 /// `lms unload` takes. Anything before the list (a tool's notice) is passed
 /// over. A list none of whose entries can be read is an error, not "nothing
 /// loaded", so a change in the tool's output shows instead of hiding.
-fn parse_lms(output: &str) -> Result<Vec<LoadedModel>> {
+///
+/// Two kinds of entry are left running, and named in the second half: one
+/// hosted on another machine (LM Link lists it with that machine's
+/// `deviceIdentifier`, and `lms unload` would unload it there, freeing
+/// nothing here), and one that is not `idle`, which is answering a request
+/// now. A tool too old to say which is taken to be local and idle.
+fn parse_lms(output: &str) -> Result<Listing> {
     let unclear = |detail: &str| PlatformError::Other(format!("LM Studio's list: {detail}"));
     let start = output
         .find('[')
@@ -172,25 +186,49 @@ fn parse_lms(output: &str) -> Result<Vec<LoadedModel>> {
     let entries = value
         .as_array()
         .ok_or_else(|| unclear("it is not a list"))?;
-    let models: Vec<LoadedModel> = entries
-        .iter()
-        .filter_map(|entry| {
-            let name = entry
-                .get("identifier")
-                .or_else(|| entry.get("modelKey"))?
-                .as_str()?;
-            valid_name(name).then(|| LoadedModel {
+    let mut models = Vec::new();
+    let mut left = Vec::new();
+    let mut readable = false;
+    for entry in entries {
+        let Some(name) = entry
+            .get("identifier")
+            .or_else(|| entry.get("modelKey"))
+            .and_then(Value::as_str)
+            .filter(|name| valid_name(name))
+        else {
+            continue;
+        };
+        readable = true;
+        let remote = entry
+            .get("deviceIdentifier")
+            .is_some_and(|device| !device.is_null());
+        let busy = entry
+            .get("status")
+            .and_then(Value::as_str)
+            .is_some_and(|status| !status.eq_ignore_ascii_case("idle"))
+            || entry.get("queued").and_then(Value::as_u64) > Some(0);
+        let reason = if remote {
+            "it is hosted on another device (LM Link), so it is left running there"
+        } else if busy {
+            "it is answering a request now, so it is left running"
+        } else {
+            models.push(LoadedModel {
                 server: ModelServer::LmStudio,
                 name: name.to_string(),
                 bytes: entry.get("sizeBytes").and_then(Value::as_u64).unwrap_or(0),
                 endpoint: None,
-            })
-        })
-        .collect();
-    if models.is_empty() && !entries.is_empty() {
+            });
+            continue;
+        };
+        left.push(Skipped {
+            name: format!("LM Studio model {name}"),
+            reason: reason.to_string(),
+        });
+    }
+    if !readable && !entries.is_empty() {
         return Err(unclear("no entry has an identifier"));
     }
-    Ok(models)
+    Ok((models, left))
 }
 
 #[cfg(test)]

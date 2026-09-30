@@ -100,6 +100,23 @@ pub(crate) fn parse_print(output: &str) -> ServiceState {
     ServiceState::Stopped
 }
 
+/// What to ask `launchctl` for the agents of `gui/<uid>`, the domain the rest
+/// of this adapter stops, starts and queries them in. `list` names the domain
+/// of whoever runs it, which for root is the system's daemons, so root (under
+/// `sudo`, for the purge and Slow down) goes into the user's session with
+/// `asuser`. A real root login has no such session, and nothing to list.
+fn list_args(root: bool, uid: u32) -> Result<Vec<String>> {
+    match (root, uid) {
+        (false, _) => Ok(vec!["list".to_string()]),
+        (true, 0) => Err(PlatformError::Unsupported(
+            "there is no signed-in user's session to list agents from when run as root itself (use sudo from your own account)".into(),
+        )),
+        (true, uid) => Ok(["asuser", &uid.to_string(), "/bin/launchctl", "list"]
+            .map(str::to_string)
+            .to_vec()),
+    }
+}
+
 /// Rows of `launchctl list`: `PID Status Label`, with a dash for the PID
 /// while the agent is not running. The header, and the throwaway labels
 /// launchd gives programs that are not agents, are left out.
@@ -175,7 +192,9 @@ impl Platform for MacOs {
     /// The agents launchd has loaded for the signed-in user. Asked when the
     /// Park list opens, so a stuck tool must not hold it.
     fn list_services(&self) -> Result<Vec<ServiceInfo>> {
-        run_tool_within("launchctl", &["list"], Duration::from_secs(15))
+        let args = list_args(unix::is_root(), self.uid)?;
+        let args: Vec<&str> = args.iter().map(String::as_str).collect();
+        run_tool_within("launchctl", &args, Duration::from_secs(15))
             .map(|output| parse_list(&output))
     }
 

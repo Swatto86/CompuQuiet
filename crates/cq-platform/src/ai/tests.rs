@@ -97,8 +97,10 @@ fn lm_studios_list_is_read_by_identifier_and_a_list_nobody_can_read_is_an_error(
   {"type":"llm"},
   {"identifier":"--all"}
 ]"#;
+    let (models, left) = parse_lms(listing).unwrap();
+    assert!(left.is_empty(), "{left:?}");
     assert_eq!(
-        parse_lms(listing).unwrap(),
+        models,
         vec![
             LoadedModel {
                 server: ModelServer::LmStudio,
@@ -114,7 +116,7 @@ fn lm_studios_list_is_read_by_identifier_and_a_list_nobody_can_read_is_an_error(
             },
         ]
     );
-    assert!(parse_lms("[]").unwrap().is_empty());
+    assert_eq!(parse_lms("[]").unwrap(), (Vec::new(), Vec::new()));
     for bad in [
         "",
         "no models are loaded",
@@ -124,6 +126,63 @@ fn lm_studios_list_is_read_by_identifier_and_a_list_nobody_can_read_is_an_error(
     ] {
         assert!(parse_lms(bad).is_err(), "{bad:?}");
     }
+}
+
+#[test]
+fn lm_studio_models_hosted_elsewhere_or_answering_a_request_are_left_running() {
+    let listing = r#"[
+  {"identifier":"mine","sizeBytes":10,"deviceIdentifier":null,"status":"idle","queued":0},
+  {"identifier":"theirs","sizeBytes":20,"deviceIdentifier":"laptop-7"},
+  {"identifier":"writing","sizeBytes":30,"status":"generating","queued":0},
+  {"identifier":"reading","sizeBytes":40,"status":"processingPrompt"},
+  {"identifier":"waiting","sizeBytes":50,"status":"idle","queued":2},
+  {"identifier":"old-tool","sizeBytes":60}
+]"#;
+    let (models, left) = parse_lms(listing).unwrap();
+    let names: Vec<&str> = models.iter().map(|model| model.name.as_str()).collect();
+    assert_eq!(names, ["mine", "old-tool"]);
+    let why = |name: &str| {
+        left.iter()
+            .find(|skipped| skipped.name.ends_with(name))
+            .map(|skipped| skipped.reason.as_str())
+    };
+    assert!(
+        why("theirs").unwrap().contains("another device"),
+        "{left:?}"
+    );
+    for name in ["writing", "reading", "waiting"] {
+        assert!(why(name).unwrap().contains("answering"), "{name}: {left:?}");
+    }
+    assert_eq!(left.len(), 4);
+
+    // All of them left running is a list that was read, not an unreadable one.
+    let (models, left) =
+        parse_lms(r#"[{"identifier":"theirs","deviceIdentifier":"laptop-7"}]"#).unwrap();
+    assert!(models.is_empty());
+    assert_eq!(left.len(), 1);
+}
+
+#[test]
+fn a_remote_or_busy_lm_studio_model_is_named_in_what_is_left_alone_and_never_unloaded() {
+    let dir = tempfile::tempdir().unwrap();
+    let lms = fake_lms(
+        dir.path(),
+        r#"[{"identifier":"here","sizeBytes":1,"status":"idle"},{"identifier":"there","sizeBytes":2,"deviceIdentifier":"laptop-7"},{"identifier":"busy","sizeBytes":3,"status":"generating"}]"#,
+    );
+    let reach = Reach {
+        port: closed_port(),
+        lms: Some(lms),
+    };
+    let found = look(&reach, &[process("LM Studio.exe")], false);
+    let names: Vec<&str> = found.loaded.iter().map(|m| m.name.as_str()).collect();
+    assert_eq!(names, ["here"], "{found:?}");
+    assert_eq!(found.skipped.len(), 2, "{:?}", found.skipped);
+    assert!(
+        found
+            .skipped
+            .iter()
+            .all(|s| s.name.starts_with("LM Studio"))
+    );
 }
 
 #[test]

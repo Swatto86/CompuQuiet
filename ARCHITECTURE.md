@@ -33,7 +33,8 @@ Dependencies point inward: `src-tauri` → `cq-platform` → `cq-core`.
    `Platform::on_battery` says `Some(true)` and `Settings::allow_on_battery`
    is off. Windows answers from `GetSystemPowerStatus`, Linux from the
    machine's own `Battery` supplies in `/sys/class/power_supply` (a
-   peripheral's, `scope` Device, and a `UPS` never count) and macOS from
+   peripheral's, `scope` Device, and a `UPS` never count; any nonzero `online`
+   is mains, as USB-C power delivery reports 2) and macOS from
    `pmset -g batt` (`UPS Power` is not battery); `None`, a desktop, and a UPS
    on mains all mean mains.
    A target set to `ProcessAction::SlowDown` plans a `Step::SlowProcess` per
@@ -244,11 +245,13 @@ and skips paused streams; macOS cannot tell.
 
 `Platform::list_services` names every service the machine has for the Park
 list's picker (`EnumServicesStatusExW`; `systemctl list-units`, system and
-user; `launchctl list`). The engine turns it into `ServiceRow`s (`rows.rs`),
-marking those `policy::is_critical_service` refuses as `essential`, which the
-page keeps out of the picker but still uses to name a listed service. It is
-a listing, not a check: on Linux and macOS a stopped or unloaded unit may be
-missing from it, so an absent name is never reported as not installed.
+user; `launchctl list`, which under `sudo` goes through `launchctl asuser`
+into the user's session, since root's own list is the system daemons). The
+engine turns it into `ServiceRow`s (`rows.rs`), marking those
+`policy::is_critical_service` refuses as `essential`, which the page keeps out
+of the picker but still uses to name a listed service. It is a listing, not a
+check: on Linux and macOS a stopped or unloaded unit may be missing from it, so
+an absent name is never reported as not installed.
 
 `Platform::gpu` reads each graphics adapter's own memory (`gpu.rs`, shared by
 the adapters as the trait's default): `nvidia-smi` on Windows (by absolute
@@ -309,7 +312,9 @@ LM Studio's REST API needs a key, so its `lms` tool is run
 found on the search path), only while an LM Studio process is in the snapshot
 (the tool can start the app), and never when this process is elevated: the
 folder is the user's, so an elevated run would hand its executable those
-rights. A model's name is checked before it becomes an argument or JSON. The
+rights. A model's name is checked before it becomes an argument or JSON. A
+listed model hosted on another machine (LM Link's `deviceIdentifier`) or not
+`idle` (answering a request) is named in what is left alone, not unloaded. The
 fake keeps a model list (`fake_models`, `Call::UnloadModel`) that serves
 Ollama, router and llama-swap models alike, and answers `Platform::environment`
 for a single-model `llama-server` it starts (`fake_llama_server`, which also
