@@ -4,8 +4,8 @@ Frees the machine for games and local AI, then puts everything back.
 
 One switch parks the background work that competes for CPU, memory and disk:
 telemetry and indexing services, sync clients, updaters, chat apps. It moves
-Windows to its performance power plan and purges cached memory once the rest
-is out of the way. Switching it off restores every service, resumes or
+Windows to its performance power plan and, if you turn that on, purges cached
+memory once the rest is out of the way. Switching it off restores every service, resumes or
 relaunches every program and returns the power plan, in reverse order. Each
 step is written to an undo journal before the next one runs, so a crash or a
 reboot cannot lose the list of what to put back.
@@ -20,7 +20,7 @@ reboot cannot lose the list of what to put back.
 | Close a program and relaunch it on restore | `taskkill`, then relaunch | `SIGTERM`, then relaunch | `SIGTERM`, then relaunch |
 | Stop a service and start it again | Service Control Manager (administrator) | `systemctl` (polkit for system units, `user:` prefix for user units) | `launchctl` user agents |
 | Performance power plan | `powercfg` (Ultimate or High performance) | `powerprofilesctl` | not available |
-| Purge cached memory | standby list (administrator) | `drop_caches` via polkit | not available |
+| Purge cached memory (opt-in) | standby list (administrator) | `drop_caches` via polkit | not available |
 
 The desktop shell, compositor, input, audio, security software, terminals
 and CompuQuiet itself are always protected and cannot be added as targets.

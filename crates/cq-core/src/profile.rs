@@ -67,6 +67,8 @@ pub struct Profile {
     pub processes: Vec<ProcessTarget>,
     pub services: Vec<ServiceTarget>,
     pub power: PowerPolicy,
+    /// Opt-in: a new profile leaves the cache alone, and a saved value is
+    /// kept as it is.
     pub purge_memory: bool,
     /// Names the user has promised never to touch, on top of the built-ins.
     pub keep_alive: Vec<String>,
@@ -96,7 +98,7 @@ impl Profile {
                 })
                 .collect(),
             power: PowerPolicy::Performance,
-            purge_memory: true,
+            purge_memory: false,
             keep_alive: Vec::new(),
         }
     }

@@ -3,7 +3,7 @@
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use cq_core::{Profile, Recommendation, Risk, Settings, Snapshot, recommend};
+use cq_core::{Profile, Recommendation, RecommendationKind, Risk, Settings, Snapshot, recommend};
 use serde::Serialize;
 
 use crate::engine::Engine;
@@ -21,11 +21,16 @@ pub struct ScanReport {
 }
 
 /// The finds that can be parked without asking: low risk and not already in
-/// the profile.
+/// the profile. The memory purge is never one of them: it is opt-in, so it is
+/// suggested on the Scan tab and switched on only by the user.
 pub fn low_risk_additions(recommendations: &[Recommendation]) -> Vec<Recommendation> {
     recommendations
         .iter()
-        .filter(|item| item.risk == Risk::Low && !item.already_targeted)
+        .filter(|item| {
+            item.risk == Risk::Low
+                && !item.already_targeted
+                && item.kind != RecommendationKind::MemoryPurge
+        })
         .cloned()
         .collect()
 }
@@ -145,7 +150,19 @@ mod tests {
         );
         let applied = engine.apply_recommendations(low.clone()).unwrap();
         assert_eq!(applied.profile.power, cq_core::PowerPolicy::Performance);
-        assert!(applied.profile.purge_memory);
+        assert!(
+            !low.iter()
+                .any(|r| r.kind == RecommendationKind::MemoryPurge),
+            "the purge is suggested, never applied unasked"
+        );
+        assert!(!applied.profile.purge_memory);
+        let cache = report
+            .recommendations
+            .iter()
+            .find(|r| r.kind == RecommendationKind::MemoryPurge)
+            .unwrap();
+        let accepted = engine.apply_recommendations(vec![cache.clone()]).unwrap();
+        assert!(accepted.profile.purge_memory, "accepting it switches it on");
         assert!(
             applied
                 .profile
