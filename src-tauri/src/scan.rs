@@ -22,7 +22,7 @@ pub struct ScanReport {
 
 /// The finds that can be parked without asking: programs and services that
 /// are low risk and not already in the profile. The power plan and the memory
-/// purge are never among them: each is a switch on the Targets tab, and an
+/// purge are never among them: each is a switch on the Park list, and an
 /// unticked one is a choice (a new profile leaves the purge off), so they are
 /// suggested on the Scan tab and switched on only by the user.
 pub fn low_risk_additions(recommendations: &[Recommendation]) -> Vec<Recommendation> {

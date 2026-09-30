@@ -6,7 +6,13 @@ import { strict as assert } from "node:assert";
 import fs from "node:fs";
 import path from "node:path";
 
-import { clickTab, dataDir, readJson, waitForPill } from "./support.ts";
+import {
+  clickTab,
+  dataDir,
+  engineState,
+  readJson,
+  waitForPill,
+} from "./support.ts";
 
 interface SavedSettings {
   theme: string;
@@ -106,5 +112,28 @@ describe("persistence", () => {
       timeoutMsg: "the stale journal was not finished at startup",
     });
     await waitForPill("Ready");
+
+    // Finished, not undone: a full restore would also empty the journal and
+    // end on Ready, but it would relaunch Dropbox from its old arguments and
+    // start SysMain again. The two steps the restart overtook are skipped.
+    const { log } = (await engineState()) as {
+      log: { label: string; ok: boolean; detail: string | null }[];
+    };
+    const skipped = log
+      .filter((line) => line.detail?.startsWith("Skipped:"))
+      .map((line) => `${line.label} ${line.detail}`);
+    assert.equal(skipped.length, 2, JSON.stringify(log));
+    assert.match(
+      skipped.join("\n"),
+      /^Relaunch Dropbox\.exe Skipped: you have signed in again since/m,
+    );
+    assert.match(
+      skipped.join("\n"),
+      /^Start service SysMain Skipped: the PC has restarted since/m,
+    );
+    assert.ok(
+      log.every((line) => line.ok),
+      JSON.stringify(log),
+    );
   });
 });

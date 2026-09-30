@@ -129,10 +129,11 @@ unless CompuQuiet runs as root.
 10. **Profiles** (top of the Park list) keep a separate park list and options
     for each use: one for a game, one for local AI, one for work. *Add* makes
     one from a copy of the profile in use or from the built-in list, and starts
-    using it. Once there are two, Home has a *Profile* choice and the tray
-    menu a *Profile* submenu. The profile in use is the one the big button
-    runs and the Park list edits; it can change only while Quiet Mode is off.
-    *Never touch* is shared by every profile, so removing a row from one list
+    using it. Once there are two, Home has a *Profile* choice and the tray's
+    toggle names the profile in use; the tray menu always has a *Profile*
+    submenu. The profile in use is the one the big button runs and the Park
+    list edits; it can change only while Quiet Mode is off. *Never touch* is
+    shared by every profile, so removing a row from one list
     takes that program out of all of them: untick it to stop parking it in one
     profile only. In Settings each program that starts Quiet Mode by itself
     can start its own profile. The profiles are kept in `settings.json`, where

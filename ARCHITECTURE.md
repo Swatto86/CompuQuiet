@@ -188,8 +188,8 @@ The engine exposes `scan()` (fresh snapshot) and `apply_recommendations()`
 snapshot to compute the report and plans against the profile plus the
 low-risk, not-yet-targeted program and service finds for that run only (the
 power plan and the purge stay the saved switches); the journal records what
-actually happened, so Restore is unchanged. Removing a target on the Targets
-tab adds its name to the keep-alive list ("Never touch"), because the scan
+actually happened, so Restore is unchanged. Removing a target on the Park
+list adds its name to the keep-alive list ("Never touch"), because the scan
 would otherwise find a known target again on every run. Window ownership comes from
 `EnumWindows` on Windows (a Store app's own process owns only a child window
 of its frame, so those are read too). Linux reads an X11 session with `xprop`

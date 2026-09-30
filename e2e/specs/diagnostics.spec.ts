@@ -1,9 +1,9 @@
 /**
  * Copy diagnostics puts one report on the clipboard: what this copy is, what
  * Quiet Mode did and could not undo, and the log's last lines, with the home
- * folder hidden and no program's path or command line. The spec stands in for
- * the clipboard, so that running the suite never overwrites what the person
- * running it has copied.
+ * folder hidden and no program's command line or start folder. The spec
+ * stands in for the clipboard, so that running the suite never overwrites
+ * what the person running it has copied.
  */
 import { strict as assert } from "node:assert";
 import os from "node:os";
@@ -128,11 +128,14 @@ describe("copy diagnostics", () => {
     }
   });
 
-  it("names what Quiet Mode did and what could not be put back, never a program's path", async () => {
+  it("names what Quiet Mode did and what could not be put back, never a command line or start folder", async () => {
     await clickTab("dashboard");
     await $("#toggle").click();
     await waitForPill("Quiet");
+    // Dropbox is closed by the profile, so what stays on record carries its
+    // file, arguments and start folder: the journal's list must show none.
     await fakeFail("start_service", "SysMain", "refused");
+    await fakeFail("launch", "Dropbox.exe", "refused");
     await $("#toggle").click();
     await $("#recovery").waitForDisplayed({ timeout: 15_000 });
 
@@ -141,9 +144,13 @@ describe("copy diagnostics", () => {
     assert.match(report, /^Quiet Mode: on since \d{4}-\d\d-\d\dT/m);
     assert.match(
       report,
-      /^On record in the journal \(1\):\n {2}- stopped service SysMain$/m,
+      /^On record in the journal \(2\):\n {2}- stopped service SysMain\n {2}- closed Dropbox\.exe$/m,
     );
-    assert.match(report, /^Not put back \(1\):$/m);
+    assert.match(report, /^Not put back \(2\):$/m);
+    assert.match(
+      report,
+      /^ {2}- Relaunch Dropbox\.exe: Dropbox\.exe stays closed.* \(last error: .+\)$/m,
+    );
     assert.match(
       report,
       /^ {2}- Start service SysMain: SysMain stays stopped.* \(last error: .+\)$/m,
@@ -154,9 +161,16 @@ describe("copy diagnostics", () => {
       /^compuquiet\.log \(warnings and errors.*\):\n(?:.*\n)*.*Start service SysMain failed \(platform\)/m,
       "the log's last lines are included",
     );
+    // The fake machine's refusals name the program only. The real platform's
+    // own error for a failed start also names the file it tried to run, and
+    // the report shows that as the platform wrote it (home folder aside).
     assert.ok(
-      !report.includes("C:/fake/"),
-      "a program's path is in the report",
+      !report.includes("--background"),
+      "a program's command line is in the report",
+    );
+    assert.ok(
+      !report.includes("C:/fake"),
+      "a program's file or start folder is in the report",
     );
 
     await fakeHeal();
