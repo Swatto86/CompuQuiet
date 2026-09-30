@@ -103,6 +103,7 @@ impl Engine {
         });
         let mut unreadable_journal = None;
         let journal = Journal::load(&data_dir).unwrap_or_else(|error| {
+            log::error!("journal.json is unreadable: {error}");
             startup_error = Some(error.to_string());
             unreadable_journal = Some(error.to_string());
             None

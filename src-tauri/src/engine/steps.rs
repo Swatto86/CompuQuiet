@@ -70,6 +70,11 @@ impl Engine {
                         step,
                         Step::SuspendProcess { .. } | Step::CloseProcess { .. }
                     );
+                // The run's own log is gone once the app restarts; this stays.
+                // Only the label and the error: never a program's arguments.
+                if !gone {
+                    log::warn!("{} failed ({}): {error}", step.label(), error.code);
+                }
                 let detail = if gone {
                     "already gone".to_string()
                 } else if unknown {

@@ -46,14 +46,20 @@ impl Engine {
                     ok: true,
                     detail,
                 },
-                Err(error) => LogLine {
-                    label: step.label(),
+                Err(error) => {
                     // A process already gone, or a program or service no
                     // longer installed, cannot be put back: the entry is
                     // done with, not failed, or Quiet Mode could never end.
-                    ok: matches!(error.code.as_str(), "not_running" | "not_installed"),
-                    detail: Some(error.to_string()),
-                },
+                    let ok = matches!(error.code.as_str(), "not_running" | "not_installed");
+                    if !ok {
+                        log::warn!("{} failed ({}): {error}", step.label(), error.code);
+                    }
+                    LogLine {
+                        label: step.label(),
+                        ok,
+                        detail: Some(error.to_string()),
+                    }
+                }
             };
             if line.ok {
                 resolved.extend(indices);

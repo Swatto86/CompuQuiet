@@ -2,6 +2,9 @@
 //! directory. Tauri reports a WebView2 that fails to start only through
 //! `log`, then carries on without a window, so without this file the reason
 //! the window never appeared would be lost.
+//!
+//! A panic is written there too. Release builds abort on a panic and have no
+//! console, so without that line a crash would leave no trace of why.
 
 use std::fs::{File, OpenOptions};
 use std::io::Write;
@@ -13,7 +16,9 @@ use time::format_description::well_known::Rfc3339;
 
 pub const FILE_NAME: &str = "compuquiet.log";
 
-/// Past this size the file starts again at launch, so it cannot grow forever.
+/// Past this size the file is kept as `compuquiet.log.1` at launch and a new
+/// one started, so it cannot grow forever and the evidence of the last
+/// stretch is never thrown away.
 const MAX_BYTES: u64 = 512 * 1024;
 
 static LOGGER: OnceLock<FileLog> = OnceLock::new();
@@ -58,20 +63,27 @@ pub fn path(data_dir: &Path) -> PathBuf {
     data_dir.join(FILE_NAME)
 }
 
-/// Route `log` warnings and errors to the file. Failing to open it leaves
-/// logging off rather than stopping the app.
+fn previous(data_dir: &Path) -> PathBuf {
+    data_dir.join(format!("{FILE_NAME}.1"))
+}
+
+/// Keep a full log as the one previous file, replacing any older one. If it
+/// cannot be moved the log carries on growing rather than lose its lines.
+fn rotate(data_dir: &Path) {
+    let path = path(data_dir);
+    let full = std::fs::metadata(&path).is_ok_and(|meta| meta.len() > MAX_BYTES);
+    if full && let Err(error) = std::fs::rename(&path, previous(data_dir)) {
+        eprintln!("CompuQuiet cannot rotate {}: {error}", path.display());
+    }
+}
+
+/// Route `log` warnings and errors, and panics, to the file. Failing to open
+/// it leaves logging off rather than stopping the app.
 pub fn install(data_dir: &Path) {
     let path = path(data_dir);
-    let start_again = std::fs::metadata(&path)
-        .map(|meta| meta.len() > MAX_BYTES)
-        .unwrap_or(false);
     let file = std::fs::create_dir_all(data_dir).and_then(|()| {
-        OpenOptions::new()
-            .create(true)
-            .append(!start_again)
-            .write(true)
-            .truncate(start_again)
-            .open(&path)
+        rotate(data_dir);
+        OpenOptions::new().create(true).append(true).open(&path)
     });
     let file = match file {
         Ok(file) => file,
@@ -83,5 +95,76 @@ pub fn install(data_dir: &Path) {
     let logger = LOGGER.get_or_init(|| FileLog(Mutex::new(file)));
     if log::set_logger(logger).is_ok() {
         log::set_max_level(log::LevelFilter::Warn);
+        log_panics();
+    }
+}
+
+/// Write a panic's place and message to the log before the default handling
+/// (which is an abort in release builds). The file is unbuffered, so the line
+/// is on disk before the process ends.
+fn log_panics() {
+    let default = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let thread = std::thread::current();
+        log::error!(
+            "thread '{}' panicked: {info}",
+            thread.name().unwrap_or("unnamed")
+        );
+        default(info);
+    }));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{FILE_NAME, MAX_BYTES, install, previous, rotate};
+
+    #[test]
+    fn a_full_log_is_kept_as_the_previous_one_not_wiped() {
+        let dir = tempfile::tempdir().unwrap();
+        let log = dir.path().join(FILE_NAME);
+        std::fs::write(&log, vec![b'x'; usize::try_from(MAX_BYTES).unwrap() + 1]).unwrap();
+        rotate(dir.path());
+        assert!(!log.exists());
+        assert_eq!(
+            std::fs::metadata(previous(dir.path())).unwrap().len(),
+            MAX_BYTES + 1
+        );
+
+        // A second full log replaces the older previous one.
+        std::fs::write(&log, vec![b'y'; usize::try_from(MAX_BYTES).unwrap() + 5]).unwrap();
+        rotate(dir.path());
+        assert_eq!(
+            std::fs::metadata(previous(dir.path())).unwrap().len(),
+            MAX_BYTES + 5
+        );
+    }
+
+    #[test]
+    fn a_log_under_the_limit_is_left_alone() {
+        let dir = tempfile::tempdir().unwrap();
+        let log = dir.path().join(FILE_NAME);
+        std::fs::write(&log, "earlier lines").unwrap();
+        rotate(dir.path());
+        assert_eq!(std::fs::read_to_string(&log).unwrap(), "earlier lines");
+        assert!(!previous(dir.path()).exists());
+    }
+
+    /// The only test that installs the process-wide logger and panic hook.
+    /// The earlier lines survive the launch, and a panic lands in the file.
+    #[test]
+    fn a_panic_reaches_the_log_after_the_earlier_lines() {
+        let dir = tempfile::tempdir().unwrap();
+        let log = dir.path().join(FILE_NAME);
+        std::fs::write(&log, "left from the last launch").unwrap();
+        install(dir.path());
+
+        let caught = std::panic::catch_unwind(|| panic!("the window went missing"));
+        assert!(caught.is_err());
+
+        let text = std::fs::read_to_string(&log).unwrap();
+        assert!(text.starts_with("left from the last launch"), "{text}");
+        assert!(text.contains("ERROR"), "{text}");
+        assert!(text.contains("panicked: panicked at"), "{text}");
+        assert!(text.contains("the window went missing"), "{text}");
     }
 }

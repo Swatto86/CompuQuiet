@@ -14,6 +14,7 @@ import {
   dataDir,
   fakeFail,
   fakeHeal,
+  logText,
   readJson,
   text,
   waitForPill,
@@ -45,6 +46,7 @@ describe("a restore that cannot finish", () => {
     assert.equal(await $("#recovery").isDisplayed(), false, "nothing is stuck");
 
     await fakeFail("start_service", "SysMain", "refused");
+    const logged = logText().length;
     await $("#toggle").click();
     await $("#recovery").waitForDisplayed({ timeout: 15_000 });
 
@@ -55,6 +57,11 @@ describe("a restore that cannot finish", () => {
       journal?.done.map((step) => `${step.kind}:${step.name}`),
       ["service_stopped:SysMain"],
       "only what could not be put back is left on record",
+    );
+    assert.match(
+      logText().slice(logged),
+      /Start service SysMain failed \(platform\)/,
+      "the failed step is in compuquiet.log, which outlasts the window",
     );
   });
 

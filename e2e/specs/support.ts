@@ -118,6 +118,22 @@ export function windowVisible(): Promise<boolean> {
 }
 
 /**
+ * Run a tray menu item through the same Rust dispatch the real menu uses:
+ * the tray cannot be clicked through WebDriver.
+ */
+export function trayMenu(
+  id: "tray-toggle" | "tray-show" | "tray-quit",
+): Promise<void> {
+  return invokeCommand("simulate_tray_menu", { id });
+}
+
+/** Everything in compuquiet.log so far; empty until the app writes to it. */
+export function logText(): string {
+  const file = path.join(dataDir(), "compuquiet.log");
+  return fs.existsSync(file) ? fs.readFileSync(file, "utf8") : "";
+}
+
+/**
  * Make a call on the fake machine fail until `fakeHeal`. Names are spelled as
  * in `cq_platform::fake`: `start_service`, `refused` / `timed_out` /
  * `needs_elevation`; `target` is a service or program name.
