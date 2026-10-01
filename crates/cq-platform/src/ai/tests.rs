@@ -47,22 +47,25 @@ fn fake_lms(dir: &Path, listing: &str) -> String {
 
 #[cfg(unix)]
 fn fake_lms(dir: &Path, listing: &str) -> String {
-    use std::os::unix::fs::PermissionsExt;
     let path = dir.join("lms");
-    std::fs::write(
-        &path,
-        format!(
-            "#!/bin/sh
+    let script = format!(
+        "#!/bin/sh
 case \"$1\" in
   ps) echo '{listing}' ;;
   unload) echo \"$2\" > \"$(dirname \"$0\")/unloaded.txt\" ;;
   *) exit 1 ;;
 esac
 "
-        ),
-    )
-    .unwrap();
-    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    );
+    // Written by a shell of its own, not by this process: a file this process
+    // had open for writing could be inherited by a child another test forks
+    // at that moment, and Linux then refuses to run it ("Text file busy").
+    let written = std::process::Command::new("sh")
+        .args(["-c", "printf '%s' \"$1\" > \"$2\" && chmod 755 \"$2\""])
+        .args(["sh", &script, path.to_str().unwrap()])
+        .status()
+        .unwrap();
+    assert!(written.success());
     path.to_str().unwrap().to_string()
 }
 
