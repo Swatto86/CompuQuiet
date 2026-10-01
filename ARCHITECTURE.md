@@ -531,9 +531,13 @@ its pickers (running programs, the machine's services) live in `pickers.ts`. Con
   anything found there: the setup is elevated, and that folder, its `HKCU` key
   and its uninstaller are all writable by an ordinary process. A copy in another
   folder is left, with a message telling the person to uninstall it. The hook then
-  recreates the Start menu and desktop shortcuts for all users and runs
-  `schtasks /Change` on the sign-in task, which the elevated setup can do to an
-  elevated task and the unelevated app it starts afterwards cannot.
+  recreates the Start menu and desktop shortcuts for all users. On every
+  install and update into Program Files it points the sign-in task (and a
+  legacy `ComputeQuiet` one) at the installed exe, which the elevated setup can
+  do to an elevated task and the unelevated app it starts afterwards cannot.
+  It uses `Set-ScheduledTask`, which keeps the task's account, sign-in type and
+  run level; `schtasks /Change` asks for the account's password, and with
+  nobody to type it the 1.2.0 handoff left the task naming the removed copy.
   Uninstalling deletes the task, but not on an update, and not when the setup's
   own "uninstall before installing" step runs the uninstaller (a setup run by
   hand over an installed copy): that one runs in place, so `$EXEDIR` is the

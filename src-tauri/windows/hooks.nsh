@@ -15,6 +15,8 @@
 Var PerUserDir
 Var MovedFromPerUser
 Var HadDesktopShortcut
+Var ProgramFilesLength
+Var InstallHead
 
 !macro NSIS_HOOK_PREINSTALL
   StrCpy $MovedFromPerUser 0
@@ -84,22 +86,23 @@ Var HadDesktopShortcut
       CreateShortcut "$DESKTOP\${PRODUCTNAME}.lnk" "$INSTDIR\${MAINBINARYNAME}.exe"
       !insertmacro SetLnkAppUserModelId "$DESKTOP\${PRODUCTNAME}.lnk"
     ${EndIf}
+  ${EndIf}
 
-    ; The sign-in task still names the old copy. This setup has
-    ; administrator rights, so it can change even a task made with them, which
-    ; the app started afterwards (without them) cannot. /Change keeps the
-    ; task's run level.
-    nsExec::Exec 'schtasks /Query /TN "${PRODUCTNAME}"'
+  ; A sign-in task that names another copy (the per-user one removed above,
+  ; or one removed by an earlier run of a setup) starts nothing. This setup
+  ; has administrator rights, so it can change even a task made with them,
+  ; which the app started afterwards (without them) cannot. Only from Program
+  ; Files, where no ordinary process can replace what such a task starts; the
+  ; app itself re-points one elsewhere, without those rights. Set-ScheduledTask
+  ; keeps the task's account, sign-in type and run level; `schtasks /Change`
+  ; would ask for the account's password, which nobody is there to type.
+  StrLen $ProgramFilesLength "$PROGRAMFILES64\"
+  StrCpy $InstallHead "$INSTDIR\" $ProgramFilesLength
+  ${If} $InstallHead == "$PROGRAMFILES64\"
+    nsExec::Exec `"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "try { Get-ScheduledTask -TaskName '${PRODUCTNAME}','ComputeQuiet' -ErrorAction SilentlyContinue | ForEach-Object { Set-ScheduledTask -TaskName $$_.TaskName -TaskPath $$_.TaskPath -Action (New-ScheduledTaskAction -Execute '$INSTDIR\${MAINBINARYNAME}.exe' -Argument '--hidden') -ErrorAction Stop | Out-Null }; exit 0 } catch { exit 1 }"`
     Pop $0
-    ${If} $0 = 0
-      nsExec::Exec 'schtasks /Change /TN "${PRODUCTNAME}" /TR "\"$INSTDIR\${MAINBINARYNAME}.exe\" --hidden"'
-      Pop $0
-    ${EndIf}
-    nsExec::Exec 'schtasks /Query /TN "ComputeQuiet"'
-    Pop $0
-    ${If} $0 = 0
-      nsExec::Exec 'schtasks /Change /TN "ComputeQuiet" /TR "\"$INSTDIR\${MAINBINARYNAME}.exe\" --hidden"'
-      Pop $0
+    ${If} $0 != 0
+      DetailPrint "The sign-in task could not be pointed at this copy ($0)."
     ${EndIf}
   ${EndIf}
 
