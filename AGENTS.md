@@ -102,7 +102,7 @@ does not show.
   changes, cleaners), except the documented no-undo steps: purge, model
   unload, keep-awake.
 - No repeating memory-trim or purge loops: the one optional purge stays one.
-- No real-time priority, affinity pinning, overclocking or registry tweak packs.
+- No real-time priority, affinity pinning or overclocking.
 
 ## Workflow
 
@@ -112,12 +112,13 @@ does not show.
   update.
 - Release: bump the version in `Cargo.toml`, `src-tauri/tauri.conf.json` and
   `package.json` (the gate checks agreement), `AGENT_RELEASE=1 npx tauri build`
-  for the local install, wait for `verify` to pass on GitHub for that commit,
+  for the local install (a running copy blocks the installer: ask Swatto to
+  quit it, never kill it), wait for `verify` to pass on GitHub for that commit,
   then push tag `vX.Y.Z` to publish. That build signs the updater bundles, so
   it needs `TAURI_SIGNING_PRIVATE_KEY` (path in host memory), or
   `--config '{"bundle":{"createUpdaterArtifacts":false}}'` for an unsigned one.
-- Product page `swatto.co.uk/tools/compuquiet/` (own repo): when the name or
-  UI changes, update it and refresh its screenshots from a real build.
+- Product page `swatto.co.uk/tools/compuquiet/` (own repo): on a name or UI
+  change, update it and its screenshots from a real build.
 
 ## Known limits
 
@@ -128,4 +129,4 @@ does not show.
   bundle variables). A Flatpak, Snap, AppImage or Store app is suspended
   instead of closed: it cannot be relaunched from here.
 - Programs that respawn themselves (updaters) are suspended, not closed.
-- The e2e suite does not run on macOS (`tauri-driver` has no macOS backend).
+- No e2e suite on macOS (`tauri-driver` has no macOS backend).

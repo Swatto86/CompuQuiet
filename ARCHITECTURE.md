@@ -538,6 +538,9 @@ its pickers (running programs, the machine's services) live in `pickers.ts`. Con
   It uses `Set-ScheduledTask`, which keeps the task's account, sign-in type and
   run level; `schtasks /Change` asks for the account's password, and with
   nobody to type it the 1.2.0 handoff left the task naming the removed copy.
+  `schtasks /Run /TN CompuQuiet` starts that task at any time, elevated and
+  without a permission prompt; `schtasks /End` kills the running app, which an
+  agent must not do (AGENTS.md).
   Uninstalling deletes the task, but not on an update, and not when the setup's
   own "uninstall before installing" step runs the uninstaller (a setup run by
   hand over an installed copy): that one runs in place, so `$EXEDIR` is the
@@ -549,7 +552,8 @@ its pickers (running programs, the machine's services) live in `pickers.ts`. Con
 
 `COMPUQUIET_DATA_DIR` overrides the platform config directory (the old
 `COMPUTEQUIET_DATA_DIR` still works, and a `ComputeQuiet` folder is adopted
-when `CompuQuiet` does not exist yet). Files are `settings.json` (versioned;
+when `CompuQuiet` does not exist yet; the old `ComputeQuiet` GitHub repository
+is deleted and must not be recreated). Files are `settings.json` (versioned;
 named profiles are fields added to it, not a new version) and `journal.json`
 (versioned), beside `instance.lock`, the `wake/` requests, `compuquiet.log`
 and the `.bad` and `.1` copies named below. Writes are
@@ -606,4 +610,6 @@ banner's action moves the file to `settings.json.bad`.
   `npm audit --omit=dev` weekly and only reports. `verify` and `release`
   install exactly the compiler `rust-toolchain.toml` pins. Nothing is
   code-signed with a publisher certificate or notarised: the bundles carry
-  only the updater's minisign signature, which the app itself checks.
+  only the updater's minisign signature, which the app itself checks. Never
+  delete the private signing key: installed copies could not verify any later
+  update.
