@@ -72,7 +72,6 @@ does not show.
   sound running is left alone (`guard_audio`), which only removes steps.
 - **The fake platform is a cargo feature** for the e2e suite; the gate
   asserts it is never a default.
-- **2026-09-25: GitHub is the only remote**; push to `origin` (GitHub) only.
 - **2026-09-27: updates install themselves.** `tauri-plugin-updater` reads
   `latest.json` on the GitHub release; bundles are signed with a minisign key
   (public half in `tauri.conf.json`). Only a copy that can replace itself
@@ -107,7 +106,6 @@ does not show.
 
 ## Workflow
 
-- Single branch `main`; commit and push verified units.
 - Inner loop: `npx tauri dev`; `scripts/fastcheck.ps1`/`.sh`.
 - Full gate: `scripts/verify.ps1` / `.sh` (fmt, clippy, tests, frontend, fake
   build, WebDriver). Windows needs `scripts/setup-e2e.ps1` once per WebView2
@@ -118,6 +116,8 @@ does not show.
   then push tag `vX.Y.Z` to publish. That build signs the updater bundles, so
   it needs `TAURI_SIGNING_PRIVATE_KEY` (path in host memory), or
   `--config '{"bundle":{"createUpdaterArtifacts":false}}'` for an unsigned one.
+- Product page `swatto.co.uk/tools/compuquiet/` (own repo): when the name or
+  UI changes, update it and refresh its screenshots from a real build.
 
 ## Known limits
 
