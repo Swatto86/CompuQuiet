@@ -23,6 +23,19 @@ try {
         if ($LASTEXITCODE -ne 0) { throw "cargo check failed for $Package" }
     }
     else {
+        # File-size guideline (the agent-standards engineering skill): a code file over 400 lines
+        # needs a reason on record or a split; files already over it are listed in
+        # scripts/file-size-baseline.txt and may not grow.
+        Write-Host '== file size ==' -ForegroundColor Cyan
+        $sizeCheck = Join-Path $HOME '.agents/scripts/check-file-size.ps1'
+        if (Test-Path -LiteralPath $sizeCheck) {
+            pwsh -NoProfile -File $sizeCheck -Root $root
+            if ($LASTEXITCODE -ne 0) { throw 'file size check failed' }
+        }
+        else {
+            Write-Host 'skip - file size check: ~/.agents/scripts/check-file-size.ps1 not found'
+        }
+
         Write-Host '== clippy (workspace) ==' -ForegroundColor Cyan
         cargo clippy --locked --workspace --all-targets --features compuquiet/fake-platform -- -D warnings
         if ($LASTEXITCODE -ne 0) { throw 'clippy failed' }

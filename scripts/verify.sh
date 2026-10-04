@@ -18,6 +18,16 @@ say() { printf '\n== %s ==\n' "$1"; }
 say "pre-push hook"
 bash "$root/scripts/install-hooks.sh"
 
+say "file size"
+# The agent-standards engineering skill: a code file over 400 lines needs a reason on record or a
+# split; files already over it are listed in scripts/file-size-baseline.txt and may not grow.
+size_check="$HOME/.agents/scripts/check-file-size.ps1"
+if [ -f "$size_check" ] && command -v pwsh >/dev/null 2>&1; then
+  pwsh -NoProfile -File "$size_check" -Root "$root"
+else
+  echo "skip - file size check: ~/.agents/scripts/check-file-size.ps1 or pwsh not found"
+fi
+
 say "rust fmt"
 cargo fmt --all -- --check
 
