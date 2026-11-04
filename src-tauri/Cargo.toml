@@ -24,7 +24,9 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 tauri = { version = "2", features = ["tray-icon", "image-png"] }
 tauri-plugin-notification = "2"
-tauri-plugin-updater = "2"
+# Pin the upstream v2 fix that moves Windows update extraction to zip 9.
+# crates.io 2.12.0 still resolved zip 4, affected by RUSTSEC-2026-0367/0368/0369/0429.
+tauri-plugin-updater = { git = "https://github.com/tauri-apps/plugins-workspace", rev = "74a44c1d5694324b7fb9ba5ee9271a3096da9387" }
 time = { version = "0.3", features = ["formatting"] }
 tokio = { workspace = true }
 
