@@ -76,9 +76,13 @@ describe("a run that ends by itself", () => {
       },
     );
     assert.equal((journal()?.ending?.uptime ?? 0) - before, 3_600);
-    assert.match(
-      await text("#until-text"),
-      /^Ends by itself in (3 h|2 h 59 min)\.$/,
+    const extended = /^Ends by itself in (3 h|2 h 59 min)\.$/;
+    await browser.waitUntil(
+      async () => extended.test(await text("#until-text")),
+      {
+        timeout: 5_000,
+        timeoutMsg: "the page did not show the extended time",
+      },
     );
   });
 
