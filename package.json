@@ -15,10 +15,10 @@
     "tauri": "tauri"
   },
   "dependencies": {
-    "@tauri-apps/api": "^2.11.1"
+    "@tauri-apps/api": "^2.12.4"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "2.11.4",
+    "@tauri-apps/cli": "^2.12.4",
     "@wdio/cli": "^9.31.9",
     "@wdio/globals": "^9.31.3",
     "@wdio/local-runner": "^9.31.9",
